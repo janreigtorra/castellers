@@ -1,0 +1,229 @@
+{
+  "title": "Taula de Puntuacions del Concurs de Castells 2024",
+  "puntuacions": {
+    "d4": {
+      "descarregat": 69,
+      "carregat": 62
+    },
+    "4d6": {
+      "descarregat": 91,
+      "carregat": 80
+    },
+    "3d6": {
+      "descarregat": 96,
+      "carregat": 83
+    },
+    "3d6a": {
+      "descarregat": 119,
+      "carregat": 110
+    },
+    "4d6a": {
+      "descarregat": 126,
+      "carregat": 115
+    },
+    "7d6": {
+      "descarregat": 132,
+      "carregat": 117
+    },
+    "5d6": {
+      "descarregat": 139,
+      "carregat": 122
+    },
+    "7d6a": {
+      "descarregat": 145,
+      "carregat": 138
+    },
+    "5d6a": {
+      "descarregat": 149,
+      "carregat": 142
+    },
+    "3d6s": {
+      "descarregat": 154,
+      "carregat": 145
+    },
+    "2d6": {
+      "descarregat": 200,
+      "carregat": 175
+    },
+    "Pd5": {
+      "descarregat": 210,
+      "carregat": 185
+    },
+    "9d6": {
+      "descarregat": 265,
+      "carregat": 230
+    },
+    "4d7": {
+      "descarregat": 275,
+      "carregat": 240
+    },
+    "3d7": {
+      "descarregat": 290,
+      "carregat": 250
+    },
+    "3d7a": {
+      "descarregat": 360,
+      "carregat": 330
+    },
+    "4d7a": {
+      "descarregat": 380,
+      "carregat": 345
+    },
+    "7d7": {
+      "descarregat": 400,
+      "carregat": 350
+    },
+    "5d7": {
+      "descarregat": 420,
+      "carregat": 365
+    },
+    "7d7a": {
+      "descarregat": 440,
+      "carregat": 415
+    },
+    "5d7a": {
+      "descarregat": 450,
+      "carregat": 425
+    },
+    "3d7s": {
+      "descarregat": 465,
+      "carregat": 435
+    },
+    "9d7": {
+      "descarregat": 575,
+      "carregat": 500
+    },
+    "2d7": {
+      "descarregat": 605,
+      "carregat": 525
+    },
+    "4d8": {
+      "descarregat": 635,
+      "carregat": 550
+    },
+    "Pd6": {
+      "descarregat": 665,
+      "carregat": 580
+    },
+    "3d8": {
+      "descarregat": 700,
+      "carregat": 610
+    },
+    "7d8": {
+      "descarregat": 875,
+      "carregat": 760
+    },
+    "2d8f": {
+      "descarregat": 920,
+      "carregat": 800
+    },
+    "Pd7f": {
+      "descarregat": 960,
+      "carregat": 835
+    },
+    "5d8": {
+      "descarregat": 1010,
+      "carregat": 880
+    },
+    "4d8a": {
+      "descarregat": 1060,
+      "carregat": 965
+    },
+    "3d8a": {
+      "descarregat": 1110,
+      "carregat": 1005
+    },
+    "7d8a": {
+      "descarregat": 1125,
+      "carregat": 1025
+    },
+    "5d8a": {
+      "descarregat": 1165,
+      "carregat": 1055
+    },
+    "4d9f": {
+      "descarregat": 1460,
+      "carregat": 1270
+    },
+    "3d9f": {
+      "descarregat": 1530,
+      "carregat": 1335
+    },
+    "9d8": {
+      "descarregat": 1915,
+      "carregat": 1665
+    },
+    "3d8s": {
+      "descarregat": 2010,
+      "carregat": 1825
+    },
+    "2d9fm": {
+      "descarregat": 2110,
+      "carregat": 1835
+    },
+    "Pd8fm": {
+      "descarregat": 2210,
+      "carregat": 1925
+    },
+    "7d9f": {
+      "descarregat": 2320,
+      "carregat": 2020
+    },
+    "5d9f": {
+      "descarregat": 2400,
+      "carregat": 2090
+    },
+    "4d9af": {
+      "descarregat": 2475,
+      "carregat": 2250
+    },
+    "3d9af": {
+      "descarregat": 2555,
+      "carregat": 2315
+    },
+    "4d9": {
+      "descarregat": 3195,
+      "carregat": 2680
+    },
+    "2d8": {
+      "descarregat": 3300,
+      "carregat": 2765
+    },
+    "3d10fm": {
+      "descarregat": 3405,
+      "carregat": 2775
+    },
+    "4d10fm": {
+      "descarregat": 3510,
+      "carregat": 2870
+    },
+    "9d9f": {
+      "descarregat": 3670,
+      "carregat": 3190
+    },
+    "2d9f": {
+      "descarregat": 3865,
+      "carregat": 3245
+    },
+    "Pd9fmp": {
+      "descarregat": 4060,
+      "carregat": 3410
+    },
+    "3d9": {
+      "descarregat": 4250,
+      "carregat": 3570
+    },
+    "2d10fmp": {
+      "descarregat": 4460,
+      "carregat": 3880
+    },
+    "4d10f": {
+      "descarregat": 4685,
+      "carregat": 3935
+    },
+    "3d10f": {
+      "descarregat": 4910,
+      "carregat": 4125
+    }
+  }
+}
