@@ -1,0 +1,1082 @@
+[
+  {
+    "colla_name": "Al·lots de Llevant",
+    "min_year": 1997,
+    "max_year": 2024,
+    "year_range": "1997 - 2024",
+    "years_with_10plus_events": 26,
+    "total_events_in_range": "482", 
+    "boost":2
+  },
+  {
+    "colla_name": "Angelets de Vallespir",
+    "min_year": 2011,
+    "max_year": 2012,
+    "year_range": "2011 - 2012",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "36",  
+    "boost":0
+  },
+  {
+    "colla_name": "Arreplegats de la Zona Universitària",
+    "min_year": 2012,
+    "max_year": 2024,
+    "year_range": "2012 - 2024",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "148", 
+    "boost":2
+  },
+  {
+    "colla_name": "Bergants del Campus de Terrassa",
+    "min_year": 2017,
+    "max_year": 2018,
+    "year_range": "2017 - 2018",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "33", 
+    "boost":0
+  },
+  {
+    "colla_name": "Bordegassos de Vilanova",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "915", 
+    "boost":3
+  },
+  {
+    "colla_name": "Brivalls de Cornudella",
+    "min_year": 2014,
+    "max_year": 2024,
+    "year_range": "2014 - 2024",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "100", 
+    "boost":1
+  },
+  {
+    "colla_name": "Capgrossos de Mataró",
+    "min_year": 1996,
+    "max_year": 2025,
+    "year_range": "1996 - 2025",
+    "years_with_10plus_events": 28,
+    "total_events_in_range": "953", 
+    "boost":4
+  },
+  {
+    "colla_name": "Castellers d'Altafulla",
+    "min_year": 2001,
+    "max_year": 2025,
+    "year_range": "2001 - 2025",
+    "years_with_10plus_events": 21,
+    "total_events_in_range": "379", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers d'Andorra",
+    "min_year": 2015,
+    "max_year": 2024,
+    "year_range": "2015 - 2024",
+    "years_with_10plus_events": 7,
+    "total_events_in_range": "154", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers d'Esparreguera",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 28,
+    "total_events_in_range": "559", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers d'Esplugues",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "637", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Badalona",
+    "min_year": 1999,
+    "max_year": 2024,
+    "year_range": "1999 - 2024",
+    "years_with_10plus_events": 24,
+    "total_events_in_range": "645", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Barcelona",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "1194", 
+    "boost":3
+  },
+  {
+    "colla_name": "Castellers de Berga",
+    "min_year": 2012,
+    "max_year": 2024,
+    "year_range": "2012 - 2024",
+    "years_with_10plus_events": 11,
+    "total_events_in_range": "241", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Caldes de Montbui",
+    "min_year": 2001,
+    "max_year": 2025,
+    "year_range": "2001 - 2025",
+    "years_with_10plus_events": 20,
+    "total_events_in_range": "426", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Castellar del Vallès",
+    "min_year": 2014,
+    "max_year": 2024,
+    "year_range": "2014 - 2024",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "154", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Castelldefels",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 21,
+    "total_events_in_range": "565", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Cerdanyola",
+    "min_year": 1999,
+    "max_year": 2025,
+    "year_range": "1999 - 2025",
+    "years_with_10plus_events": 25,
+    "total_events_in_range": "498", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Cornellà",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "716", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Gavà (1994-2004)",
+    "min_year": 1995,
+    "max_year": 2000,
+    "year_range": "1995 - 2000",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "141", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de l'Adroc",
+    "min_year": 2024,
+    "max_year": 2025,
+    "year_range": "2024 - 2025",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "22", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de l´Albera (1996-2002)",
+    "min_year": 1996,
+    "max_year": 2001,
+    "year_range": "1996 - 2001",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "140", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de l´Hospitalet (1997-2003)",
+    "min_year": 1997,
+    "max_year": 2003,
+    "year_range": "1997 - 2003",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "114", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de la Sagrada Família",
+    "min_year": 2006,
+    "max_year": 2025,
+    "year_range": "2006 - 2025",
+    "years_with_10plus_events": 18,
+    "total_events_in_range": "396", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de la Selva",
+    "min_year": 2019,
+    "max_year": 2024,
+    "year_range": "2019 - 2024",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "38", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de la Vila de Gràcia",
+    "min_year": 1997,
+    "max_year": 2025,
+    "year_range": "1997 - 2025",
+    "years_with_10plus_events": 27,
+    "total_events_in_range": "887", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de les Gavarres",
+    "min_year": 2016,
+    "max_year": 2018,
+    "year_range": "2016 - 2018",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "48", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de les Roquetes",
+    "min_year": 2012,
+    "max_year": 2019,
+    "year_range": "2012 - 2019",
+    "years_with_10plus_events": 8,
+    "total_events_in_range": "162", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Lleida",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "820", 
+    "boost":3
+  },
+  {
+    "colla_name": "Castellers de Mallorca",
+    "min_year": 1998,
+    "max_year": 2018,
+    "year_range": "1998 - 2018",
+    "years_with_10plus_events": 21,
+    "total_events_in_range": "445", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Mediona",
+    "min_year": 2019,
+    "max_year": 2023,
+    "year_range": "2019 - 2023",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "24", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Mollet",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 22,
+    "total_events_in_range": "447", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Montcada i Reixac",
+    "min_year": 2015,
+    "max_year": 2024,
+    "year_range": "2015 - 2024",
+    "years_with_10plus_events": 7,
+    "total_events_in_range": "172", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Montcada i Reixac (1991-1998)",
+    "min_year": 1995,
+    "max_year": 1997,
+    "year_range": "1995 - 1997",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "56", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Rubí",
+    "min_year": 1999,
+    "max_year": 2024,
+    "year_range": "1999 - 2024",
+    "years_with_10plus_events": 11,
+    "total_events_in_range": "165", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Sabadell",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "978", 
+    "boost":3
+  },
+  {
+    "colla_name": "Castellers de Sant Adrià",
+    "min_year": 2014,
+    "max_year": 2018,
+    "year_range": "2014 - 2018",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "71", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Sant Andreu de la Barca (1996-2006)",
+    "min_year": 1997,
+    "max_year": 2006,
+    "year_range": "1997 - 2006",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "153", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Sant Boi (1994-2004)",
+    "min_year": 1995,
+    "max_year": 2000,
+    "year_range": "1995 - 2000",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "76", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Sant Cugat",
+    "min_year": 1996,
+    "max_year": 2025,
+    "year_range": "1996 - 2025",
+    "years_with_10plus_events": 28,
+    "total_events_in_range": "675", 
+    "boost":3
+  },
+  {
+    "colla_name": "Castellers de Sant Feliu",
+    "min_year": 1997,
+    "max_year": 2025,
+    "year_range": "1997 - 2025",
+    "years_with_10plus_events": 21,
+    "total_events_in_range": "376", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Sant Vicenç dels Horts",
+    "min_year": 2013,
+    "max_year": 2024,
+    "year_range": "2013 - 2024",
+    "years_with_10plus_events": 8,
+    "total_events_in_range": "174", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Santa Coloma",
+    "min_year": 1998,
+    "max_year": 2023,
+    "year_range": "1998 - 2023",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "160", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Santpedor",
+    "min_year": 2014,
+    "max_year": 2025,
+    "year_range": "2014 - 2025",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "152", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Sants",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "989", 
+    "boost":4
+  },
+  {
+    "colla_name": "Castellers de Sarrià",
+    "min_year": 2018,
+    "max_year": 2025,
+    "year_range": "2018 - 2025",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "129", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Sarrià (2000-2004)",
+    "min_year": 2002,
+    "max_year": 2003,
+    "year_range": "2002 - 2003",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "29", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Solsona",
+    "min_year": 2011,
+    "max_year": 2014,
+    "year_range": "2011 - 2014",
+    "years_with_10plus_events": 4,
+    "total_events_in_range": "82", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Terrassa",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 30,
+    "total_events_in_range": "998", 
+    "boost":2
+  },
+  {
+    "colla_name": "Castellers de Tortosa",
+    "min_year": 2015,
+    "max_year": 2024,
+    "year_range": "2015 - 2024",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "96", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers de Viladecans",
+    "min_year": 2013,
+    "max_year": 2025,
+    "year_range": "2013 - 2025",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "176", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers de Vilafranca",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 30,
+    "total_events_in_range": "1183", 
+    "boost":5
+  },
+  {
+    "colla_name": "Castellers del Baix Montseny",
+    "min_year": 2023,
+    "max_year": 2024,
+    "year_range": "2023 - 2024",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "26", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers del Foix de Cubelles",
+    "min_year": 2022,
+    "max_year": 2025,
+    "year_range": "2022 - 2025",
+    "years_with_10plus_events": 4,
+    "total_events_in_range": "81", 
+    "boost":1
+  },  
+  {
+    "colla_name": "Castellers del Pallars",
+    "min_year": 2023,
+    "max_year": 2024,
+    "year_range": "2023 - 2024",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "41", 
+    "boost":0
+  },
+  {
+    "colla_name": "Castellers del Poble Sec",
+    "min_year": 2000,
+    "max_year": 2024,
+    "year_range": "2000 - 2024",
+    "years_with_10plus_events": 23,
+    "total_events_in_range": "484", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers del Prat de Llobregat",
+    "min_year": 2016,
+    "max_year": 2025,
+    "year_range": "2016 - 2025",
+    "years_with_10plus_events": 8,
+    "total_events_in_range": "139", 
+    "boost":1
+  },
+  {
+    "colla_name": "Castellers del Riberal",
+    "min_year": 1997,
+    "max_year": 2025,
+    "year_range": "1997 - 2025",
+    "years_with_10plus_events": 24,
+    "total_events_in_range": "553", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Castellera de Figueres",
+    "min_year": 1997,
+    "max_year": 2025,
+    "year_range": "1997 - 2025",
+    "years_with_10plus_events": 26,
+    "total_events_in_range": "698", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Castellera de Gavà",
+    "min_year": 2013,
+    "max_year": 2019,
+    "year_range": "2013 - 2019",
+    "years_with_10plus_events": 7,
+    "total_events_in_range": "135", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Castellera de l'Alt Maresme i la Selva Marítima",
+    "min_year": 2014,
+    "max_year": 2025,
+    "year_range": "2014 - 2025",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "333", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Castellera de l'Esquerra de l'Eixample",
+    "min_year": 2019,
+    "max_year": 2025,
+    "year_range": "2019 - 2025",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "98", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Castellera de la Gavarresa",
+    "min_year": 2016,
+    "max_year": 2019,
+    "year_range": "2016 - 2019",
+    "years_with_10plus_events": 4,
+    "total_events_in_range": "57", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Castellera de Vacarisses",
+    "min_year": 2022,
+    "max_year": 2022,
+    "year_range": "2022",
+    "years_with_10plus_events": 1,
+    "total_events_in_range": "14", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Castellera Els Encantats de Begues",
+    "min_year": 2014,
+    "max_year": 2024,
+    "year_range": "2014 - 2024",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "102", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Castellera Jove de Barcelona",
+    "min_year": 2011,
+    "max_year": 2025,
+    "year_range": "2011 - 2025",
+    "years_with_10plus_events": 13,
+    "total_events_in_range": "305", 
+    "boost":2
+  },
+  {
+    "colla_name": "Colla Castellera La Bisbal del Penedès",
+    "min_year": 2016,
+    "max_year": 2025,
+    "year_range": "2016 - 2025",
+    "years_with_10plus_events": 8,
+    "total_events_in_range": "179", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Castellera Nyerros de la Plana",
+    "min_year": 1999,
+    "max_year": 2018,
+    "year_range": "1999 - 2018",
+    "years_with_10plus_events": 19,
+    "total_events_in_range": "315", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Castellera Sant Pere i Sant Pau",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "774", 
+    "boost":2
+  },
+  {
+    "colla_name": "Colla Jove de Castellers de Sitges",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "652", 
+    "boost":2
+  },
+  {
+    "colla_name": "Colla Jove de l'Hospitalet",
+    "min_year": 2001,
+    "max_year": 2024,
+    "year_range": "2001 - 2024",
+    "years_with_10plus_events": 17,
+    "total_events_in_range": "301", 
+    "boost":1
+  },
+  {
+    "colla_name": "Colla Jove Xiquets de Tarragona",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 30,
+    "total_events_in_range": "1037", 
+    "boost":4
+  },
+  {
+    "colla_name": "Colla Jove Xiquets de Vilafranca",
+    "min_year": 2011,
+    "max_year": 2022,
+    "year_range": "2011 - 2022",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "262", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Joves Xiquets de Valls",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "1020", 
+    "boost":5
+  },
+  {
+    "colla_name": "Colla Nova del Vendrell (1993-2003)",
+    "min_year": 1995,
+    "max_year": 2002,
+    "year_range": "1995 - 2002",
+    "years_with_10plus_events": 7,
+    "total_events_in_range": "120", 
+    "boost":0
+  },
+  {
+    "colla_name": "Colla Vella dels Xiquets de Valls",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "1094", 
+    "boost":5
+  },
+  {
+    "colla_name": "Emboirats de la Universitat de Vic",
+    "min_year": 2018,
+    "max_year": 2024,
+    "year_range": "2018 - 2024",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "33", 
+    "boost":0
+  },
+  {
+    "colla_name": "Engrescats de URL",
+    "min_year": 2017,
+    "max_year": 2017,
+    "year_range": "2017",
+    "years_with_10plus_events": 1,
+    "total_events_in_range": "12", 
+    "boost":0
+  },
+  {
+    "colla_name": "Esperxats de l'Estany",
+    "min_year": 2013,
+    "max_year": 2025,
+    "year_range": "2013 - 2025",
+    "years_with_10plus_events": 11,
+    "total_events_in_range": "231", 
+    "boost":1
+  },
+  {
+    "colla_name": "Ganàpies de la UAB",
+    "min_year": 2013,
+    "max_year": 2024,
+    "year_range": "2013 - 2024",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "71", 
+    "boost":1
+  },
+  {
+    "colla_name": "Ganxets de Reus (1992-2003)",
+    "min_year": 1995,
+    "max_year": 2003,
+    "year_range": "1995 - 2003",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "275", 
+    "boost":0
+  },
+  {
+    "colla_name": "La Global",
+    "min_year": 2011,
+    "max_year": 2011,
+    "year_range": "2011",
+    "years_with_10plus_events": 1,
+    "total_events_in_range": "12", 
+    "boost":0
+  },
+  {
+    "colla_name": "Laietans de Gramenet",
+    "min_year": 2014,
+    "max_year": 2023,
+    "year_range": "2014 - 2023",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "92", 
+    "boost":0
+  },
+  {
+    "colla_name": "Llunàtics UPC Vilanova",
+    "min_year": 2014,
+    "max_year": 2015,
+    "year_range": "2014 - 2015",
+    "years_with_10plus_events": 2,
+    "total_events_in_range": "23", 
+    "boost":0
+  },
+  {
+    "colla_name": "Los Xics Caleros",
+    "min_year": 2013,
+    "max_year": 2016,
+    "year_range": "2013 - 2016",
+    "years_with_10plus_events": 4,
+    "total_events_in_range": "78", 
+    "boost":0
+  },
+  {
+    "colla_name": "Manyacs de Parets",
+    "min_year": 2016,
+    "max_year": 2023,
+    "year_range": "2016 - 2023",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "99", 
+    "boost":1 
+  },
+  {
+    "colla_name": "Margeners de Guissona",
+    "min_year": 2007,
+    "max_year": 2025,
+    "year_range": "2007 - 2025",
+    "years_with_10plus_events": 17,
+    "total_events_in_range": "372", 
+    "boost":1
+  },
+  {
+    "colla_name": "Marrecs de Salt",
+    "min_year": 1996,
+    "max_year": 2025,
+    "year_range": "1996 - 2025",
+    "years_with_10plus_events": 28,
+    "total_events_in_range": "734", 
+    "boost":3
+  },
+  {
+    "colla_name": "Matossers de Molins de Rei",
+    "min_year": 2002,
+    "max_year": 2025,
+    "year_range": "2002 - 2025",
+    "years_with_10plus_events": 22,
+    "total_events_in_range": "450", 
+    "boost":1
+  },
+  {
+    "colla_name": "Minyons de l'Arboç",
+    "min_year": 2003,
+    "max_year": 2025,
+    "year_range": "2003 - 2025",
+    "years_with_10plus_events": 21,
+    "total_events_in_range": "414", 
+    "boost":1
+  },
+  {
+    "colla_name": "Minyons de Santa Cristina d'Aro",
+    "min_year": 2014,
+    "max_year": 2025,
+    "year_range": "2014 - 2025",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "162", 
+    "boost":1
+  },
+  {
+    "colla_name": "Minyons de Terrassa",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 30,
+    "total_events_in_range": "1140", 
+    "boost":5
+  },
+  {
+    "colla_name": "Moixiganguers d'Igualada",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 30,
+    "total_events_in_range": "669", 
+    "boost":4
+  },
+  {
+    "colla_name": "Nens del Vendrell",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "800", 
+    "boost":3
+  },
+  {
+    "colla_name": "Nois de la Torre",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 25,
+    "total_events_in_range": "544", 
+    "boost":2
+  },
+  {
+    "colla_name": "Pallagos del Conflent",
+    "min_year": 2018,
+    "max_year": 2025,
+    "year_range": "2018 - 2025",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "110", 
+    "boost":1
+  },
+  {
+    "colla_name": "Pataquers de la URV",
+    "min_year": 2013,
+    "max_year": 2022,
+    "year_range": "2013 - 2022",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "59", 
+    "boost":0
+  },
+  {
+    "colla_name": "Sagals d'Osona",
+    "min_year": 1998,
+    "max_year": 2025,
+    "year_range": "1998 - 2025",
+    "years_with_10plus_events": 26,
+    "total_events_in_range": "626", 
+    "boost":2
+  },
+  {
+    "colla_name": "Salats de Súria",
+    "min_year": 2009,
+    "max_year": 2019,
+    "year_range": "2009 - 2019",
+    "years_with_10plus_events": 11,
+    "total_events_in_range": "208", 
+    "boost":0
+  },
+  {
+    "colla_name": "Tirallongues de Manresa",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "776", 
+    "boost":1
+  },
+  {
+    "colla_name": "Torraires de Montblanc",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 24,
+    "total_events_in_range": "465", 
+    "boost":1
+  },
+  {
+    "colla_name": "Vailets de Gelida",
+    "min_year": 2016,
+    "max_year": 2025,
+    "year_range": "2016 - 2025",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "140", 
+    "boost":1
+  },
+  {
+    "colla_name": "Vailets de Gelida (1986-1999)",
+    "min_year": 1995,
+    "max_year": 1998,
+    "year_range": "1995 - 1998",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "44", 
+    "boost":0
+  },
+  {
+    "colla_name": "Vailets de l'Empordà",
+    "min_year": 2013,
+    "max_year": 2018,
+    "year_range": "2013 - 2018",
+    "years_with_10plus_events": 6,
+    "total_events_in_range": "187", 
+    "boost":0
+  },
+  {
+    "colla_name": "Vailets de Ripollet (1996-2006)",
+    "min_year": 1997,
+    "max_year": 2006,
+    "year_range": "1997 - 2006",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "195", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xerrics d'Olot",
+    "min_year": 2002,
+    "max_year": 2025,
+    "year_range": "2002 - 2025",
+    "years_with_10plus_events": 22,
+    "total_events_in_range": "408", 
+    "boost":1
+  },
+  {
+    "colla_name": "Xicots de Vilafranca",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "891", 
+    "boost":2
+  },
+  {
+    "colla_name": "Xics de Granollers",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "771", 
+    "boost":2
+  },
+  {
+    "colla_name": "Xiqüelos i Xiqüeles del Delta",
+    "min_year": 2014,
+    "max_year": 2024,
+    "year_range": "2014 - 2024",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "82", 
+    "boost":1
+  },
+  {
+    "colla_name": "Xiquets d'Alcover",
+    "min_year": 2013,
+    "max_year": 2017,
+    "year_range": "2013 - 2017",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "80", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xiquets de Cambrils",
+    "min_year": 2014,
+    "max_year": 2025,
+    "year_range": "2014 - 2025",
+    "years_with_10plus_events": 10,
+    "total_events_in_range": "205", 
+    "boost":1
+  },
+  {
+    "colla_name": "Xiquets de Cambrils (1994-2001)",
+    "min_year": 1995,
+    "max_year": 1999,
+    "year_range": "1995 - 1999",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "92", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xiquets de la Vila d´Alcover (1984-2007)",
+    "min_year": 1995,
+    "max_year": 1999,
+    "year_range": "1995 - 1999",
+    "years_with_10plus_events": 5,
+    "total_events_in_range": "114", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xiquets de Reus",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "934", 
+    "boost":3
+  },
+  {
+    "colla_name": "Xiquets de Tarragona",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "960", 
+    "boost":3
+  },
+  {
+    "colla_name": "Xiquets de Torredembarra",
+    "min_year": 2023,
+    "max_year": 2023,
+    "year_range": "2023",
+    "years_with_10plus_events": 1,
+    "total_events_in_range": "20", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xiquets de Vila-seca",
+    "min_year": 2014,
+    "max_year": 2024,
+    "year_range": "2014 - 2024",
+    "years_with_10plus_events": 9,
+    "total_events_in_range": "178", 
+    "boost":1
+  },
+  {
+    "colla_name": "Xiquets de Vila-Seca (1991-1999)",
+    "min_year": 1995,
+    "max_year": 1997,
+    "year_range": "1995 - 1997",
+    "years_with_10plus_events": 3,
+    "total_events_in_range": "58", 
+    "boost":0
+  },
+  {
+    "colla_name": "Xiquets del Serrallo",
+    "min_year": 1995,
+    "max_year": 2025,
+    "year_range": "1995 - 2025",
+    "years_with_10plus_events": 29,
+    "total_events_in_range": "827", 
+    "boost":2
+  },
+  {
+    "colla_name": "Xoriguers de la UdG",
+    "min_year": 2013,
+    "max_year": 2024,
+    "year_range": "2013 - 2024",
+    "years_with_10plus_events": 4,
+    "total_events_in_range": "58", 
+    "boost":0
+  }
+]

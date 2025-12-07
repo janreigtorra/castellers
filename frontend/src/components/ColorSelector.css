@@ -1,0 +1,63 @@
+.color-selector {
+  background: white;
+  padding: 0.75rem 2rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.color-selector-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.color-selector-label {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #000;
+}
+
+.color-selector-options {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.color-chip {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #e0e0e0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  padding: 0;
+}
+
+.color-chip:hover {
+  border-color: #000;
+}
+
+.color-chip.selected {
+  border-color: #000;
+  border-width: 3px;
+}
+
+.color-chip[style*="background-color: #ffffff"] {
+  border-color: #000;
+}
+
+.color-chip[style*="background-color: #ffffff"].selected {
+  border-width: 3px;
+}
+
+@media (max-width: 768px) {
+  .color-selector {
+    padding: 1rem;
+  }
+
+  .color-chip {
+    width: 35px;
+    height: 35px;
+  }
+}

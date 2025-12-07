@@ -3,12 +3,14 @@ from bs4 import BeautifulSoup
 import json
 from datetime import datetime
 import re
+import os
 
 BASE_URL = "https://castellscat.cat/ca/base-de-dades"
 
 # Configuration
 MAX_PAGES = 1000  # Set to 10 for testing, 1000+ for production
 OUTPUT_FORMAT = "json"  # "json" or "txt"
+OUTPUT_FILE = "../backend/data_basic/actuacions.json"  # Path to output file
 
 session = requests.Session()
 session.headers.update({
@@ -87,6 +89,65 @@ def parse_castell_result(result_text):
         "raw_text": result_text
     }
 
+def clean_event_name(event_name):
+    """
+    Clean event name by detecting concatenated text.
+    If we find a lowercase letter immediately followed by an uppercase letter,
+    we keep only the part starting from the uppercase letter.
+    
+    Example:
+        'Sant Fèlix a Vilafranca del PenedèsDiada de Sant Fèlix...'
+        -> 'Diada de Sant Fèlix...'
+    """
+    if not event_name:
+        return event_name
+    
+    # Find the pattern: lowercase letter followed by uppercase letter
+    # We want to extract everything from the uppercase letter onwards
+    match = re.search(r'[a-z]([A-Z].*)', event_name)
+    if match:
+        # Return the part starting from the uppercase letter
+        return match.group(1)
+    
+    # No pattern found, return original
+    return event_name
+
+def event_key(event):
+    """Create a unique key for an event to check for duplicates"""
+    # Use date, event_name, city, and time to identify unique events
+    return (
+        event.get("date", ""),
+        event.get("event_name", ""),
+        event.get("city", ""),
+        event.get("time", "")
+    )
+
+def load_existing_events(file_path):
+    """Load existing events from file if it exists"""
+    if os.path.exists(file_path):
+        print(f"Loading existing events from {file_path}...")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+            
+            existing_events = existing_data.get("events", [])
+            existing_metadata = existing_data.get("metadata", {})
+            
+            print(f"Found {len(existing_events)} existing events")
+            return existing_events, existing_metadata
+        except Exception as e:
+            print(f"Error loading existing file: {e}")
+            print("Starting fresh...")
+            return [], {}
+    else:
+        print(f"File {file_path} does not exist. Starting fresh...")
+        return [], {}
+
+# Load existing events if file exists
+existing_events, existing_metadata = load_existing_events(OUTPUT_FILE)
+existing_event_keys = {event_key(event) for event in existing_events}
+print(f"Loaded {len(existing_events)} existing events. Will skip duplicates.")
+
 # Step 1: Get the page to retrieve CSRF token
 resp = session.get(BASE_URL)
 resp.raise_for_status()
@@ -98,8 +159,8 @@ print("Got CSRF token:", token)
 # Step 2: Build POST data
 payload = {
     "_token": token,
-    "date_start": "01/01/1930", #1930
-    "date_end": "01/10/2025",
+    "date_start": "02/10/2025",  # New date range: 02/10/2025
+    "date_end": datetime.now().strftime("%d/%m/%Y"), # New date range: TODAY
     "diada": "",
     "colla[]": "",        
     "castell": "",
@@ -146,7 +207,9 @@ while True:
         if event_info:
             # Extract event name and date
             event_header = event_info.find("div", class_="element-header")
-            event_name = event_header.get_text(strip=True) if event_header else "Unknown Event"
+            event_name_raw = event_header.get_text(strip=True) if event_header else "Unknown Event"
+            # Clean the event name to fix concatenated text issues
+            event_name = clean_event_name(event_name_raw)
             
             # Extract date and location info
             table_cell = event_info.find("div", class_="table1")
@@ -188,7 +251,7 @@ while True:
             
             # Store the event data in structured format
             event_data = {
-                "event_id": f"event_{total_events + 1}",
+                "event_id": f"event_{len(existing_events) + len(all_results) + 1}",
                 "event_name": event_name,
                 "date": parsed_location["date"],
                 "time": parsed_location["time"],
@@ -200,7 +263,16 @@ while True:
                 "total_castells": sum(len(colla["castells"]) for colla in colles_data),
                 "scraped_at": datetime.now().isoformat()
             }
+            
+            # Check if this event already exists
+            event_key_val = event_key(event_data)
+            if event_key_val in existing_event_keys:
+                print(f"  Skipping duplicate event: {event_name} on {parsed_location['date']} in {parsed_location['city']}")
+                continue
+            
+            # Add to results and track the key
             all_results.append(event_data)
+            existing_event_keys.add(event_key_val)
             total_events += 1
     
     # Check if there's a next page
@@ -216,14 +288,23 @@ while True:
         print(f"Reached maximum page limit ({MAX_PAGES}), stopping")
         break
 
-print(f"Total events found across all pages: {total_events}")
+print(f"New events found in this scrape: {total_events}")
+print(f"Existing events: {len(existing_events)}")
 
-# Create comprehensive dataset structure
+# Merge existing and new events
+all_events = existing_events + all_results
+total_events_merged = len(all_events)
+
+print(f"Total events after merge: {total_events_merged}")
+
+# Create comprehensive dataset structure with merged data
 dataset = {
     "metadata": {
         "scraped_at": datetime.now().isoformat(),
-        "total_events": total_events,
+        "total_events": total_events_merged,
         "total_pages_scraped": page - 1,
+        "previous_scrape": existing_metadata.get("scraped_at"),
+        "events_added_this_run": total_events,
         "search_parameters": {
             "date_start": payload.get("date_start"),
             "date_end": payload.get("date_end"),
@@ -236,22 +317,25 @@ dataset = {
             "colles_type": payload.get("colles_type")
         },
         "statistics": {
-            "events_with_results": len([e for e in all_results if e["total_castells"] > 0]),
-            "events_without_results": len([e for e in all_results if e["total_castells"] == 0]),
-            "total_colles": sum(e["total_colles"] for e in all_results),
-            "total_castells": sum(e["total_castells"] for e in all_results),
-            "unique_cities": len(set(e["city"] for e in all_results if e["city"])),
-            "unique_colles": len(set(colla["colla_name"] for e in all_results for colla in e["colles"]))
+            "events_with_results": len([e for e in all_events if e["total_castells"] > 0]),
+            "events_without_results": len([e for e in all_events if e["total_castells"] == 0]),
+            "total_colles": sum(e["total_colles"] for e in all_events),
+            "total_castells": sum(e["total_castells"] for e in all_events),
+            "unique_cities": len(set(e["city"] for e in all_events if e["city"])),
+            "unique_colles": len(set(colla["colla_name"] for e in all_events for colla in e["colles"]))
         }
     },
-    "events": all_results
+    "events": all_events
 }
 
 # Output based on format
 if OUTPUT_FORMAT == "json":
-    with open("../data_basic/castellers_data.json", "w", encoding="utf-8") as f:
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False, indent=2)
-    print("Saved structured data to castellers_data.json")
+    print(f"Saved structured data to {OUTPUT_FILE}")
     
     # Also save a summary
     summary = {
