@@ -1,4 +1,5 @@
 from random import choice, shuffle, randint
+from typing import List, Optional
 from passafaixa.schemas import QuestionMCQ4Options
 from passafaixa.questions_utils import get_random_year, get_random_colla
 from passafaixa.db_pool import get_db_connection
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-
+## TODO: make sure that la'actuació te almenys 3 castells 
 def get_actuacio_question_data(colla: str, year: str) -> tuple:
     """
     Get actuació data for a specific colla and year.
@@ -89,125 +90,114 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
             # Store all castells for later filtering
             events_data[event_id]['castells'].append((castell_name, status))
         
-            # Get top 4 events by total points
-            top_events = sorted(events_data.items(), key=lambda x: x[1]['total_punts'], reverse=True)[:4]
-            
-            if not top_events:
-                cur.close()
-                return (("", "", "", ""), ["", "", ""])
+        # Get top 4 events by total points (OUTSIDE the for loop now)
+        top_events = sorted(events_data.items(), key=lambda x: x[1]['total_punts'], reverse=True)[:4]
         
-            # Choose one of the top 4 diades at random
-            selected_event_id, selected_event_data = choice(top_events)
-            event_id = selected_event_id
-            event_name = selected_event_data['event_name']
-            event_date = selected_event_data['event_date']
-            colla_name = selected_event_data['colla_name']
-            event_city = selected_event_data['event_city']
-            all_castells = selected_event_data['castells']
-            
-            # Filter castells according to rules:
-            # - Do not include ones that start with 'Pd4%' or 'Pde4%'
-            # - If there are more than 6, do not include ones that start with 'Pd5%' or 'Pde5%'
-            filtered_castells = []
-            for castell_name, status in all_castells:
-                if not castell_name:
-                    continue
-                castell_upper = castell_name.upper()
-                # Skip Pd4 or Pde4
-                if castell_upper.startswith('PD4') or castell_upper.startswith('PDE4'):
-                    continue
-                # If more than 6 castells, also skip Pd5 or Pde5
-                if len(all_castells) > 6:
-                    if castell_upper.startswith('PD5') or castell_upper.startswith('PDE5'):
-                        continue
-                filtered_castells.append((castell_name, status))
-            
-            # Deduplicate castells: if same castell appears multiple times, keep only the best status
-            # Priority: Descarregat > Carregat > others
-            castell_dict = {}
-            status_priority = {"Descarregat": 1, "Carregat": 2}
-            
-            for castell_name, status in filtered_castells:
-                if castell_name not in castell_dict:
-                    castell_dict[castell_name] = status
-                else:
-                    # Keep the status with higher priority (lower number)
-                    current_priority = status_priority.get(castell_dict[castell_name], 99)
-                    new_priority = status_priority.get(status, 99)
-                    if new_priority < current_priority:
-                        castell_dict[castell_name] = status
-            
-            # Format castells list for question
-            castells_list = ", ".join([f"{name} ({status})" for name, status in castell_dict.items()])
-            
-            # If no castells after filtering, return error
-            if not castells_list or len(castell_dict) == 0:
-                cur.close()
-                return (("", "", "", ""), ["", "", ""])
-            
-            # Format correct answer: "Colla, Diada (Year)"
-            if event_city and event_city not in event_name:
-                formatted_diada = f"{event_name}, {event_city}"
-            else:
-                formatted_diada = event_name or "Diada castellera"
-            
-            correct_answer = f"{colla_name}, {formatted_diada} ({year})"
-            
-            # Get wrong options: different diades and different years
-            wrong_options = []
-            
-            # 1. Same colla, different diades (from the other top diades)
-            other_events = [(eid, edata) for eid, edata in top_events if eid != event_id]
-            for other_event_id, other_event_data in other_events:
-                if len(wrong_options) >= 3:
-                    break
-                diada_name = other_event_data['event_name']
-                diada_city = other_event_data['event_city']
-                if diada_city and diada_city not in diada_name:
-                    formatted = f"{diada_name}, {diada_city}"
-                else:
-                    formatted = diada_name or "Diada castellera"
-                wrong_options.append(f"{colla_name}, {formatted} ({year})")
-            
-            # 2. Same diada, different year (randomly sample years ±5 from correct year)
-            if len(wrong_options) < 3:
-                year_int = int(year)
-                used_years = {year_int}
-                
-                # Generate up to 2 different years within ±5 of the correct year
-                attempts = 0
-                while len(wrong_options) < 3 and attempts < 20:
-                    offset = randint(-5, 5)
-                    other_year_int = year_int + offset
-                    # Make sure it's different and reasonable (between 1960 and 2025)
-                    if other_year_int != year_int and 1960 <= other_year_int <= 2025 and other_year_int not in used_years:
-                        other_year = str(other_year_int)
-                        used_years.add(other_year_int)
-                        if event_city and event_city not in event_name:
-                            formatted = f"{event_name}, {event_city}"
-                        else:
-                            formatted = event_name or "Diada castellera"
-                        wrong_options.append(f"{colla_name}, {formatted} ({other_year})")
-                    attempts += 1
-            
-            # Fill remaining slots with fallbacks if needed
-            while len(wrong_options) < 3:
-                fallbacks = [
-                    f"{colla_name}, Sant Fèlix, Vilafranca ({year})",
-                    f"{colla_name}, Santa Tecla, Tarragona ({year})",
-                    f"{colla_name}, {formatted_diada} ({int(year) - 1})"
-                ]
-                for fallback in fallbacks:
-                    if fallback not in wrong_options and fallback != correct_answer:
-                        wrong_options.append(fallback)
-                        if len(wrong_options) >= 3:
-                            break
-                if len(wrong_options) >= 3:
-                    break
-            
+        if not top_events:
             cur.close()
+            return (("", "", "", ""), ["", "", ""])
+    
+        # Choose one of the top 4 diades at random
+        selected_event_id, selected_event_data = choice(top_events)
+        event_id = selected_event_id
+        event_name = selected_event_data['event_name']
+        event_date = selected_event_data['event_date']
+        colla_name = selected_event_data['colla_name']
+        event_city = selected_event_data['event_city']
+        all_castells = selected_event_data['castells']
+        
+        # Filter castells according to rules:
+        # - Do not include ones that start with 'Pd4%' or 'Pde4%'
+        # - If there are more than 6, do not include ones that start with 'Pd5%' or 'Pde5%'
+        filtered_castells = []
+        for castell_name, status in all_castells:
+            if not castell_name:
+                continue
+            castell_upper = castell_name.upper()
+            # Skip Pd4 or Pde4
+            if castell_upper.startswith('PD4') or castell_upper.startswith('PDE4'):
+                continue
+            # If more than 6 castells, also skip Pd5 or Pde5
+            if len(all_castells) > 6:
+                if castell_upper.startswith('PD5') or castell_upper.startswith('PDE5'):
+                    continue
+            filtered_castells.append((castell_name, status))
+        
+        # Deduplicate castells: if same castell appears multiple times, keep only the best status
+        # Priority: Descarregat > Carregat > others
+        castell_dict = {}
+        status_priority = {"Descarregat": 1, "Carregat": 2}
+        
+        for castell_name, status in filtered_castells:
+            if castell_name not in castell_dict:
+                castell_dict[castell_name] = status
+            else:
+                # Keep the status with higher priority (lower number)
+                current_priority = status_priority.get(castell_dict[castell_name], 99)
+                new_priority = status_priority.get(status, 99)
+                if new_priority < current_priority:
+                    castell_dict[castell_name] = status
+        
+        # Format castells list for question
+        castells_list = ", ".join([f"{name} ({status})" for name, status in castell_dict.items()])
+        
+        # If no castells after filtering, return error
+        if not castells_list or len(castell_dict) == 0:
+            cur.close()
+            return (("", "", "", ""), ["", "", ""])
+        
+        # Format correct answer: "Colla, Diada (Year)"
+        if event_city and event_city not in event_name:
+            formatted_diada = f"{event_name}, {event_city}"
+        else:
+            formatted_diada = event_name or "Diada castellera"
+        
+        correct_answer = f"{colla_name}, {formatted_diada} ({year})"
+        
+        # Get wrong options: different diades and different years
+        wrong_options = []
+        
+        # 1. Same colla, different diades (from the other top diades)
+        other_events = [(eid, edata) for eid, edata in top_events if eid != event_id]
+        for other_event_id, other_event_data in other_events:
+            if len(wrong_options) >= 3:
+                break
+            diada_name = other_event_data['event_name']
+            diada_city = other_event_data['event_city']
+            if diada_city and diada_city not in diada_name:
+                formatted = f"{diada_name}, {diada_city}"
+            else:
+                formatted = diada_name or "Diada castellera"
+            wrong_options.append(f"{colla_name}, {formatted} ({year})")
+        
+        # 2. Same diada, different year (randomly sample years ±5 from correct year)
+        if len(wrong_options) < 3:
+            year_int = int(year)
+            used_years = {year_int}
             
-            return ((colla_name, formatted_diada, year, castells_list), wrong_options[:3])
+            # Generate up to 2 different years within ±5 of the correct year
+            attempts = 0
+            while len(wrong_options) < 3 and attempts < 20:
+                offset = randint(-5, 5)
+                other_year_int = year_int + offset
+                # Make sure it's different and reasonable (between 1960 and 2025)
+                if other_year_int != year_int and 1960 <= other_year_int <= 2025 and other_year_int not in used_years:
+                    other_year = str(other_year_int)
+                    used_years.add(other_year_int)
+                    if event_city and event_city not in event_name:
+                        formatted = f"{event_name}, {event_city}"
+                    else:
+                        formatted = event_name or "Diada castellera"
+                    wrong_options.append(f"{colla_name}, {formatted} ({other_year})")
+                attempts += 1
+        
+        # Fill remaining slots with error fallbacks if needed
+        while len(wrong_options) < 3:
+            wrong_options.append("Error al obtenir les opcions")
+        
+        cur.close()
+        
+        return ((colla_name, formatted_diada, year, castells_list), wrong_options[:3])
         
     except Exception as e:
         import traceback
@@ -216,17 +206,25 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         return (("", "", "", ""), ["", "", ""])
 
 
-def generate_actuacio_colla_diada_question() -> QuestionMCQ4Options:
+def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, selected_years: List[int] = None) -> QuestionMCQ4Options:
     """
     Generate a question asking which colla, diada, and year had a specific actuació castellera.
+    If only one colla is selected, the question asks only about the diada.
+    
+    Args:
+        selected_colles: Optional list of colla names to pick from.
+        selected_years: Optional list of years to pick from.
     """
     if not DATABASE_URL:
         return QuestionMCQ4Options(
-            question="Quina colla castellers i en quina diada es va fer la seguent actuació: Error?",
+            question="Quina colla castellera i en quina diada es va fer la seguent actuació: Error?",
             answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
             correct_answer="Error al obtenir les opcions",
             is_error=True
         )
+    
+    # Determine if we're asking only for diada (single colla selected)
+    single_colla_mode = selected_colles and len(selected_colles) == 1
     
     # Try up to 5 times to get a valid colla/year combination with events
     max_attempts = 5
@@ -235,11 +233,12 @@ def generate_actuacio_colla_diada_question() -> QuestionMCQ4Options:
     
     for attempt in range(max_attempts):
         try:
-            # Get a random year first
-            year = get_random_year()
+            # Get a random year - use selected_years if provided (equal probability)
+            year = get_random_year(selected_years=selected_years)
             
             # Get a random colla that was active in that year
-            colla = get_random_colla(year)
+            # Use selected_colles if provided (equal probability), otherwise use weighted random
+            colla = get_random_colla(year, selected_colles=selected_colles)
             
             correct_answer_tuple, wrong_options = get_actuacio_question_data(colla, year)
             
@@ -288,8 +287,11 @@ def generate_actuacio_colla_diada_question() -> QuestionMCQ4Options:
         all_options = [correct_answer] + wrong_options[:3]
         shuffle(all_options)
         
-        # Create question
-        question = f"Quina colla castellers i en quina diada es va fer la seguent actuació: {castells_list}?"
+        # Create question - if single colla mode, only ask about diada
+        if single_colla_mode:
+            question = f"En quina diada va fer la colla {colla_name} la següent actuació: {castells_list}?"
+        else:
+            question = f"Quina colla castellera i en quina diada es va fer la seguent actuació: {castells_list}?"
         
         return QuestionMCQ4Options(
             question=question,
