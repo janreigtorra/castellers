@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-## TODO: make sure that la'actuació te almenys 3 castells 
 def get_actuacio_question_data(colla: str, year: str) -> tuple:
     """
     Get actuació data for a specific colla and year.
@@ -54,9 +53,9 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
             
             cur.execute(query, (colla, year))
             rows = cur.fetchall()
+            cur.close()
             
             if not rows or len(rows) == 0:
-                cur.close()
                 return (("", "", "", ""), ["", "", ""])
         
         # Group by event and calculate total points (top 4 castells per event)
@@ -94,7 +93,6 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         top_events = sorted(events_data.items(), key=lambda x: x[1]['total_punts'], reverse=True)[:4]
         
         if not top_events:
-            cur.close()
             return (("", "", "", ""), ["", "", ""])
     
         # Choose one of the top 4 diades at random
@@ -143,7 +141,6 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         
         # If no castells after filtering, return error
         if not castells_list or len(castell_dict) == 0:
-            cur.close()
             return (("", "", "", ""), ["", "", ""])
         
         # Format correct answer: "Colla, Diada (Year)"
@@ -162,7 +159,7 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         for other_event_id, other_event_data in other_events:
             if len(wrong_options) >= 3:
                 break
-            diada_name = other_event_data['event_name']
+            diada_name = other_event_data['event_name'] or "Diada castellera"
             diada_city = other_event_data['event_city']
             if diada_city and diada_city not in diada_name:
                 formatted = f"{diada_name}, {diada_city}"
@@ -193,9 +190,7 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         
         # Fill remaining slots with error fallbacks if needed
         while len(wrong_options) < 3:
-            wrong_options.append("Error al obtenir les opcions")
-        
-        cur.close()
+            wrong_options.append("Error al generar la resposta")
         
         return ((colla_name, formatted_diada, year, castells_list), wrong_options[:3])
         
@@ -203,6 +198,7 @@ def get_actuacio_question_data(colla: str, year: str) -> tuple:
         import traceback
         print(f"Error getting actuacio question data: {e}")
         traceback.print_exc()
+        cur.close()
         return (("", "", "", ""), ["", "", ""])
 
 
@@ -218,8 +214,8 @@ def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, se
     if not DATABASE_URL:
         return QuestionMCQ4Options(
             question="Quina colla castellera i en quina diada es va fer la seguent actuació: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -253,8 +249,8 @@ def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, se
                 traceback.print_exc()
                 return QuestionMCQ4Options(
                     question="Quina colla castellers i en quina diada es va fer la seguent actuació: Error?",
-                    answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                    correct_answer="Error al obtenir les opcions",
+                    answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                    correct_answer="Error al generar la resposta",
                     is_error=True
                 )
             continue
@@ -263,8 +259,8 @@ def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, se
     if not correct_answer_tuple or not correct_answer_tuple[3] or len(correct_answer_tuple[3]) == 0:
         return QuestionMCQ4Options(
             question="Quina colla castellers i en quina diada es va fer la seguent actuació: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -281,7 +277,7 @@ def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, se
         if not wrong_options:
             wrong_options = []
         while len(wrong_options) < 3:
-            wrong_options.append("Error al obtenir les opcions")
+            wrong_options.append("Error al generar la resposta")
         
         # Shuffle all options
         all_options = [correct_answer] + wrong_options[:3]
@@ -305,7 +301,7 @@ def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, se
         traceback.print_exc()
         return QuestionMCQ4Options(
             question="Quina colla castellers i en quina diada es va fer la seguent actuació: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
