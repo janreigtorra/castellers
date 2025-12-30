@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { calculateOrderingScore } from '../../utils/scoring';
 
 const OrderingQuestion = ({ 
   question, 
   selectedAnswer, 
-  onSubmit,
-  onNext,
-  isLastQuestion = false
+  onSubmit
 }) => {
   const [orderedOptions, setOrderedOptions] = useState([]);
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -67,11 +64,6 @@ const OrderingQuestion = ({
     onSubmit(orderedOptions);
   };
 
-  let scoreInfo = null;
-  if (showResult) {
-    scoreInfo = calculateOrderingScore(selectedAnswer, correctOrder);
-  }
-
   return (
     <>
       <div className="passafaixa-ordering-container">
@@ -118,63 +110,15 @@ const OrderingQuestion = ({
 
       {!showResult && (
         <button
-          className="passafaixa-submit-btn"
+          className="passafaixa-submit-btn passafaixa-submit-btn-active"
           onClick={handleSubmit}
           disabled={orderedOptions.length === 0}
         >
           Confirmar Resposta
         </button>
       )}
-
-      {showResult && (
-        <div className="passafaixa-feedback">
-          {(() => {
-            const percentage = Math.round(scoreInfo.points * 100);
-            
-            if (scoreInfo.isPerfect) {
-              return <p className="passafaixa-feedback-correct">Correcte! 🎉</p>;
-            } else if (scoreInfo.points > 0) {
-              return (
-                <div>
-                  <p className="passafaixa-feedback-partial">
-                    Gairebé! Has obtingut {percentage}% dels punts ({scoreInfo.correctPositions} de {scoreInfo.totalOptions} posicions correctes).
-                  </p>
-                  <p className="passafaixa-feedback-info">
-                    L'ordre correcte és:
-                  </p>
-                  <ol className="passafaixa-correct-answers-list">
-                    {correctOrder.map((ans, idx) => (
-                      <li key={idx}><strong>{ans}</strong></li>
-                    ))}
-                  </ol>
-                </div>
-              );
-            } else {
-              return (
-                <div>
-                  <p className="passafaixa-feedback-incorrect">
-                    Incorrecte. L'ordre correcte és:
-                  </p>
-                  <ol className="passafaixa-correct-answers-list">
-                    {correctOrder.map((ans, idx) => (
-                      <li key={idx}><strong>{ans}</strong></li>
-                    ))}
-                  </ol>
-                </div>
-              );
-            }
-          })()}
-          <button 
-            className="passafaixa-next-btn"
-            onClick={onNext}
-          >
-            {isLastQuestion ? 'Veure Resultats' : 'Següent'}
-          </button>
-        </div>
-      )}
     </>
   );
 };
 
 export default OrderingQuestion;
-

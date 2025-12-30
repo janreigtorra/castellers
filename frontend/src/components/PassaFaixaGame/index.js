@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { apiService } from '../../apiService';
 import { getCurrentTheme } from '../../colorTheme';
 import { isSliderQuestion, isMultipleOptionsQuestion, isOrderingQuestion } from './utils/questionTypes';
@@ -11,9 +11,7 @@ import OrderingQuestion from './components/questions/OrderingQuestion';
 import SliderQuestion from './components/questions/SliderQuestion';
 import './PassaFaixaGame.css';
 
-const NUM_QUESTIONS = 10;
-
-const PassaFaixaGame = ({ theme, onBack }) => {
+const PassaFaixaGame = ({ theme, onBack, onColorChange, selectedColor }) => {
   const [gameState, setGameState] = useState('menu'); // 'menu', 'playing', 'results'
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -22,11 +20,27 @@ const PassaFaixaGame = ({ theme, onBack }) => {
   const [score, setScore] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [answeredQuestions, setAnsweredQuestions] = useState([]);
+  
+  // Game settings
+  const [gameSettings, setGameSettings] = useState({
+    numQuestions: 10,
+    colles: [],  // Empty array means all colles
+    years: []    // Empty array means all years
+  });
+
+  const handleSettingsChange = useCallback((newSettings) => {
+    setGameSettings(newSettings);
+  }, []);
 
   const startGame = async () => {
     setIsLoading(true);
     try {
-      const response = await apiService.getGameQuestions(NUM_QUESTIONS);
+      // Pass selected colles and years to filter questions
+      const response = await apiService.getGameQuestions(
+        gameSettings.numQuestions,
+        gameSettings.colles,
+        gameSettings.years
+      );
       setQuestions(response.questions);
       setGameState('playing');
       setCurrentQuestionIndex(0);
@@ -186,27 +200,167 @@ const PassaFaixaGame = ({ theme, onBack }) => {
 
   if (gameState === 'menu') {
     return (
-      <div className="passafaixa-container passafaixa-menu-state" style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent }}>
+      <div className="passafaixa-container passafaixa-menu-state" style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent, '--theme-highlight': currentTheme.highlight }}>
         <Menu 
           onStartGame={startGame}
           isLoading={isLoading}
           onBack={onBack}
           theme={currentTheme}
+          gameSettings={gameSettings}
+          onSettingsChange={handleSettingsChange}
+          onColorChange={onColorChange}
+          selectedColor={selectedColor}
         />
       </div>
     );
   }
 
+  // Determine result info for feedback
+  const getResultInfo = () => {
+    if (selectedAnswer === null) return null;
+    
+    if (isOrdering) {
+      const scoreInfo = calculateOrderingScore(selectedAnswer, currentQuestion.correct_answer_order || []);
+      const correctOrder = currentQuestion.correct_answer_order || [];
+      if (scoreInfo.isPerfect) {
+        return { type: 'correct', icon: '/xiquet_images/questions/correct.png', message: "Perfecte! L'ordre és correcte! " };
+      }
+      if (scoreInfo.points > 0) {
+        const percentage = Math.round(scoreInfo.points * 100);
+        return { 
+          type: 'partial', 
+          icon: '/xiquet_images/questions/half_point.png', 
+          message: `Gairebé! Has obtingut ${percentage}% dels punts.`,
+          explanation: "L'ordre correcte és:",
+          correctAnswers: correctOrder,
+          isOrdered: true
+        };
+      }
+      return { 
+        type: 'incorrect', 
+        icon: '/xiquet_images/questions/incorrect.png', 
+        message: 'No és correcte...',
+        explanation: "L'ordre correcte és:",
+        correctAnswers: correctOrder,
+        isOrdered: true
+      };
+    } else if (isMultiple) {
+      const correctAnswers = currentQuestion.correct_answer || [];
+      const scoreInfo = calculateMultipleOptionsScore(selectedAnswer, correctAnswers);
+      if (scoreInfo.isPerfect) {
+        return { type: 'correct', icon: '/xiquet_images/questions/correct.png', message: 'Excel·lent! Totes les respostes correctes!' };
+      }
+      if (scoreInfo.points > 0) {
+        const percentage = Math.round(scoreInfo.points * 100);
+        return { 
+          type: 'partial', 
+          icon: '/xiquet_images/questions/half_point.png', 
+          message: `Gairebé! Has obtingut ${percentage}% dels punts.`,
+          explanation: 'Les respostes correctes són:',
+          correctAnswers: correctAnswers
+        };
+      }
+      return { 
+        type: 'incorrect', 
+        icon: '/xiquet_images/questions/incorrect.png', 
+        message: 'No és correcte...',
+        explanation: 'Les respostes correctes són:',
+        correctAnswers: correctAnswers
+      };
+    } else if (isSlider) {
+      const points = calculateSliderScore(selectedAnswer, currentQuestion.correct_answer, currentQuestion.half_point || 5);
+      if (points === 1.0) {
+        return { type: 'correct', icon: '/xiquet_images/questions/correct.png', message: 'Perfecte! Has encertat!' };
+      }
+      if (points > 0) {
+        const percentage = Math.round(points * 100);
+        return { 
+          type: 'partial', 
+          icon: '/xiquet_images/questions/half_point.png', 
+          message: `Gairebé! Has obtingut ${percentage}% dels punts.`,
+          explanation: `La resposta correcta és: ${currentQuestion.correct_answer}`
+        };
+      }
+      return { 
+        type: 'incorrect', 
+        icon: '/xiquet_images/questions/incorrect.png', 
+        message: 'No és correcte...',
+        explanation: `La resposta correcta és: ${currentQuestion.correct_answer}`
+      };
+    } else {
+      // MCQ
+      if (selectedAnswer === currentQuestion.correct_answer) {
+        return { type: 'correct', icon: '/xiquet_images/questions/correct.png', message: 'Molt bé! Has encertat!' };
+      }
+      return { 
+        type: 'incorrect', 
+        icon: '/xiquet_images/questions/incorrect.png', 
+        message: 'No és correcte...',
+        explanation: `La resposta correcta és: ${currentQuestion.correct_answer}`
+      };
+    }
+  };
+
+  const resultInfo = getResultInfo();
+
   if (gameState === 'playing' && currentQuestion) {
     return (
-      <div className="passafaixa-container" style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent }}>
-        <div className="passafaixa-game">
+      <div className={`passafaixa-container passafaixa-playing-state ${selectedAnswer !== null ? 'passafaixa-showing-result' : ''}`} style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent, '--theme-highlight': currentTheme.highlight }}>
+        {/* Left Panel with Xiquet and ALL Feedback */}
+        <div className="passafaixa-left-panel">
+          <div className="passafaixa-xiquet-panel">
+            {/* Show result icon if answered, otherwise show basic xiquet */}
+            <img 
+              src={resultInfo ? resultInfo.icon : currentTheme.image} 
+              alt={resultInfo ? 'Resultat' : 'Xiquet'} 
+              className={`passafaixa-xiquet-panel-icon ${resultInfo ? 'passafaixa-result-icon' : ''}`}
+            />
+            
+            {/* Feedback text - only shown after answering */}
+            {resultInfo && (
+              <div className="passafaixa-panel-feedback">
+                <p className={`passafaixa-panel-message passafaixa-panel-message-${resultInfo.type}`}>
+                  {resultInfo.message}
+                </p>
+                {resultInfo.explanation && (
+                  <p className="passafaixa-panel-explanation">{resultInfo.explanation}</p>
+                )}
+                {resultInfo.correctAnswers && (
+                  resultInfo.isOrdered ? (
+                    <ol className="passafaixa-panel-answers-list">
+                      {resultInfo.correctAnswers.map((ans, idx) => (
+                        <li key={idx}>{ans}</li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <ul className="passafaixa-panel-answers-list">
+                      {resultInfo.correctAnswers.map((ans, idx) => (
+                        <li key={idx}>{ans}</li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Content Area */}
+        <div className="passafaixa-game-content">
           <div className="passafaixa-progress">
             <div className="passafaixa-progress-bar">
               <div 
                 className="passafaixa-progress-fill"
                 style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
-              ></div>
+              >
+                <div className="passafaixa-progress-indicator">
+                  <img 
+                    src="/xiquet_images/xiquet_logo.png" 
+                    alt="Xiquet" 
+                    className="passafaixa-progress-xiquet"
+                  />
+                </div>
+              </div>
             </div>
             <span className="passafaixa-progress-text">
               Pregunta {currentQuestionIndex + 1} de {questions.length}
@@ -214,13 +368,6 @@ const PassaFaixaGame = ({ theme, onBack }) => {
           </div>
 
           <div className="passafaixa-question-container">
-            <div className="passafaixa-question-icon">
-              <img 
-                src={currentTheme.image} 
-                alt="Xiquet" 
-                className="passafaixa-xiquet-icon-small"
-              />
-            </div>
             <div className="passafaixa-question-content">
               <h2 className="passafaixa-question-text">{currentQuestion.question}</h2>
               
@@ -229,8 +376,6 @@ const PassaFaixaGame = ({ theme, onBack }) => {
                   question={currentQuestion}
                   selectedAnswer={selectedAnswer}
                   onSubmit={handleOrderingSubmit}
-                  onNext={handleNextQuestion}
-                  isLastQuestion={currentQuestionIndex === questions.length - 1}
                 />
               ) : isMultiple ? (
                 <MultipleOptionsQuestion
@@ -239,35 +384,29 @@ const PassaFaixaGame = ({ theme, onBack }) => {
                   selectedAnswer={selectedAnswer}
                   onAnswerToggle={handleMultipleAnswerToggle}
                   onSubmit={handleMultipleAnswerSubmit}
-                  onNext={handleNextQuestion}
-                  isLastQuestion={currentQuestionIndex === questions.length - 1}
                 />
               ) : isSlider ? (
                 <SliderQuestion
                   question={currentQuestion}
                   selectedAnswer={selectedAnswer}
                   onSubmit={handleSliderSubmit}
-                  onNext={handleNextQuestion}
-                  isLastQuestion={currentQuestionIndex === questions.length - 1}
                 />
               ) : (
-                <>
-                  <MCQQuestion
-                    question={currentQuestion}
-                    selectedAnswer={selectedAnswer}
-                    onAnswerSelect={handleAnswerSelect}
-                  />
-                  {selectedAnswer !== null && (
-                    <div className="passafaixa-feedback">
-                      <button 
-                        className="passafaixa-next-btn"
-                        onClick={handleNextQuestion}
-                      >
-                        {currentQuestionIndex < questions.length - 1 ? 'Següent' : 'Veure Resultats'}
-                      </button>
-                    </div>
-                  )}
-                </>
+                <MCQQuestion
+                  question={currentQuestion}
+                  selectedAnswer={selectedAnswer}
+                  onAnswerSelect={handleAnswerSelect}
+                />
+              )}
+
+              {/* Next button - shown after answering */}
+              {selectedAnswer !== null && (
+                <button 
+                  className="passafaixa-next-btn"
+                  onClick={handleNextQuestion}
+                >
+                  {currentQuestionIndex === questions.length - 1 ? 'Veure Resultats' : 'Següent'}
+                </button>
               )}
             </div>
           </div>
@@ -278,12 +417,13 @@ const PassaFaixaGame = ({ theme, onBack }) => {
 
   if (gameState === 'results') {
     return (
-      <div className="passafaixa-container" style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent }}>
+      <div className="passafaixa-container passafaixa-results-state" style={{ '--theme-color': currentTheme.secondary, '--theme-accent': currentTheme.accent, '--theme-highlight': currentTheme.highlight }}>
         <Results
           answeredQuestions={answeredQuestions}
           questions={questions}
           onPlayAgain={handlePlayAgain}
           onBack={onBack}
+          theme={currentTheme}
         />
       </div>
     );

@@ -38,8 +38,8 @@ def generate_color_camisa_question() -> QuestionMCQ4Options:
             # Fallback if no valid colles found
             return QuestionMCQ4Options(
                 question="Quin és el color de camisa dels Castellers de Vilafranca?",
-                answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                correct_answer="Error al obtenir les opcions",
+                answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                correct_answer="Error al generar la resposta",
                 is_error=True
             )
         
@@ -92,8 +92,8 @@ def generate_color_camisa_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quin és el color de camisa dels Castellers de Vilafranca?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     except json.JSONDecodeError as e:
@@ -101,8 +101,8 @@ def generate_color_camisa_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quin és el color de camisa dels Castellers de Vilafranca?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     except Exception as e:
@@ -110,8 +110,8 @@ def generate_color_camisa_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quin és el color de camisa dels Castellers de Vilafranca?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
 

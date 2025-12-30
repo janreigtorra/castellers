@@ -1,0 +1,1028 @@
+[
+    {
+      "name": "Al·lots de Llevant",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Verd fosc",
+      "color_code": "darkgreen"
+    },
+    {
+      "name": "Angelets de Vallespir",
+      "any_primera_actuacio": "2001",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Arreplegats de la Zona Universitària",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Verd quiròfan",
+      "color_code": "turquese"
+    },
+    {
+      "name": "Bergants del Campus de Terrassa",
+      "any_primera_actuacio": "2015",
+      "color_camisa": "Verd Llima",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Bordegassos de Vilanova",
+      "any_primera_actuacio": "1972",
+      "color_camisa": "Groc terrós",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Brivalls de Cornudella",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Brivalls de Cornudella (1976-1985)",
+      "any_primera_actuacio": "1976",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Capgrossos de Mataró",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers d'Altafulla",
+      "any_primera_actuacio": "1973",
+      "color_camisa": "Lila",
+      "color_code": "lila"
+    },
+    {
+      "name": "La Global",
+      "any_primera_actuacio": "2009",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers d'Andorra",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers d'Esparreguera",
+      "any_primera_actuacio": "1994",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers d'Esplugues",
+      "any_primera_actuacio": "1994",
+      "color_camisa": "Blau elèctric",
+      "color_code": "blue"
+    },
+    {
+      "name": "Castellers de Badalona",
+      "any_primera_actuacio": "1998",
+      "color_camisa": "Groc",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Pallagos del Conflent",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Granat",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Barcelona",
+      "any_primera_actuacio": "1969",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Castellers de Berga",
+      "any_primera_actuacio": "2012",
+      "color_camisa": "Blau fosc",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers de Caldes de Montbui",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Verd ampolla",
+      "color_code": "darkgreen"
+    },
+    {
+      "name": "Castellers de Castellar del Vallès",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Emboirats de la Universitat de Vic",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Castellers de Castelldefels",
+      "any_primera_actuacio": "1981",
+      "color_camisa": "Groc",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Castellers de Cerdanyola",
+      "any_primera_actuacio": "1998",
+      "color_camisa": "Verd",
+      "color_code": "green"
+    },
+    {
+      "name": "Castellers de Collell (1986)",
+      "any_primera_actuacio": "1986",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de Cornellà",
+      "any_primera_actuacio": "1991",
+      "color_camisa": "Lila",
+      "color_code": "lila"
+    },
+    {
+      "name": "Castellers de Gavà (1994-2004)",
+      "any_primera_actuacio": "1994",
+      "color_camisa": "Blau",
+      "color_code": "blue"
+    },
+    {
+      "name": "Castellers de Granollers (1982)",
+      "any_primera_actuacio": "1982",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de Terrassa",
+      "any_primera_actuacio": "1980",
+      "color_camisa": "Blau turquesa",
+      "color_code": "darkturquesa"
+    },
+    {
+      "name": "Castellers de l´Albera (1996-2002)",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Taronja carbassa",
+      "color_code": "orange"
+    },
+    {
+      "name": "Castellers de l´Hospitalet (1997-2003)",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Marró teula",
+      "color_code": "brown"
+    },
+    {
+      "name": "Castellers de l'Adroc",
+      "any_primera_actuacio": "2017",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de la Roca (1974-1979)",
+      "any_primera_actuacio": "1974",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de la Sagrada Família",
+      "any_primera_actuacio": "2001",
+      "color_camisa": "Verd",
+      "color_code": "green"
+    },
+    {
+      "name": "Castellers de la Selva",
+      "any_primera_actuacio": "2019",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de la Vila de Gràcia",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers de les Gavarres",
+      "any_primera_actuacio": "2016",
+      "color_camisa": "Marró suro",
+      "color_code": "brown"
+    },
+    {
+      "name": "Castellers de les Roquetes",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Gris",
+      "color_code": "gray"
+    },
+    {
+      "name": "Castellers de Lleida",
+      "any_primera_actuacio": "1995",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Mallorca",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Martorell (1997-2002)",
+      "any_primera_actuacio": "1996",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de Mediona",
+      "any_primera_actuacio": "2018",
+      "color_camisa": "Blau texà",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers de Mollet",
+      "any_primera_actuacio": "1992",
+      "color_camisa": "Verd claret",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Castellers de Montcada i Reixac",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Teula",
+      "color_code": "orange"
+    },
+    {
+      "name": "Castellers de Montcada i Reixac (1991-1998)",
+      "any_primera_actuacio": "1991",
+      "color_camisa": "Teula",
+      "color_code": "orange"
+    },
+    {
+      "name": "Castellers de Montmeló (1978-1983)",
+      "any_primera_actuacio": "1978",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers de Ribes (1981-1984)",
+      "any_primera_actuacio": "1981",
+      "color_camisa": "Terra",
+      "color_code": "brown"
+    },
+    {
+      "name": "Castellers de Rubí",
+      "any_primera_actuacio": "1984",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Castellers de Sabadell",
+      "any_primera_actuacio": "1994",
+      "color_camisa": "Verd",
+      "color_code": "darkgreen"
+    },
+    {
+      "name": "Castellers de Sant Adrià",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Sant Andreu de la Barca (1996-2006)",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Negre",
+      "color_code": "gray"
+    },
+    {
+      "name": "Castellers de Sant Boi (1994-2004)",
+      "any_primera_actuacio": "1994",
+      "color_camisa": "Gris fosc",
+      "color_code": "gray"
+    },
+    {
+      "name": "Castellers de Sant Cugat",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Verd",
+      "color_code": "darkgreen"
+    },
+    {
+      "name": "Castellers de Tortosa",
+      "any_primera_actuacio": "2015",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Sant Feliu",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "Magenta",
+      "color_code": "rosat"
+    },
+    {
+      "name": "Castellers de Sant Vicenç dels Horts",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Taronja",
+      "color_code": "orange"
+    },
+    {
+      "name": "Castellers de Santa Coloma",
+      "any_primera_actuacio": "1985",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Castellers de Santpedor",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Daurat",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Castellers de Sants",
+      "any_primera_actuacio": "1993",
+      "color_camisa": "Gris brut",
+      "color_code": "gray"
+    },
+    {
+      "name": "Castellers de Sarrià",
+      "any_primera_actuacio": "2017",
+      "color_camisa": "Carmesí",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Sarrià (2000-2004)",
+      "any_primera_actuacio": "1999",
+      "color_camisa": "Carmesí",
+      "color_code": "granate"
+    },
+    {
+      "name": "Castellers de Sitges (1971-1987)",
+      "any_primera_actuacio": "1971",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers de Solsona",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Groc",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Castellers del Poble Sec",
+      "any_primera_actuacio": "1999",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Castellers de Viladecans",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Verd clar",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Castellers de Vilafranca",
+      "any_primera_actuacio": "1948",
+      "color_camisa": null,
+      "color_code": "turquese"
+    },
+    {
+      "name": "Castellers de Vilanova Colla Mar (1972-1983)",
+      "any_primera_actuacio": "1972",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Castellers del Baix Montseny",
+      "any_primera_actuacio": "2023",
+      "color_camisa": "Blau",
+      "color_code": "blue"
+    },
+    {
+      "name": "Castellers del Casal Virolai de Querétaro (1998)",
+      "any_primera_actuacio": "1998",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers del Foix de Cubelles",
+      "any_primera_actuacio": "2022",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers del Pallars",
+      "any_primera_actuacio": "2019",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Castellers del Prat de Llobregat",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Blau",
+      "color_code": "blue"
+    },
+    {
+      "name": "Castellers del Riberal",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Verd",
+      "color_code": "green"
+    },
+    {
+      "name": "Colla Caneles del Vendrell (1927-1934)",
+      "any_primera_actuacio": "1927",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Castellera de Cerdanya",
+      "any_primera_actuacio": "2019",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Castellera de Figueres",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Lila",
+      "color_code": "lila"
+    },
+    {
+      "name": "Colla Castellera de Gavà",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Blau",
+      "color_code": "blue"
+    },
+    {
+      "name": "Colla Castellera Els Encantats de Begues",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Verd ampolla",
+      "color_code": "darkgreen"
+    },
+    {
+      "name": "Colla Castellera de l'Alt Maresme i la Selva Marítima",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Vermell maduixa",
+      "color_code": "red"
+    },
+    {
+      "name": "Colla Castellera de l'Esquerra de l'Eixample",
+      "any_primera_actuacio": "2019",
+      "color_camisa": "Lila",
+      "color_code": "lila"
+    },
+    {
+      "name": "Colla Castellera de la Gavarresa",
+      "any_primera_actuacio": "2015",
+      "color_camisa": "Morat",
+      "color_code": "granate"
+    },
+    {
+      "name": "Colla Castellera de Madrid",
+      "any_primera_actuacio": "2022",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Colla Castellera de Vacarisses",
+      "any_primera_actuacio": "2021",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Castellera Jove de Barcelona",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Colla Castellera La Bisbal del Penedès",
+      "any_primera_actuacio": "2015",
+      "color_camisa": "Taronja",
+      "color_code": "orange"
+    },
+    {
+      "name": "Colla Castellera La Global de Salou (2009-2012)",
+      "any_primera_actuacio": null,
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Colla Castellera Les Quatre Barres (1998)",
+      "any_primera_actuacio": "1998",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Castellera Nyerros de la Plana",
+      "any_primera_actuacio": "1998",
+      "color_camisa": "Gris",
+      "color_code": "gray"
+    },
+    {
+      "name": "Colla Castellera Sant Pere i Sant Pau",
+      "any_primera_actuacio": "1990",
+      "color_camisa": "Verd",
+      "color_code": "green"
+    },
+    {
+      "name": "Colla Conjunta Xiquets de Tarragona (1960, 1961 i 1969)",
+      "any_primera_actuacio": "1960",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Jove de Cast. de Vilafranca (1984-1985)",
+      "any_primera_actuacio": "1984",
+      "color_camisa": "Gris",
+      "color_code": "gray"
+    },
+    {
+      "name": "Colla Jove de Castellers de Cubelles",
+      "any_primera_actuacio": "1995",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Jove de Castellers de Sitges",
+      "any_primera_actuacio": "1993",
+      "color_camisa": "Vi - burdeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Colla Jove de l'Hospitalet",
+      "any_primera_actuacio": "2000",
+      "color_camisa": "Verd carxofa",
+      "color_code": "green"
+    },
+    {
+      "name": "Colla Jove de Vilanova (1982-1993)",
+      "any_primera_actuacio": "1982",
+      "color_camisa": "Rosat",
+      "color_code": "rosat"
+    },
+    {
+      "name": "Colla Jove del Vendrell (1974)",
+      "any_primera_actuacio": "1974",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Jove Xiquets de Tarragona",
+      "any_primera_actuacio": "1979",
+      "color_camisa": "Morat",
+      "color_code": "malva"
+    },
+    {
+      "name": "Colla Jove Xiquets de Vilafranca",
+      "any_primera_actuacio": "2010",
+      "color_camisa": "Blau Oxford",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Colla Joves Xiquets de Valls",
+      "any_primera_actuacio": "1971",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Colla Nova del Vendrell (1993-2003)",
+      "any_primera_actuacio": "1993",
+      "color_camisa": "Blau turquesa",
+      "color_code": "turquese"
+    },
+    {
+      "name": "Colla Nova dels Xiquets de Tarragona - Sant Magí (1951-1970)",
+      "any_primera_actuacio": "1951",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Nova dels Xiquets de Tarragona (1932-1934)",
+      "any_primera_actuacio": "1932",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Nova dels Xiquets de Valls ( -1936)",
+      "any_primera_actuacio": "1926",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Colla Vella dels Xiquets de Valls",
+      "any_primera_actuacio": "1926",
+      "color_camisa": "Rosa",
+      "color_code": "rosat"
+    },
+    {
+      "name": "CollaVirginia",
+      "any_primera_actuacio": null,
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Cos de Castellers de Ballets de Catalunya (1959-1963)",
+      "any_primera_actuacio": "1959",
+      "color_camisa": "vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Descargolats de l'EEBE",
+      "any_primera_actuacio": "2025",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Engrescats de URL",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Groc",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Esperxats de l'Estany",
+      "any_primera_actuacio": "2012",
+      "color_camisa": "Blau-verd",
+      "color_code": "darkturquesa"
+    },
+    {
+      "name": "Gambirots de la UIB",
+      "any_primera_actuacio": null,
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Gambirots de la UIB",
+      "any_primera_actuacio": null,
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Ganàpies de la UAB",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Blau «hostessa»",
+      "color_code": "blue"
+    },
+    {
+      "name": "Ganxets de Reus (1992-2003)",
+      "any_primera_actuacio": "1992",
+      "color_camisa": "Lila Morat",
+      "color_code": "lila"
+    },
+    {
+      "name": "Grillats del Campus del Baix Llobregat",
+      "any_primera_actuacio": "2015",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Joves del Raiguer (2003-2004)",
+      "any_primera_actuacio": "2003",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Laietans de Gramenet",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Verd",
+      "color_code": "green"
+    },
+    {
+      "name": "Llunàtics UPC Vilanova",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Blau mecànic",
+      "color_code": "blue"
+    },
+    {
+      "name": "Los Xics Caleros",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Ratllada blanc i blava(2012-2018)Blau Cel(2025)",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Manyacs de Parets",
+      "any_primera_actuacio": "2015",
+      "color_camisa": "Morat intens",
+      "color_code": "malva"
+    },
+    {
+      "name": "Margeners de Guissona",
+      "any_primera_actuacio": "2007",
+      "color_camisa": "Marró (terra mullada)",
+      "color_code": "brown"
+    },
+    {
+      "name": "Marracos de la Universitat de Lleida",
+      "any_primera_actuacio": null,
+      "color_camisa": "Gris boira",
+      "color_code": "gray"
+    },
+    {
+      "name": "Marrecs de Salt",
+      "any_primera_actuacio": "1996",
+      "color_camisa": "BlauTer",
+      "color_code": "blue"
+    },
+    {
+      "name": "Marrecs del Catllar (1985)",
+      "any_primera_actuacio": "1985",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Matossers de Molins de Rei",
+      "any_primera_actuacio": "2002",
+      "color_camisa": "Marró argila",
+      "color_code": "brown"
+    },
+    {
+      "name": "Minyons de l'Arboç",
+      "any_primera_actuacio": "1958",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Minyons de Santa Cristina d'Aro",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Verd poma",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Tirallongues de Manresa",
+      "any_primera_actuacio": "1993",
+      "color_camisa": "Blau i blanc (ratllada)",
+      "color_code": "gray"
+    },
+    {
+      "name": "Minyons de Terrassa",
+      "any_primera_actuacio": "1979",
+      "color_camisa": "Malva",
+      "color_code": "malva"
+    },
+    {
+      "name": "Mirons del Vendrell (1935-1936)",
+      "any_primera_actuacio": "1935",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Moixiganguers d'Igualada",
+      "any_primera_actuacio": "1995",
+      "color_camisa": "Morat",
+      "color_code": "lila"
+    },
+    {
+      "name": "Muixerra de Valls (1947-1964)",
+      "any_primera_actuacio": "1947",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Nens del Vendrell",
+      "any_primera_actuacio": "1926",
+      "color_camisa": "Vermella",
+      "color_code": "red"
+    },
+    {
+      "name": "Nens del Vendrell - Colla del Caio (1935)",
+      "any_primera_actuacio": "1935",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Nens del Vendrell - Colla del Ganso (1931-1932)",
+      "any_primera_actuacio": "1931",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Nens del Vendrell - Colla del Trullà (1934)",
+      "any_primera_actuacio": "1934",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Nois de la Torre",
+      "any_primera_actuacio": "1975",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Torraires de Montblanc",
+      "any_primera_actuacio": "1995",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Passerells del TCM",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Malva",
+      "color_code": "malva"
+    },
+    {
+      "name": "Pataquers de la URV",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Taronja",
+      "color_code": "orange"
+    },
+    {
+      "name": "Penjats del Campus de Manresa",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Sagals d'Osona",
+      "any_primera_actuacio": "1997",
+      "color_camisa": "Carbassa",
+      "color_code": "orange"
+    },
+    {
+      "name": "Salats de Súria",
+      "any_primera_actuacio": "2008",
+      "color_camisa": "Potassa (salmó rosat)",
+      "color_code": "rosat"
+    },
+    {
+      "name": "Test Colla",
+      "any_primera_actuacio": null,
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Trempats de la UPF",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Marró avellana",
+      "color_code": "brown"
+    },
+    {
+      "name": "Vailets de Gelida",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Verd poma",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Vailets de Gelida (1986-1999)",
+      "any_primera_actuacio": "1986",
+      "color_camisa": "Verd poma",
+      "color_code": "lightgreen"
+    },
+    {
+      "name": "Vailets de l'Empordà",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Vailets de Ripollet (1996-2006)",
+      "any_primera_actuacio": "1995",
+      "color_camisa": "Groc pollet",
+      "color_code": "yellow"
+    },
+    {
+      "name": "Xerrics d'Olot",
+      "any_primera_actuacio": "2002",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Xicots de Valls (1988-1989)",
+      "any_primera_actuacio": "1988",
+      "color_camisa": "Vermella amb una franja blanca horitzontal",
+      "color_code": "red"
+    },
+    {
+      "name": "Xicots de Vilafranca",
+      "any_primera_actuacio": "1982",
+      "color_camisa": "Vermell",
+      "color_code": "red"
+    },
+    {
+      "name": "Xics de Granollers",
+      "any_primera_actuacio": "1991",
+      "color_camisa": "Grana",
+      "color_code": "granate"
+    },
+    {
+      "name": "Xiqüelos i Xiqüeles del Delta",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Blau Delta",
+      "color_code": "blue"
+    },
+    {
+      "name": "Xiquetes i xiquets del Catllar",
+      "any_primera_actuacio": "2025",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets d´Eramprunyà (1948-1949)",
+      "any_primera_actuacio": "1948",
+      "color_camisa": "Blau",
+      "color_code": "blue"
+    },
+    {
+      "name": "Xiquets d'Alcover",
+      "any_primera_actuacio": "2012",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Barcelona (1931-1935)",
+      "any_primera_actuacio": "1931",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Cambrils",
+      "any_primera_actuacio": "2013",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Xiquets de Cambrils (1994-2001)",
+      "any_primera_actuacio": "1993",
+      "color_camisa": "Bordeus",
+      "color_code": "granate"
+    },
+    {
+      "name": "Xiquets de Gavà (1960-1961)",
+      "any_primera_actuacio": "1960",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de l´Arrabal (1953)",
+      "any_primera_actuacio": "1953",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de la Vila d´Alcover (1984-2007)",
+      "any_primera_actuacio": "1984",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Montblanc",
+      "any_primera_actuacio": "2016",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Reus",
+      "any_primera_actuacio": "1981",
+      "color_camisa": "Marró avellana",
+      "color_code": "brown"
+    },
+    {
+      "name": "Xiquets de Tarragona",
+      "any_primera_actuacio": "1970",
+      "color_camisa": "Vermell i blanc a ratlles",
+      "color_code": "ralles"
+    },
+    {
+      "name": "Xiquets de Tarragona / Colla Vella dels Xiquets de Tarragona (1926-1970)",
+      "any_primera_actuacio": "1926",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Torredembarra",
+      "any_primera_actuacio": "2018",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Valls (1926-1929)",
+      "any_primera_actuacio": "1927",
+      "color_camisa": null,
+      "color_code": "white"
+    },
+    {
+      "name": "Xiquets de Valls (1939-1947)",
+      "any_primera_actuacio": "1939",
+      "color_camisa": "Vermell o rosat",
+      "color_code": "red"
+    },
+    {
+      "name": "Xiquets de Vila-seca",
+      "any_primera_actuacio": "2014",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Xiquets de Vila-Seca (1991-1999)",
+      "any_primera_actuacio": "1991",
+      "color_camisa": "Blau cel",
+      "color_code": "skyblue"
+    },
+    {
+      "name": "Xiquets del Serrallo",
+      "any_primera_actuacio": "1988",
+      "color_camisa": "Blau marí",
+      "color_code": "darkblue"
+    },
+    {
+      "name": "Xoriguers de la UdG",
+      "any_primera_actuacio": "2011",
+      "color_camisa": "Blau elèctric",
+      "color_code": "blue"
+    }
+  ]

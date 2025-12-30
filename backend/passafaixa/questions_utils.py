@@ -17,8 +17,26 @@ PROB_YEARS_1960_1989 = 0.10  # 10% total probability
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-def get_random_year(min_year: int = 1960, max_year: int = 2025, excluded_years: set = {2020, 2021}) -> str:
-
+def get_random_year(min_year: int = 1960, max_year: int = 2025, excluded_years: set = {2020, 2021}, selected_years: list = None) -> str:
+    """
+    Get a random year with weighted probability (recent years more likely).
+    If selected_years is provided, picks from those with equal probability.
+    
+    Args:
+        min_year: Minimum year to consider
+        max_year: Maximum year to consider
+        excluded_years: Set of years to exclude
+        selected_years: Optional list of years to pick from (equal probability)
+    
+    Returns:
+        str: Selected year as string
+    """
+    # If selected_years is provided, pick from those with equal probability
+    if selected_years and len(selected_years) > 0:
+        # Convert to integers if needed and pick randomly
+        years_as_int = [int(y) for y in selected_years]
+        return str(random.choice(years_as_int))
+    
     # Define year range
     start_year = min_year
     end_year = max_year
@@ -58,21 +76,28 @@ def get_random_year(min_year: int = 1960, max_year: int = 2025, excluded_years: 
     return str(selected_year)
 
 
-def get_random_colla(year: str = None) -> str:
+def get_random_colla(year: str = None, selected_colles: list = None) -> str:
     """
     Get a random colla from json_colles.json file, applying boost weighting.
     If year is provided, filters by colles that were active in that year.
+    If selected_colles is provided, only picks from those colles (equal probability).
     
     Args:
         year: Optional year as a string (e.g., "2013"). If None, gets overall.
+        selected_colles: Optional list of colla names to pick from. If provided,
+                         picks from these with equal probability (ignoring boost).
     
     Returns:
-        str: Name of a random colla, weighted by boost value
+        str: Name of a random colla, weighted by boost value (or equal probability if selected_colles)
     
     Example:
         Boost values determine selection probability. The weight is calculated as (boost + 1):
         
     """
+    # If selected_colles is provided, pick from those with equal probability
+    if selected_colles and len(selected_colles) > 0:
+        return random.choice(selected_colles)
+    
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
     json_file = script_dir / "json_colles.json"
@@ -135,31 +160,31 @@ def get_random_colla_query(year: str = None) -> str:
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-        
-        # Query to find colles with at least 10 events
-        # If year is provided, filter by year; otherwise get overall
-        if year:
-            # Query with year filter
-            cur.execute("""
-                SELECT c.name, COUNT(e.id) as event_count
-                FROM colles c
-                JOIN event_colles ec ON c.id = ec.colla_fk
-                JOIN events e ON ec.event_fk = e.id
-                WHERE EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer
-                GROUP BY c.id, c.name
-                HAVING COUNT(e.id) >= 10
-            """, (year,))
-        else:
-            # Query without year filter - get overall
-            cur.execute("""
-                SELECT c.name, COUNT(e.id) as event_count
-                FROM colles c
-                JOIN event_colles ec ON c.id = ec.colla_fk
-                JOIN events e ON ec.event_fk = e.id
-                GROUP BY c.id, c.name
-                HAVING COUNT(e.id) >= 10
-            """)
-        
+            
+            # Query to find colles with at least 10 events
+            # If year is provided, filter by year; otherwise get overall
+            if year:
+                # Query with year filter
+                cur.execute("""
+                    SELECT c.name, COUNT(e.id) as event_count
+                    FROM colles c
+                    JOIN event_colles ec ON c.id = ec.colla_fk
+                    JOIN events e ON ec.event_fk = e.id
+                    WHERE EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer
+                    GROUP BY c.id, c.name
+                    HAVING COUNT(e.id) >= 10
+                """, (year,))
+            else:
+                # Query without year filter - get overall
+                cur.execute("""
+                    SELECT c.name, COUNT(e.id) as event_count
+                    FROM colles c
+                    JOIN event_colles ec ON c.id = ec.colla_fk
+                    JOIN events e ON ec.event_fk = e.id
+                    GROUP BY c.id, c.name
+                    HAVING COUNT(e.id) >= 10
+                """)
+            
             rows = cur.fetchall()
             cur.close()
             
@@ -168,7 +193,7 @@ def get_random_colla_query(year: str = None) -> str:
                 # Try to get any colles (with or without year filter)
                 with get_db_connection() as conn2:
                     cur2 = conn2.cursor()
-            
+                
                     if year:
                         cur2.execute("""
                             SELECT DISTINCT c.name

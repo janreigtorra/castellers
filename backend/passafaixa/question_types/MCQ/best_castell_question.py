@@ -1,4 +1,5 @@
 from random import random, choice
+from typing import List, Optional
 from passafaixa.schemas import QuestionMCQ4Options
 from passafaixa.questions_utils import get_random_year, get_random_colla
 from passafaixa.db_pool import get_db_connection
@@ -9,11 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-
+###TODO, mirar pk no funcionen be les opcions que es donen
 
 def load_castells_puntuacions():
     """Load castells_puntuacions.json file"""
-    script_dir = Path(__file__).parent.parent
+    script_dir = Path(__file__).parent.parent.parent  # Go up 3 levels: MCQ -> question_types -> passafaixa
     json_file = script_dir / "castells_puntuacions.json"
     
     try:
@@ -128,114 +129,118 @@ def get_castell_question_data(colla: str = None, year: str = None) -> tuple:
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-        
-        # Build WHERE clause filters
-        colla_filter = ""
-        year_filter = ""
-        params = []
-        
-        if colla:
-            colla_filter = "AND co.name = %s"
-            params.append(colla)
-        
-        if year:
-            year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
-            params.append(year)
-        
-        # Query to get only the top castell (correct answer)
-        query = f"""
-            WITH castells_punts AS (
-                SELECT 
-                    c.castell_name,
-                    c.status,
-                    CASE 
-                        WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
-                        WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-                        ELSE 0
-                    END AS punts
-                FROM castells c
-                JOIN event_colles ec ON c.event_colla_fk = ec.id
-                JOIN events e ON ec.event_fk = e.id
-                JOIN colles co ON ec.colla_fk = co.id
-                LEFT JOIN puntuacions p ON (
-                    c.castell_name = p.castell_code_external 
-                    OR c.castell_name = p.castell_code
-                    OR c.castell_name = p.castell_code_name
+            
+            # Build WHERE clause filters
+            colla_filter = ""
+            year_filter = ""
+            params = []
+            
+            if colla:
+                colla_filter = "AND co.name = %s"
+                params.append(colla)
+            
+            if year:
+                year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
+                params.append(year)
+            
+            # Query to get only the top castell (correct answer)
+            query = f"""
+                WITH castells_punts AS (
+                    SELECT 
+                        c.castell_name,
+                        c.status,
+                        CASE 
+                            WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
+                            WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
+                            ELSE 0
+                        END AS punts
+                    FROM castells c
+                    JOIN event_colles ec ON c.event_colla_fk = ec.id
+                    JOIN events e ON ec.event_fk = e.id
+                    JOIN colles co ON ec.colla_fk = co.id
+                    LEFT JOIN puntuacions p ON (
+                        c.castell_name = p.castell_code_external 
+                        OR c.castell_name = p.castell_code
+                        OR c.castell_name = p.castell_code_name
+                    )
+                    WHERE 1=1
+                    {colla_filter}
+                    {year_filter}
+                ),
+                millors_castells AS (
+                    SELECT 
+                        castell_name,
+                        status,
+                        punts,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY castell_name 
+                            ORDER BY punts DESC, 
+                                     CASE WHEN status = 'Descarregat' THEN 1 
+                                          WHEN status = 'Carregat' THEN 2 
+                                          ELSE 3 END
+                        ) AS rn
+                    FROM castells_punts
+                    WHERE punts > 0
                 )
-                WHERE 1=1
-                {colla_filter}
-                {year_filter}
-            ),
-            millors_castells AS (
-                SELECT 
-                    castell_name,
-                    status,
-                    punts,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY castell_name 
-                        ORDER BY punts DESC, 
-                                 CASE WHEN status = 'Descarregat' THEN 1 
-                                      WHEN status = 'Carregat' THEN 2 
-                                      ELSE 3 END
-                    ) AS rn
-                FROM castells_punts
-                WHERE punts > 0
-            )
-            SELECT castell_name, status
-            FROM millors_castells
-            WHERE rn = 1
-            ORDER BY punts DESC
-            LIMIT 1
-        """
-        
-        cur.execute(query, params)
-        rows = cur.fetchall()
-        cur.close()
-        
-        if not rows or len(rows) == 0:
-            return ("", ["", "", ""])
-        
-        # Get the correct answer
-        correct_row = rows[0]
-        correct_castell_name = correct_row[0] or ""
-        correct_status = correct_row[1] or ""
-        correct_castell = f"{correct_castell_name} ({correct_status})" if correct_castell_name else ""
-        
-        # Find similar castells from JSON
-        castells_data = load_castells_puntuacions()
-        similar_options = find_similar_castells(correct_castell_name, correct_status, castells_data, num_options=3)
-        
-        # Final check: remove any option that matches the correct answer
-        similar_options = [opt for opt in similar_options if opt != correct_castell]
-        
-        # Ensure we have exactly 3 options
-        while len(similar_options) < 3:
-            fallbacks = ["3d10fm (Descarregat)", "4d10fm (Descarregat)", "3d8s (Descarregat)"]
-            # Make sure fallbacks don't match correct answer
-            for fallback in fallbacks:
-                if fallback != correct_castell and fallback not in similar_options:
-                    similar_options.append(fallback)
-                    if len(similar_options) >= 3:
-                        break
-        
-        return (correct_castell, similar_options[:3])
+                SELECT castell_name, status
+                FROM millors_castells
+                WHERE rn = 1
+                ORDER BY punts DESC
+                LIMIT 1
+            """
+            
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            cur.close()
+            
+            if not rows or len(rows) == 0:
+                return ("", ["", "", ""])
+            
+            # Get the correct answer
+            correct_row = rows[0]
+            correct_castell_name = correct_row[0] or ""
+            correct_status = correct_row[1] or ""
+            correct_castell = f"{correct_castell_name} ({correct_status})" if correct_castell_name else ""
+            
+            # Find similar castells from JSON
+            castells_data = load_castells_puntuacions()
+            similar_options = find_similar_castells(correct_castell_name, correct_status, castells_data, num_options=3)
+            
+            # Final check: remove any option that matches the correct answer
+            similar_options = [opt for opt in similar_options if opt != correct_castell]
+            
+            # Ensure we have exactly 3 options
+            while len(similar_options) < 3:
+                fallbacks = ["3d10fm (Descarregat)", "4d10fm (Descarregat)", "3d8s (Descarregat)"]
+                # Make sure fallbacks don't match correct answer
+                for fallback in fallbacks:
+                    if fallback != correct_castell and fallback not in similar_options:
+                        similar_options.append(fallback)
+                        if len(similar_options) >= 3:
+                            break
+            
+            return (correct_castell, similar_options[:3])
         
     except Exception as e:
         import traceback
         print(f"Error getting castell question data: {e}")
         traceback.print_exc()
-        return ("3d10fm (Descarregat)", ["4d10fm (Descarregat)", "3d8s (Descarregat)", "2d9f (Descarregat)"])
+        return ("", ["", "", ""])
 
 
-def generate_best_castell_question() -> QuestionMCQ4Options:
+def generate_best_castell_question(selected_colles: List[str] = None, selected_years: List[int] = None) -> QuestionMCQ4Options:
     """
     Generate a question asking which was the best castell for a colla/year.
+    
+    Args:
+        selected_colles: Optional list of colla names to pick from when add_colla is True.
+        selected_years: Optional list of years to pick from when add_year is True.
     """
     if not DATABASE_URL:
         return QuestionMCQ4Options(
             question="Quin va ser el millor castell: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -248,21 +253,31 @@ def generate_best_castell_question() -> QuestionMCQ4Options:
     
     for attempt in range(max_attempts):
         try:
-            # Let's decide if we add the year to the question or not (70% probability to be True)
-            add_year = random() < 0.70
+            # Let's decide if we add the year to the question or not
+            # If selected_years is provided, always add year (True)
+            if selected_years and len(selected_years) > 0:
+                add_year = True
+            else:
+                add_year = random() < 0.70
+            
             year = None
             if add_year:
-                year = get_random_year()
+                # Get a random year - use selected_years if provided (equal probability)
+                year = get_random_year(selected_years=selected_years)
             
-            # Let's decide if we add the colla to the question or not (70% probability to be True)
-            if not add_year:
+            # Let's decide if we add the colla to the question or not
+            # If selected_colles is provided, always add colla (True)
+            if selected_colles and len(selected_colles) > 0:
+                add_colla = True
+            elif not add_year:
                 add_colla = True
             else:
                 add_colla = random() < 0.50
             
             colla = None
             if add_colla:
-                colla = get_random_colla(year)
+                # Use selected_colles if provided (equal probability), otherwise use weighted random
+                colla = get_random_colla(year, selected_colles=selected_colles)
             
             castell_correcte, options = get_castell_question_data(colla, year)
             
@@ -277,8 +292,8 @@ def generate_best_castell_question() -> QuestionMCQ4Options:
                 traceback.print_exc()
                 return QuestionMCQ4Options(
                     question="Quin va ser el millor castell: Error?",
-                    answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                    correct_answer="Error al obtenir les opcions",
+                    answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                    correct_answer="Error al generar la resposta",
                     is_error=True
                 )
             continue
@@ -287,8 +302,8 @@ def generate_best_castell_question() -> QuestionMCQ4Options:
     if not castell_correcte or castell_correcte == "" or not options or not isinstance(options, list) or len(options) < 3:
         return QuestionMCQ4Options(
             question="Quin va ser el millor castell: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -302,8 +317,8 @@ def generate_best_castell_question() -> QuestionMCQ4Options:
         if not castell_opcion1 or not castell_opcion2 or not castell_opcion3:
             return QuestionMCQ4Options(
                 question="Quin va ser el millor castell: Error?",
-                answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                correct_answer="Error al obtenir les opcions",
+                answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                correct_answer="Error al generar la resposta",
                 is_error=True
             )
         
@@ -328,7 +343,7 @@ def generate_best_castell_question() -> QuestionMCQ4Options:
         traceback.print_exc()
         return QuestionMCQ4Options(
             question="Quin va ser el millor castell: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )

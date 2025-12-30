@@ -58,6 +58,61 @@ export const apiService = {
     return response.data
   },
 
+  // Get route/entities quickly using native fetch (bypasses axios interceptors for true parallelism)
+  async getRouteAndEntitiesFetch(content, sessionId = null) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    const response = await fetch(`${API_BASE_URL}/api/chat/route`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ content, session_id: sessionId })
+    })
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.json()
+  },
+
+  // Single request approach - only call /api/chat which returns entities in response
+  async sendMessageWithEntities(content, sessionId = null, onEntities = null) {
+    const startTime = Date.now()
+    console.log(`[API] === START at ${startTime} ===`)
+    
+    // Get auth token
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+    const body = JSON.stringify({ content, session_id: sessionId })
+    
+    const chatUrl = `${API_BASE_URL}/api/chat`
+    
+    console.log(`[API] Sending chat request at ${Date.now() - startTime}ms`)
+    
+    const chatResponse = await fetch(chatUrl, { method: 'POST', headers, body })
+    console.log(`[API] Chat response received at ${Date.now() - startTime}ms`)
+    
+    if (!chatResponse.ok) {
+      const errorText = await chatResponse.text()
+      throw new Error(`HTTP ${chatResponse.status}: ${errorText}`)
+    }
+    const chatData = await chatResponse.json()
+    console.log(`[API] Chat complete at ${Date.now() - startTime}ms`)
+    
+    // Call onEntities callback with entities from main response
+    if (onEntities && chatData.identified_entities) {
+      console.log(`[API] Calling onEntities callback at ${Date.now() - startTime}ms`)
+      onEntities(chatData.identified_entities, chatData.route_used)
+    }
+    
+    return chatData
+  },
+
   async getChatHistory(sessionId = null, limit = 50) {
     const params = { limit }
     if (sessionId) params.session_id = sessionId
@@ -127,10 +182,20 @@ export const apiService = {
   },
 
   // PassaFaixa game endpoints
-  async getGameQuestions(numQuestions = 10) {
-    const response = await api.get('/api/passafaixa/questions', {
-      params: { num_questions: numQuestions }
-    })
+  async getGameQuestions(numQuestions = 10, colles = [], years = []) {
+    const params = { num_questions: numQuestions }
+    
+    // Add colles parameter if any are selected
+    if (colles && colles.length > 0) {
+      params.colles = colles.join(',')
+    }
+    
+    // Add years parameter if any are selected
+    if (years && years.length > 0) {
+      params.years = years.join(',')
+    }
+    
+    const response = await api.get('/api/passafaixa/questions', { params })
     return response.data
   }
 }

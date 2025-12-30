@@ -1,4 +1,5 @@
 from random import choices, shuffle
+from typing import List, Optional
 from passafaixa.schemas import QuestionMCQ4Options
 from passafaixa.questions_utils import get_random_year
 from passafaixa.db_pool import get_db_connection
@@ -57,44 +58,44 @@ def get_first_colles_for_castell(castell_name: str, year: str, limit: int = 4) -
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-        
-        # Query to find the first colles that performed this castell in the given year
-        # Get the first occurrence of each colla, then order by that first occurrence
-        query = """
-            WITH first_performances AS (
-                SELECT DISTINCT ON (co.name) 
-                    co.name,
-                    TO_DATE(e.date, 'DD/MM/YYYY') AS first_date,
-                    e.id AS first_event_id
-                FROM castells c
-                JOIN event_colles ec ON c.event_colla_fk = ec.id
-                JOIN events e ON ec.event_fk = e.id
-                JOIN colles co ON ec.colla_fk = co.id
-                WHERE (
-                    c.castell_name = %s 
-                    OR c.castell_name = %s
+            
+            # Query to find the first colles that performed this castell in the given year
+            # Get the first occurrence of each colla, then order by that first occurrence
+            query = """
+                WITH first_performances AS (
+                    SELECT DISTINCT ON (co.name) 
+                        co.name,
+                        TO_DATE(e.date, 'DD/MM/YYYY') AS first_date,
+                        e.id AS first_event_id
+                    FROM castells c
+                    JOIN event_colles ec ON c.event_colla_fk = ec.id
+                    JOIN events e ON ec.event_fk = e.id
+                    JOIN colles co ON ec.colla_fk = co.id
+                    WHERE (
+                        c.castell_name = %s 
+                        OR c.castell_name = %s
+                    )
+                    AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer
+                    ORDER BY 
+                        co.name,
+                        TO_DATE(e.date, 'DD/MM/YYYY') ASC,
+                        e.id ASC
                 )
-                AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer
-                ORDER BY 
-                    co.name,
-                    TO_DATE(e.date, 'DD/MM/YYYY') ASC,
-                    e.id ASC
-            )
-            SELECT name
-            FROM first_performances
-            ORDER BY first_date ASC, first_event_id ASC
-            LIMIT %s;
-        """
-        
-        # Try both castell_code and castell_code_external formats
-        cur.execute(query, (castell_name, castell_name.replace("de", "d"), year, limit))
-        rows = cur.fetchall()
-        cur.close()
-        
-        # Extract colla names
-        colles = [row[0] for row in rows if row[0]]
-        
-        return colles
+                SELECT name
+                FROM first_performances
+                ORDER BY first_date ASC, first_event_id ASC
+                LIMIT %s;
+            """
+            
+            # Try both castell_code and castell_code_external formats
+            cur.execute(query, (castell_name, castell_name.replace("de", "d"), year, limit))
+            rows = cur.fetchall()
+            cur.close()
+            
+            # Extract colla names
+            colles = [row[0] for row in rows if row[0]]
+            
+            return colles
         
     except Exception as e:
         print(f"Error querying database for first colles: {e}")
@@ -145,14 +146,19 @@ def get_other_colla_options(excluded_colles: set, year: int, num_options: int = 
     return unique_selected[:num_options]
 
 
-def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
-    """Generate question: Quina colla va fer el primer XdX l'any XX?"""
+def generate_colla_primer_castell_question(selected_years: List[int] = None) -> QuestionMCQ4Options:
+    """
+    Generate question: Quina colla va fer el primer XdX l'any XX?
+    
+    Args:
+        selected_years: Optional list of years to pick from.
+    """
     
     if not DATABASE_URL:
         return QuestionMCQ4Options(
             question="Quina colla va fer el primer XdX l'any XXXX?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -161,8 +167,8 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
     
     for attempt in range(max_attempts):
         try:
-            # Get a random year
-            year_str = get_random_year(min_year=2005)
+            # Get a random year - use selected_years if provided (equal probability)
+            year_str = get_random_year(min_year=2005, selected_years=selected_years)
             year_int = int(year_str)
             
             # Load castells data
@@ -171,8 +177,8 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
                 if attempt == max_attempts - 1:
                     return QuestionMCQ4Options(
                         question="Quina colla va fer el primer XdX l'any XXXX?",
-                        answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                        correct_answer="Error al obtenir les opcions",
+                        answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                        correct_answer="Error al generar la resposta",
                         is_error=True
                     )
                 continue
@@ -184,8 +190,8 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
                 if attempt == max_attempts - 1:
                     return QuestionMCQ4Options(
                         question="Quina colla va fer el primer XdX l'any XXXX?",
-                        answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                        correct_answer="Error al obtenir les opcions",
+                        answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                        correct_answer="Error al generar la resposta",
                         is_error=True
                     )
                 continue
@@ -208,8 +214,8 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
                 if attempt == max_attempts - 1:
                     return QuestionMCQ4Options(
                         question="Quina colla va fer el primer XdX l'any XXXX?",
-                        answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                        correct_answer="Error al obtenir les opcions",
+                        answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                        correct_answer="Error al generar la resposta",
                         is_error=True
                     )
                 continue
@@ -260,8 +266,8 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
                 traceback.print_exc()
                 return QuestionMCQ4Options(
                     question="Quina colla va fer el primer XdX l'any XXXX?",
-                    answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                    correct_answer="Error al obtenir les opcions",
+                    answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                    correct_answer="Error al generar la resposta",
                     is_error=True
                 )
             continue
@@ -269,7 +275,7 @@ def generate_colla_primer_castell_question() -> QuestionMCQ4Options:
     # If we get here, all attempts failed
     return QuestionMCQ4Options(
         question="Quina colla va fer el primer XdX l'any XXXX?",
-        answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-        correct_answer="Error al obtenir les opcions",
+        answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+        correct_answer="Error al generar la resposta",
         is_error=True
     )

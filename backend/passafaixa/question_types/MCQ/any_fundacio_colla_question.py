@@ -40,8 +40,8 @@ def generate_any_fundacio_colla_question() -> QuestionMCQ4Options:
             # Fallback if no valid colles found
             return QuestionMCQ4Options(
                 question="Quina de les seguents colles es va fundar l'any 1999?",
-                answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                correct_answer="Error al obtenir les opcions",
+                answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                correct_answer="Error al generar la resposta",
                 is_error=True
             )
         
@@ -95,8 +95,8 @@ def generate_any_fundacio_colla_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quina de les seguents colles es va fundar l'any XXXX?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     except json.JSONDecodeError as e:
@@ -104,8 +104,8 @@ def generate_any_fundacio_colla_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quina de les seguents colles es va fundar l'any XXXX?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     except Exception as e:
@@ -113,7 +113,7 @@ def generate_any_fundacio_colla_question() -> QuestionMCQ4Options:
         # Fallback question
         return QuestionMCQ4Options(
             question="Quina de les seguents colles es va fundar l'any XXXX?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )

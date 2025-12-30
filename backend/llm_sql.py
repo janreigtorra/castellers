@@ -14,7 +14,27 @@ import os
 from dotenv import load_dotenv
 from utility_functions import Castell, code_to_name
 
-DEFAULT_LIMIT = 10
+# Limits for SQL queries and LLM context
+SQL_RESULT_LIMIT = 20      # Results shown in frontend table
+LLM_CONTEXT_LIMIT = 5      # Results fed to LLM for summarization
+DEFAULT_LIMIT = SQL_RESULT_LIMIT
+
+# Placeholder message for no results found
+NO_RESULTS_MESSAGE = "No he trobat cap resultat a la base de dades referent a la teva pregunta."
+
+
+def escape_sql_string(value: str) -> str:
+    """Escape single quotes in SQL string values to prevent SQL injection"""
+    if value is None:
+        return value
+    return value.replace("'", "''")
+
+
+class NoResultsFoundError(Exception):
+    """Exception raised when a SQL query returns no results"""
+    def __init__(self, message: str = NO_RESULTS_MESSAGE):
+        self.message = message
+        super().__init__(self.message)
 
 load_dotenv()
 
@@ -67,135 +87,108 @@ class LLMSQLGenerator:
         """Create all predefined query templates"""
         templates = {}
         
-        # # Template for best diada/actuació
-        # templates[QuestionType.BEST_DIADA] = QueryTemplate(
-        #     question_type=QuestionType.BEST_DIADA,
-        #     sql_template="""
-        #     SELECT 
-        #         e.id AS event_id,
-        #         e.name AS event_name,
-        #         e.date AS event_date,
-        #         e.place AS event_place,
-        #         e.city AS event_city,
-        #         co.name AS colla_name,
-        #         STRING_AGG(
-        #             CASE 
-        #                 WHEN c.castell_name != 'Pde4' THEN c.castell_name || ' (' || c.status || ')'
-        #                 ELSE NULL
-        #             END, ', ' ORDER BY 
-        #             CASE 
-        #                 WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
-        #                 WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-        #                 ELSE 0 
-        #             END DESC) AS castells_fets,
-        #         COUNT(c.id) AS num_castells,
-        #         SUM(CASE 
-        #             WHEN c.status = 'Descarregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_descarregat, 0)
-        #             WHEN c.status = 'Carregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_carregat, 0)
-        #             ELSE 0 
-        #         END) AS total_punts
-        #     FROM events e
-        #     JOIN event_colles ec ON e.id = ec.event_fk
-        #     JOIN colles co ON ec.colla_fk = co.id
-        #     JOIN castells c ON ec.id = c.event_colla_fk
-        #     LEFT JOIN puntuacions p ON (
-        #         c.castell_name = p.castell_code_external 
-        #         OR c.castell_name = p.castell_code
-        #         OR c.castell_name = p.castell_code_name
-        #     )
-        #     WHERE 1=1
-        #     {colla_filter}
-        #     {year_filter}
-        #     {location_filter}
-        #     {diada_filter}
-            
-        #     GROUP BY e.id, e.name, e.date, e.place, e.city, co.name
-        #     HAVING 1=1
-        #     {castell_having_filter}
-        #     {status_having_filter}
-        #     ORDER BY total_punts DESC
-        #     LIMIT %(limit)s
-        #     """,
-        #     required_params=[],
-        #     optional_params=["colla", "year", "location", "diada", "castell", "status"],
-        #     description="Find the best diada/actuació (can be filtered by colla, year, location, castell, status)",
-        #     default_limit=5
-        # )
         # Template for best diada/actuació
         templates[QuestionType.BEST_DIADA] = QueryTemplate(
             question_type=QuestionType.BEST_DIADA,
             sql_template="""
             WITH castells_punts AS (
-                SELECT 
-                    e.id AS event_id,
-                    e.name AS event_name,
-                    e.date AS event_date,
-                    e.place AS event_place,
-                    e.city AS event_city,
-                    co.id AS colla_id,
-                    co.name AS colla_name,
-                    c.id AS castell_id,
-                    c.castell_name,
-                    c.status,
-                    CASE 
-                        WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
-                        WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-                        ELSE 0
-                    END AS punts,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY e.id, co.id
-                        ORDER BY 
+                        SELECT 
+                            e.id AS event_id,
+                            e.name AS event_name,
+                            e.date AS event_date,
+                            e.place AS event_place,
+                            e.city AS event_city,
+                            co.id AS colla_id,
+                            co.name AS colla_name,
+                            c.id AS castell_id,
+                            c.castell_name,
+                            c.status,
                             CASE 
                                 WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
                                 WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
                                 ELSE 0
-                            END DESC
-                    ) AS rn
-                FROM events e
-                JOIN event_colles ec ON e.id = ec.event_fk
-                JOIN colles co ON ec.colla_fk = co.id
-                JOIN castells c ON ec.id = c.event_colla_fk
-                LEFT JOIN puntuacions p ON (
-                    c.castell_name = p.castell_code_external 
-                    OR c.castell_name = p.castell_code
-                    OR c.castell_name = p.castell_code_name
-                )
-                WHERE 1=1
-                {colla_filter}
-                {year_filter}
-                {location_filter}
-                {diada_filter}
-            )
-            
-            SELECT
-                event_id,
-                event_name,
-                event_date,
-                colla_name,
-                event_place,
-                event_city,
-                STRING_AGG(
-                    CASE 
-                        WHEN castell_name != 'Pde4' THEN castell_name || ' (' || status || ')'
-                        ELSE NULL
-                    END,
-                    ', '
-                    ORDER BY punts DESC
-                ) AS castells_fets,
-                COUNT(castell_id) AS num_castells,
-                SUM(CASE WHEN rn <= 4 THEN punts ELSE 0 END) AS total_punts
-            FROM castells_punts
-            GROUP BY event_id, event_name, event_date, event_place, event_city, colla_name
-            HAVING 1=1
-            {castell_having_filter}
-            {status_having_filter}
-            ORDER BY total_punts DESC
-            LIMIT %(limit)s
+                            END AS punts,
+                            CASE
+                                WHEN c.castell_name ~ '^[0-9]' THEN 'castell'
+                                WHEN c.castell_name ~ '^[Pp]' THEN 'pilar'
+                                ELSE 'altres'
+                            END AS tipus
+                        FROM events e
+                        JOIN event_colles ec ON e.id = ec.event_fk
+                        JOIN colles co ON ec.colla_fk = co.id
+                        JOIN castells c ON ec.id = c.event_colla_fk
+                        LEFT JOIN puntuacions p ON (
+                            c.castell_name = p.castell_code_external 
+                            OR c.castell_name = p.castell_code
+                            OR c.castell_name = p.castell_code_name
+                        )
+                        WHERE 1=1
+                        {colla_filter}
+                        {year_filter}
+                        {location_filter}
+                        {diada_filter}
+                    ),
+                    ranked AS (
+                        SELECT
+                            *,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY event_id, colla_id, tipus
+                                ORDER BY punts DESC
+                            ) AS rn_tipus
+                        FROM castells_punts
+                    ),
+                    millors_castells AS (
+                        SELECT *
+                        FROM ranked
+                        WHERE
+                            (tipus = 'castell' AND rn_tipus <= 3)
+                            OR
+                            (tipus = 'pilar' AND rn_tipus = 1)
+                    ),
+                    aggregated AS (
+                    SELECT
+                        event_id,
+                        event_name,
+                        event_date,
+                        colla_name,
+                        event_place,
+                        event_city,
+                        STRING_AGG(
+                            castell_name || ' (' || status || ')',
+                            ', '
+                            ORDER BY punts DESC
+                        ) AS castells_fets,
+                        SUM(punts) AS total_punts
+                    FROM millors_castells
+                    GROUP BY
+                        event_id,
+                        event_name,
+                        event_date,
+                        event_place,
+                        event_city,
+                        colla_name
+                    HAVING 1=1
+                    {castell_having_filter}
+                    {status_having_filter}
+                    )
+                    SELECT
+                        ROW_NUMBER() OVER (ORDER BY total_punts DESC) AS ranking,
+                        event_name,
+                        event_date,
+                        colla_name,
+                        event_place,
+                        event_city,
+                        castells_fets,
+                        total_punts
+                    FROM aggregated
+                    ORDER BY ranking
+                    LIMIT %(limit)s;
+
             """,
             required_params=[],
             optional_params=["colla", "year", "location", "diada", "castell", "status"],
             description="Find the best diada/actuació (can be filtered by colla, year, location, castell, status), summing only the top 4 castells per event, excluding Pde4",
-            default_limit=5
+            default_limit=SQL_RESULT_LIMIT
         )
 
         # Template for best castell
@@ -238,7 +231,7 @@ class LLMSQLGenerator:
             required_params=[],
             optional_params=["colla", "year", "location", "status"],
             description="Find the best castell (can be filtered by colla, year, location, status)",
-            default_limit=5
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for castell historia (quants castells ha fet una colla)
@@ -275,7 +268,7 @@ class LLMSQLGenerator:
             required_params=[],
             optional_params=["colla", "castell", "year", "location", "status"],
             description="Count castell occurrences (can be filtered by colla, castell, year, location, status)",
-            default_limit=10
+            default_limit=SQL_RESULT_LIMIT
         )
         
       
@@ -283,49 +276,90 @@ class LLMSQLGenerator:
         templates[QuestionType.LOCATION_ACTUATIONS] = QueryTemplate(
             question_type=QuestionType.LOCATION_ACTUATIONS,
             sql_template="""
-            SELECT 
-                EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) AS year,
-                e.name AS event_name,
-                e.date,
-                e.place,
-                e.city,
-                co.name AS colla_name,
-                COUNT(c.id) AS num_castells,
-                STRING_AGG(
-                    CASE 
-                        WHEN c.castell_name != 'Pde4' THEN c.castell_name || ' (' || c.status || ')'
-                        ELSE NULL
-                    END, ', ' ORDER BY 
+            WITH castells_punts AS (
+                SELECT 
+                    e.id AS event_id,
+                    EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) AS year,
+                    e.name AS event_name,
+                    e.date,
+                    e.place,
+                    e.city,
+                    co.id AS colla_id,
+                    co.name AS colla_name,
+                    c.id AS castell_id,
+                    c.castell_name,
+                    c.status,
                     CASE 
                         WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
                         WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-                        ELSE 0 
-                    END DESC) AS castells_fets
-            FROM events e
-            JOIN event_colles ec ON e.id = ec.event_fk
-            JOIN colles co ON ec.colla_fk = co.id
-            JOIN castells c ON ec.id = c.event_colla_fk
-            LEFT JOIN puntuacions p ON (
-                c.castell_name = p.castell_code_external 
-                OR c.castell_name = p.castell_code
-                OR c.castell_name = p.castell_code_name
+                        ELSE 0
+                    END AS punts,
+                    CASE
+                        WHEN c.castell_name ~ '^[0-9]' THEN 'castell'
+                        WHEN c.castell_name ~ '^[Pp]' THEN 'pilar'
+                        ELSE 'altres'
+                    END AS tipus
+                FROM events e
+                JOIN event_colles ec ON e.id = ec.event_fk
+                JOIN colles co ON ec.colla_fk = co.id
+                JOIN castells c ON ec.id = c.event_colla_fk
+                LEFT JOIN puntuacions p ON (
+                    c.castell_name = p.castell_code_external 
+                    OR c.castell_name = p.castell_code
+                    OR c.castell_name = p.castell_code_name
+                )
+                WHERE 1=1
+                {colla_filter}
+                {year_filter}
+                {location_filter}
+            ),
+            ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY event_id, colla_id, tipus
+                        ORDER BY punts DESC
+                    ) AS rn_tipus
+                FROM castells_punts
+            ),
+            millors_castells AS (
+                SELECT *
+                FROM ranked
+                WHERE
+                    (tipus = 'castell' AND rn_tipus <= 3)
+                    OR
+                    (tipus = 'pilar' AND rn_tipus = 1)
             )
-            WHERE 1=1
-            {colla_filter}
-            {year_filter}
-            {location_filter}
-            GROUP BY e.id, e.name, e.date, e.place, e.city, co.name
-            ORDER BY SUM(CASE 
-                WHEN c.status = 'Descarregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_descarregat, 0)
-                WHEN c.status = 'Carregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_carregat, 0)
-                ELSE 0 
-            END) DESC, e.date DESC
+            SELECT
+                year,
+                event_name,
+                date,
+                place,
+                city,
+                colla_name,
+                COUNT(castell_id) AS num_castells,
+                STRING_AGG(
+                    castell_name || ' (' || status || ')',
+                    ', '
+                    ORDER BY punts DESC
+                ) AS castells_fets,
+                SUM(punts) AS total_punts
+            FROM millors_castells
+            GROUP BY
+                event_id,
+                year,
+                event_name,
+                date,
+                place,
+                city,
+                colla_name
+            ORDER BY total_punts DESC, date DESC
             LIMIT %(limit)s
             """,
             required_params=[],
             optional_params=["colla", "year", "location"],
             description="Quin any o quin lloc s'ha fet la millor actuació (filtrable per colla i/o lloc)",
-            default_limit=5
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for year summary
@@ -337,7 +371,9 @@ class LLMSQLGenerator:
                 COUNT(DISTINCT e.id) AS num_actuacions,
                 COUNT(c.id) AS num_castells,
                 SUM(CASE WHEN c.status = 'Descarregat' THEN 1 ELSE 0 END) AS castells_descarregats,
-                SUM(CASE WHEN c.status = 'Carregat' THEN 1 ELSE 0 END) AS castells_carregats
+                SUM(CASE WHEN c.status = 'Carregat' THEN 1 ELSE 0 END) AS castells_carregats, 
+                SUM(CASE WHEN c.status = 'Intent desmuntat' THEN 1 ELSE 0 END) AS castells_intent_desmuntat,
+                SUM(CASE WHEN c.status = 'Intent' THEN 1 ELSE 0 END) AS castells_intent
             FROM colles co
             JOIN event_colles ec ON co.id = ec.colla_fk
             JOIN events e ON ec.event_fk = e.id
@@ -353,8 +389,8 @@ class LLMSQLGenerator:
             {colla_filter}
             GROUP BY co.id, co.name
             ORDER BY SUM(CASE 
-                WHEN c.status = 'Descarregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_descarregat, 0)
-                WHEN c.status = 'Carregat' AND c.castell_name != 'Pde4' THEN COALESCE(p.punts_carregat, 0)
+                WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
+                WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
                 ELSE 0 
             END) DESC
             LIMIT %(limit)s
@@ -362,14 +398,14 @@ class LLMSQLGenerator:
             required_params=["year"],
             optional_params=["location", "colla"],
             description="Get summary for a specific year (filtrable per colla i/o lloc)",
-            default_limit=10
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for first castell (quin any s'ha fet el primer castell)
         templates[QuestionType.FIRST_CASTELL] = QueryTemplate(
             question_type=QuestionType.FIRST_CASTELL,
             sql_template="""
-            SELECT 
+            SELECT DISTINCT ON (c.status)
                 EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) AS year,
                 e.name AS event_name,
                 e.date,
@@ -393,13 +429,13 @@ class LLMSQLGenerator:
             {location_filter}
             {diada_filter}
             {status_filter}
-            ORDER BY e.date ASC
-            LIMIT 1
+            ORDER BY c.status, e.date ASC
+            LIMIT 4
             """,
             required_params=["castell"],
             optional_params=["colla", "year", "location", "diada", "status"],
             description="Quin any s'ha fet el primer castell (castell requerit, colla, lloc, diada opcionals)",
-            default_limit=3
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for castell statistics (estadístiques d'un castell específic)
@@ -412,8 +448,8 @@ class LLMSQLGenerator:
                 COUNT(CASE WHEN c.status = 'Carregat' THEN 1 END) AS cops_carregat,
                 COUNT(CASE WHEN c.status = 'Intent desmuntat' THEN 1 END) AS cops_intent_desmuntat,
                 COUNT(CASE WHEN c.status = 'Intent' THEN 1 END) AS cops_intent,
-                MIN(CASE WHEN c.status = 'Descarregat' THEN e.date END) AS primera_data_descarregat,
-                MIN(CASE WHEN c.status = 'Carregat' THEN e.date END) AS primera_data_carregat,
+                MIN(CASE WHEN c.status = 'Descarregat' THEN TO_DATE(e.date, 'DD/MM/YYYY') END) AS primera_data_descarregat,
+                MIN(CASE WHEN c.status = 'Carregat' THEN TO_DATE(e.date, 'DD/MM/YYYY') END) AS primera_data_carregat,
                 COUNT(DISTINCT CASE WHEN c.status = 'Descarregat' THEN co.name END) AS colles_descarregat,
                 COUNT(DISTINCT CASE WHEN c.status = 'Carregat' THEN co.name END) AS colles_carregat,
                 COUNT(DISTINCT CASE WHEN c.status = 'Intent desmuntat' OR c.status = 'Intent' THEN co.name END) AS colles_intentat,
@@ -443,7 +479,7 @@ class LLMSQLGenerator:
             required_params=["castell"],
             optional_params=["colla", "year", "location", "diada"],
             description="Estadístiques completes d'un castell específic (castell requerit, filtrable per colla, any, plaça, etc.)",
-            default_limit=1
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for concurs queries (unified for all concurs questions)
@@ -453,21 +489,53 @@ class LLMSQLGenerator:
             SELECT 
                 c.edition,
                 c.title,
-                c.date,
-                c.location,
                 c.plaça,
-                c.colla_guanyadora,
-                cr.position,
+                {position_select},
                 cr.colla_name,
                 cr.total_points,
                 cr.jornada,
-                cr.ronda_1_json as primera_ronda,
-                cr.ronda_2_json as segona_ronda,
-                cr.ronda_3_json as tercera_ronda,
-                cr.ronda_4_json as quarta_ronda,
-                cr.ronda_5_json as cinquena_ronda,
-                cr.ronda_6_json as sisena_ronda,
-                cr.ronda_7_json as setmana_ronda
+                CASE
+                    WHEN cr.ronda_1_json IS NOT NULL AND cr.ronda_1_json <> ''
+                    THEN
+                        jsonb_extract_path_text(cr.ronda_1_json::jsonb, 'castell')
+                        || ' ('
+                        || jsonb_extract_path_text(cr.ronda_1_json::jsonb, 'status')
+                        || ')'
+                END AS primera_ronda, 
+                CASE
+                    WHEN cr.ronda_2_json IS NOT NULL AND cr.ronda_2_json <> ''
+                    THEN
+                        jsonb_extract_path_text(cr.ronda_2_json::jsonb, 'castell')
+                        || ' ('
+                        || jsonb_extract_path_text(cr.ronda_2_json::jsonb, 'status')
+                        || ')'
+                END AS segona_ronda,
+                CASE
+                    WHEN cr.ronda_3_json IS NOT NULL AND cr.ronda_3_json <> ''
+                    THEN
+                        jsonb_extract_path_text(cr.ronda_3_json::jsonb, 'castell')
+                        || ' ('
+                        || jsonb_extract_path_text(cr.ronda_3_json::jsonb, 'status')
+                        || ')'
+                END AS tercera_ronda,
+
+                CASE
+                    WHEN cr.ronda_4_json IS NOT NULL AND cr.ronda_4_json <> ''
+                    THEN
+                        jsonb_extract_path_text(cr.ronda_4_json::jsonb, 'castell')
+                        || ' ('
+                        || jsonb_extract_path_text(cr.ronda_4_json::jsonb, 'status')
+                        || ')'
+                END AS quarta_ronda,
+
+                CASE
+                    WHEN cr.ronda_5_json IS NOT NULL AND cr.ronda_5_json <> ''
+                    THEN
+                        jsonb_extract_path_text(cr.ronda_5_json::jsonb, 'castell')
+                        || ' ('
+                        || jsonb_extract_path_text(cr.ronda_5_json::jsonb, 'status')
+                        || ')'
+                END AS cinquena_ronda
             FROM concurs c
             JOIN concurs_rankings cr ON c.id = cr.concurs_fk
             WHERE 1=1
@@ -484,7 +552,7 @@ class LLMSQLGenerator:
             required_params=[],
             optional_params=["edition", "jornada", "colla", "position", "year", "castell", "status"],
             description="Consultes sobre concursos de castells (classificació, resultats, estadístiques)",
-            default_limit=5
+            default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for concurs history (història de concursos)
@@ -492,34 +560,57 @@ class LLMSQLGenerator:
             question_type=QuestionType.CONCURS_HISTORY,
             sql_template="""
             SELECT 
-                c.edition,
-                c.title,
-                c.date,
-                c.location,
-                c.plaça,
-                c.colla_guanyadora,
-                c.num_colles,
-                c.castells_intentats,
-                c.maxim_castell,
-                c.espectadors,
-                COUNT(cr.id) AS colles_participants,
-                AVG(cr.total_points) AS avg_points,
-                MAX(cr.total_points) AS max_points,
-                MIN(cr.total_points) AS min_points
-            FROM concurs c
-            LEFT JOIN concurs_rankings cr ON c.id = cr.concurs_fk
+                cr."any" as any,
+                cr.jornada,
+                COUNT(DISTINCT cr.colla_name) AS colles_participants,
+                (array_agg(cr.colla_name ORDER BY cr.total_points DESC))[1] AS colla_guanyadora,
+                MAX(cr.total_points) AS punts_guanyador,
+                STRING_AGG(
+                    DISTINCT CASE 
+                        WHEN cr.ronda_1_json IS NOT NULL AND cr.ronda_1_json <> '' 
+                             AND jsonb_extract_path_text(cr.ronda_1_json::jsonb, 'status') = 'Descarregat'
+                        THEN jsonb_extract_path_text(cr.ronda_1_json::jsonb, 'castell')
+                    END, ', '
+                ) AS castells_r1_descarregats,
+                STRING_AGG(
+                    DISTINCT CASE 
+                        WHEN cr.ronda_2_json IS NOT NULL AND cr.ronda_2_json <> '' 
+                             AND jsonb_extract_path_text(cr.ronda_2_json::jsonb, 'status') = 'Descarregat'
+                        THEN jsonb_extract_path_text(cr.ronda_2_json::jsonb, 'castell')
+                    END, ', '
+                ) AS castells_r2_descarregats,
+                STRING_AGG(
+                    DISTINCT CASE 
+                        WHEN cr.ronda_3_json IS NOT NULL AND cr.ronda_3_json <> '' 
+                             AND jsonb_extract_path_text(cr.ronda_3_json::jsonb, 'status') = 'Descarregat'
+                        THEN jsonb_extract_path_text(cr.ronda_3_json::jsonb, 'castell')
+                    END, ', '
+                ) AS castells_r3_descarregats,
+                STRING_AGG(
+                    DISTINCT CASE 
+                        WHEN cr.ronda_4_json IS NOT NULL AND cr.ronda_4_json <> '' 
+                             AND jsonb_extract_path_text(cr.ronda_4_json::jsonb, 'status') = 'Descarregat'
+                        THEN jsonb_extract_path_text(cr.ronda_4_json::jsonb, 'castell')
+                    END, ', '
+                ) AS castells_r4_descarregats,
+                STRING_AGG(
+                    DISTINCT CASE 
+                        WHEN cr.ronda_5_json IS NOT NULL AND cr.ronda_5_json <> '' 
+                             AND jsonb_extract_path_text(cr.ronda_5_json::jsonb, 'status') = 'Descarregat'
+                        THEN jsonb_extract_path_text(cr.ronda_5_json::jsonb, 'castell')
+                    END, ', '
+                ) AS castells_r5_descarregats
+            FROM concurs_rankings cr
             WHERE 1=1
-            {edition_filter}
-            {location_filter}
             {year_filter}
-            GROUP BY c.id, c.edition, c.title, c.date, c.location, c.plaça, c.colla_guanyadora, c.num_colles, c.castells_intentats, c.maxim_castell, c.espectadors
-            ORDER BY c.date DESC
+            GROUP BY cr."any", cr.jornada
+            ORDER BY cr."any" DESC, cr.jornada ASC
             LIMIT %(limit)s
             """,
             required_params=[],
-            optional_params=["edition", "location", "year"],
-            description="Història de concursos amb estadístiques (filtrable per edició, lloc, any)",
-            default_limit=10
+            optional_params=["year"],
+            description="Història de concursos amb estadístiques (filtrable per any)",
+            default_limit=SQL_RESULT_LIMIT
         )
         
         return templates
@@ -570,23 +661,25 @@ class LLMSQLGenerator:
         edition_filter = ""
         jornada_filter = ""
         position_filter = ""
+        position_select = "cr.position AS position"
         
         if extracted_entities.get("colla"):
             if len(extracted_entities["colla"]) == 1:
                 colla = extracted_entities["colla"][0]
                 # For concurs queries, use cr.colla_name; for other queries, use co.name
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    colla_filter = f'''AND cr.colla_name = '{colla}' '''
+                    colla_filter = "AND cr.colla_name = %(colla_param)s"
                 else:
-                    colla_filter = f'''AND co.name = '{colla}' '''
+                    colla_filter = "AND co.name = %(colla_param)s"
+                params["colla_param"] = colla
                 params["colla"] = colla
             elif len(extracted_entities["colla"]) > 1:
-                colles = ', '.join(f"'{colla}'" for colla in extracted_entities["colla"])
                 # For concurs queries, use cr.colla_name; for other queries, use co.name
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    colla_filter = f'''AND cr.colla_name IN ({colles}) '''
+                    colla_filter = "AND cr.colla_name IN %(colla_param)s"
                 else:
-                    colla_filter = f'''AND co.name IN ({colles}) '''
+                    colla_filter = "AND co.name IN %(colla_param)s"
+                params["colla_param"] = tuple(extracted_entities["colla"])
                 params["colla"] = extracted_entities["colla"]
 
         # Handle castell filter for WHERE clause (different from castell_having_filter for BEST_DIADA)
@@ -595,11 +688,13 @@ class LLMSQLGenerator:
                 castell = extracted_entities["castells"][0]
                 if isinstance(castell, Castell):
                     # For WHERE clause, we can filter by castell name directly
-                    castell_filter = f"AND c.castell_name = '{code_to_name(castell.castell_code)}'"
+                    castell_filter = "AND c.castell_name = %(castell_param)s"
+                    params["castell_param"] = code_to_name(castell.castell_code)
                     params["castell"] = castell.castell_code
                 else:
                     # Fallback for string format
-                    castell_filter = f"AND c.castell_name = '{code_to_name(castell)}'"
+                    castell_filter = "AND c.castell_name = %(castell_param)s"
+                    params["castell_param"] = code_to_name(castell)
                     params["castell"] = castell
             elif len(extracted_entities["castells"]) > 1:
                 # Multiple castells - use IN condition
@@ -610,8 +705,8 @@ class LLMSQLGenerator:
                     else:
                         castell_codes.append(code_to_name(castell))
                 
-                castell_list = ', '.join(f"'{code}'" for code in castell_codes)
-                castell_filter = f"AND c.castell_name IN ({castell_list})"
+                castell_filter = "AND c.castell_name IN %(castell_param)s"
+                params["castell_param"] = tuple(castell_codes)
                 params["castell"] = castell_codes
          
         if extracted_entities.get("castells") and question_type == QuestionType.BEST_DIADA:
@@ -619,33 +714,39 @@ class LLMSQLGenerator:
                 castell = extracted_entities["castells"][0]
                 if isinstance(castell, Castell):
                     # Create combined filter for castell code and status
+                    escaped_code = escape_sql_string(castell.castell_code)
                     if castell.status:
                         # Match both castell code and status together
-                        castell_having_filter = f"AND STRING_AGG(p.castell_code || ' (' || c.status || ')', ', ') LIKE '%{castell.castell_code} ({castell.status})%'"
+                        escaped_status = escape_sql_string(castell.status)
+                        castell_having_filter = f"AND STRING_AGG(p.castell_code || ' (' || c.status || ')', ', ') LIKE '%%{escaped_code} ({escaped_status})%%'"
                         params["castell"] = castell.castell_code
                         params["status"] = castell.status
                     else:
                         # Only match castell code (no status specified)
-                        castell_having_filter = f"AND STRING_AGG(p.castell_code, ', ') LIKE '%{castell.castell_code}%'"
+                        castell_having_filter = f"AND STRING_AGG(p.castell_code, ', ') LIKE '%%{escaped_code}%%'"
                         params["castell"] = castell.castell_code
                 else:
                     # Fallback for string format
-                    castell_having_filter = f"AND STRING_AGG(p.castell_code, ', ') LIKE '%{castell}%'"
+                    escaped_castell = escape_sql_string(castell)
+                    castell_having_filter = f"AND STRING_AGG(p.castell_code, ', ') LIKE '%%{escaped_castell}%%'"
                     params["castell"] = castell
             elif len(extracted_entities["castells"]) > 1:
                 # Multiple castells - use OR conditions
                 castell_conditions = []
                 for castell in extracted_entities["castells"]:
                     if isinstance(castell, Castell):
+                        escaped_code = escape_sql_string(castell.castell_code)
                         if castell.status:
                             # Match both castell code and status together
-                            castell_conditions.append(f"STRING_AGG(p.castell_code || ' (' || c.status || ')', ', ') LIKE '%{castell.castell_code} ({castell.status})%'")
+                            escaped_status = escape_sql_string(castell.status)
+                            castell_conditions.append(f"STRING_AGG(p.castell_code || ' (' || c.status || ')', ', ') LIKE '%%{escaped_code} ({escaped_status})%%'")
                         else:
                             # Only match castell code (no status specified)
-                            castell_conditions.append(f"STRING_AGG(p.castell_code, ', ') LIKE '%{castell.castell_code}%'")
+                            castell_conditions.append(f"STRING_AGG(p.castell_code, ', ') LIKE '%%{escaped_code}%%'")
                     else:
                         # Fallback for string format
-                        castell_conditions.append(f"STRING_AGG(p.castell_code, ', ') LIKE '%{castell}%'")
+                        escaped_castell = escape_sql_string(castell)
+                        castell_conditions.append(f"STRING_AGG(p.castell_code, ', ') LIKE '%%{escaped_castell}%%'")
                 
                 castell_having_filter = f"AND ({' OR '.join(castell_conditions)})"
                 params["castell"] = [c.castell_code if isinstance(c, Castell) else c for c in extracted_entities["castells"]]
@@ -656,88 +757,109 @@ class LLMSQLGenerator:
                 year = extracted_entities["anys"][0]
                 # For concurs queries, use cr.any; for other queries, use e.date
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    year_filter = f"AND cr.any = {year}"
+                    year_filter = "AND cr.any = %(year_param)s"
                 else:
-                    year_filter = f"AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = '{year}'"
+                    year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %(year_param)s"
+                params["year_param"] = year
                 params["year"] = year
             elif len(extracted_entities["anys"]) > 1:
-                anys = ', '.join(f"'{year}'" for year in extracted_entities["anys"])
                 # For concurs queries, use cr.any; for other queries, use e.date
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    year_filter = f"AND cr.any IN ({anys})"
+                    year_filter = "AND cr.any IN %(year_param)s"
                 else:
-                    year_filter = f"AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) IN ({anys})"
+                    year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) IN %(year_param)s"
+                params["year_param"] = tuple(extracted_entities["anys"])
                 params["year"] = extracted_entities["anys"]
         
         if extracted_entities.get("llocs"):
             if len(extracted_entities["llocs"]) == 1:
                 location = extracted_entities["llocs"][0]
                 # For concurs queries, use c.location; for other queries, use e.city
+                # Use LIKE with wildcards for partial matching
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    location_filter = f"AND c.location LIKE '%{location}%'"
+                    location_filter = "AND c.location LIKE %(location_param)s"
                 else:
-                    location_filter = f"AND e.city LIKE '%{location}%'"
+                    location_filter = "AND e.city LIKE %(location_param)s"
+                params["location_param"] = f"%{location}%"
                 params["location"] = location
             elif len(extracted_entities["llocs"]) > 1:
-                llocs = ', '.join(f"'{lloc}'" for lloc in extracted_entities["llocs"])
                 # For concurs queries, use c.location; for other queries, use e.city
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
-                    location_filter = f"AND c.location IN ({llocs})"
+                    location_filter = "AND c.location IN %(location_param)s"
                 else:
-                    location_filter = f"AND e.city IN ({llocs})"
+                    location_filter = "AND e.city IN %(location_param)s"
+                params["location_param"] = tuple(extracted_entities["llocs"])
                 params["location"] = extracted_entities["llocs"]
         
         if extracted_entities.get("diades"):
             if len(extracted_entities["diades"]) == 1:
                 diada = extracted_entities["diades"][0]
-                diada_filter = f"AND e.name LIKE '%{diada}%'"
+                diada_filter = "AND e.name LIKE %(diada_param)s"
+                params["diada_param"] = f"%{diada}%"
                 params["diada"] = diada
             elif len(extracted_entities["diades"]) > 1:
-                diades = ', '.join(f"'{diada}'" for diada in extracted_entities["diades"])
-                diada_filter = f"AND e.name IN ({diades})"
+                diada_filter = "AND e.name IN %(diada_param)s"
+                params["diada_param"] = tuple(extracted_entities["diades"])
                 params["diada"] = extracted_entities["diades"]
 
         # Handle status filter for WHERE clause (different from castell status in BEST_DIADA)
         if extracted_entities.get("status"):
             if len(extracted_entities["status"]) == 1:
                 status = extracted_entities["status"][0]
-                status_filter = f"AND c.status = '{status}'"
+                status_filter = "AND c.status = %(status_param)s"
+                params["status_param"] = status
                 params["status"] = status
             elif len(extracted_entities["status"]) > 1:
-                statuses = ', '.join(f"'{status}'" for status in extracted_entities["status"])
-                status_filter = f"AND c.status IN ({statuses})"
+                status_filter = "AND c.status IN %(status_param)s"
+                params["status_param"] = tuple(extracted_entities["status"])
                 params["status"] = extracted_entities["status"]
 
         # Handle concurs-related filters
         if extracted_entities.get("editions"):
             if len(extracted_entities["editions"]) == 1:
                 edition = extracted_entities["editions"][0]
-                edition_filter = f"AND c.edition = '{edition}'"
+                edition_filter = "AND c.edition = %(edition_param)s"
+                params["edition_param"] = edition
                 params["edition"] = edition
             elif len(extracted_entities["editions"]) > 1:
-                editions = ', '.join(f"'{edition}'" for edition in extracted_entities["editions"])
-                edition_filter = f"AND c.edition IN ({editions})"
+                edition_filter = "AND c.edition IN %(edition_param)s"
+                params["edition_param"] = tuple(extracted_entities["editions"])
                 params["edition"] = extracted_entities["editions"]
 
         if extracted_entities.get("jornades"):
+            # When filtering by jornada, use posicio_jornada for position
+            position_select = "cr.posicio_jornada AS position"
             if len(extracted_entities["jornades"]) == 1:
                 jornada = extracted_entities["jornades"][0]
-                jornada_filter = f"AND cr.jornada LIKE '%{jornada}%'"
+                jornada_filter = "AND cr.jornada LIKE %(jornada_param)s"
+                params["jornada_param"] = f"%{jornada}%"
                 params["jornada"] = jornada
             elif len(extracted_entities["jornades"]) > 1:
-                jornades = ', '.join(f"'{jornada}'" for jornada in extracted_entities["jornades"])
-                jornada_filter = f"AND cr.jornada IN ({jornades})"
+                jornada_filter = "AND cr.jornada IN %(jornada_param)s"
+                params["jornada_param"] = tuple(extracted_entities["jornades"])
                 params["jornada"] = extracted_entities["jornades"]
 
         if extracted_entities.get("positions"):
             if len(extracted_entities["positions"]) == 1:
                 position = extracted_entities["positions"][0]
-                position_filter = f"AND cr.position = {position}"
-                params["position"] = position
+                if extracted_entities["jornades"]:
+                    position_filter = "AND cr.posicio_jornada = %(position_param)s"
+                    params["position_param"] = position
+                    params["position"] = position
+                else:
+                    position_filter = "AND cr.position = %(position_param)s"
+                    params["position_param"] = position
+                    params["position"] = position
+
             elif len(extracted_entities["positions"]) > 1:
-                positions = ', '.join(str(pos) for pos in extracted_entities["positions"])
-                position_filter = f"AND cr.position IN ({positions})"
-                params["position"] = extracted_entities["positions"]
+                if extracted_entities["jornades"]:
+                    position_filter = "AND cr.posicio_jornada IN %(position_param)s"
+                    params["position_param"] = tuple(extracted_entities["positions"])
+                    params["position"] = extracted_entities["positions"]
+                else:
+                    position_filter = "AND cr.position IN %(position_param)s"
+                    params["position_param"] = tuple(extracted_entities["positions"])
+                    params["position"] = extracted_entities["positions"]
 
         # Handle castell and status filters for concurs queries (search in JSON data)
         if question_type == QuestionType.CONCURS_RANKING:
@@ -745,7 +867,7 @@ class LLMSQLGenerator:
                 castell_conditions = []
                 for castell in extracted_entities["castells"]:
                     if isinstance(castell, Castell):
-                        castell_code = castell.castell_code
+                        castell_code = escape_sql_string(castell.castell_code)
                         # Search for exact castell code match in JSON (more precise)
                         # Look for "castell": "4d9af" pattern to avoid partial matches
                         castell_conditions.append(f"""
@@ -760,15 +882,16 @@ class LLMSQLGenerator:
                         """)
                     else:
                         # Fallback for string format
+                        escaped_castell = escape_sql_string(castell)
                         castell_conditions.append(f"""
-                            (cr.ronda_1_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_2_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_3_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_4_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_5_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_6_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.ronda_7_json LIKE '%"castell": "{castell}"%' OR 
-                             cr.rondes_json LIKE '%"castell": "{castell}"%')
+                            (cr.ronda_1_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_2_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_3_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_4_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_5_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_6_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.ronda_7_json LIKE '%"castell": "{escaped_castell}"%' OR 
+                             cr.rondes_json LIKE '%"castell": "{escaped_castell}"%')
                         """)
                 
                 castell_filter = f"AND ({' OR '.join(castell_conditions)})"
@@ -779,15 +902,16 @@ class LLMSQLGenerator:
                 for status in extracted_entities["status"]:
                     # Search for exact status match in JSON (more precise)
                     # Look for "status": "Descarregat" pattern
+                    escaped_status = escape_sql_string(status)
                     status_conditions.append(f"""
-                        (cr.ronda_1_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_2_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_3_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_4_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_5_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_6_json LIKE '%"status": "{status}"%' OR 
-                         cr.ronda_7_json LIKE '%"status": "{status}"%' OR 
-                         cr.rondes_json LIKE '%"status": "{status}"%')
+                        (cr.ronda_1_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_2_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_3_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_4_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_5_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_6_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.ronda_7_json LIKE '%"status": "{escaped_status}"%' OR 
+                         cr.rondes_json LIKE '%"status": "{escaped_status}"%')
                     """)
                 
                 status_filter = f"AND ({' OR '.join(status_conditions)})"
@@ -808,7 +932,8 @@ class LLMSQLGenerator:
             status_having_filter="",  # No longer used since status is combined with castell
             edition_filter=edition_filter,
             jornada_filter=jornada_filter,
-            position_filter=position_filter
+            position_filter=position_filter,
+            position_select=position_select
         )
         
         # Clean up the query
@@ -1019,242 +1144,117 @@ class LLMSQLGenerator:
                 print(f"[TIMING] SQL result conversion: {convert_time:.2f}ms")
             
             conn.close()
+            
+            # Check if no results were found
+            if not result:
+                raise NoResultsFoundError(NO_RESULTS_MESSAGE)
+            
             return result
+        except NoResultsFoundError:
+            # Re-raise NoResultsFoundError without wrapping it
+            raise
         except Exception as e:
             raise Exception(f"Hi ha hagut un error executant la consulta SQL: {e}\nConsulta generada:\n{sql_query}")
 
 
-# ---- Specific Prompts for Each Query Type ----
+# ---- Structured Prompt System ----
 
-def get_sql_summary_prompt(query_type: str, question: str, table_str: str) -> str:
+@dataclass
+class StructuredPrompt:
+    """Structured prompt with system, developer, and user components"""
+    system_message: str
+    developer_message: str
+    user_prompt: str
+
+
+# Base system message shared across all query types
+BASE_SYSTEM_MESSAGE = """Ets un expert casteller amb criteri tècnic i rigor històric.
+Sempre respons exclusivament en català.
+Segueixes estrictament les instruccions de format i sortida."""
+
+
+# Shared developer instructions (strict rules)
+SHARED_DEVELOPER_RULES = """INSTRUCCIONS ESTRICTES (OBLIGATÒRIES):
+
+PROHIBIT (MAI escriure això a la resposta):
+- Taules
+- Llistes amb guions o punts
+- PUNTS/PUNTUACIONS: MAI dir "X punts", "total de X punts", "va aconseguir X punts" - PROHIBIT!
+- Pilars de 4 o 5 (Pd4, Pd5, Pde4, Pde5)
+- Notes finals o comentaris addicionals
+- Donar opinions o valoracions personals
+- Referencies a ranking
+- Farciment, valoracions finals o conclusions innecesaries (res de "reeixida", "destacada", "impressionant", etc.)
+
+FORMAT:
+- Màxim 1-2 paràgrafs curts
+- **negreta** només per destacar noms i dates
+- Estil telegràfic i objectiu
+- Respon de manera breu i directa"""
+
+
+def get_sql_summary_prompt(query_type: str, question: str, table_str: str) -> StructuredPrompt:
     """
-    Retorna un prompt específic per a cada tipus de consulta SQL.
+    Retorna un prompt estructurat amb system, developer i user components.
+    
+    Args:
+        query_type: Tipus de consulta SQL
+        question: Pregunta de l'usuari
+        table_str: Resultats de la consulta en format string
+    
+    Returns:
+        StructuredPrompt amb els tres components separats
     """
     
-#     if query_type == "millor_diada":
-#         return f"""
-# Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
+    # Query-type specific developer instructions
+    developer_instructions = {
+        "millor_diada": f"""{SHARED_DEVELOPER_RULES}""",
 
-# **Pregunta:** {question}
+        "millor_castell": f"""{SHARED_DEVELOPER_RULES}""",
 
-# **Resultats obtinguts:**
-# {table_str}
+        "castell_historia": f"""{SHARED_DEVELOPER_RULES}""",
 
-# **Instruccions específiques per a respondre la pregunta:**
-# 1. Dona informacio de les millors diades/ actuacions en funcio de la pregunta.
-# 2. Proporciona **TOT EL CONTEXT** de la millor actuació:
-#    - Data exacta i lloc/plaça
-#    - Nom de la diada o esdeveniment 
-#    - Els castells fets (excloent Pde4/Pd4/Pde5/Pd5) amb el seu estat (Descarregat/Carregat/Intent desmuntat)
-#    - No incloguis informacio dels punts obtinguts (a menys que la pregunta ho demani específicament)
-# 3. **NO donis opinions** ni valoracions. 
-# 4. **NO** afeixis cap 'Nota' al final ni informació irrellevant. Respon amb naturalitat sense repetir informacio.
-# 5. Respon en format Markdown. No afageixis títol. 
-# """
+        "location_actuations": f"""{SHARED_DEVELOPER_RULES}""",
 
+        "first_castell": f"""{SHARED_DEVELOPER_RULES}""",
+
+        "castell_statistics": f"""{SHARED_DEVELOPER_RULES}""",
+
+        "year_summary": f"""{SHARED_DEVELOPER_RULES}""",
+
+        "concurs_ranking": f"""{SHARED_DEVELOPER_RULES}""",
+
+        "concurs_history": f"""{SHARED_DEVELOPER_RULES}""",
+    }
     
-    if query_type == "millor_diada":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts (llista de les millors diades/actuacions en ordre):**
-{table_str}
-
-**Instruccions específiques per a respondre la pregunta:**
-
-- Proporciona primer un paràgraf responent a la pregunta amb informació de la diada, el lloc, la data, els castells realitzats (amb el seu estat) - sense incloure els Pd4/Pd5/Pde4/Pde5.
-- No afeixis cap 'Nota' al final ni informació irrellevant 
-- No indiquis el nombre total de castells realitzats. 
-- Respon amb naturalitat sense repetir informació.
-- Respòn en format Markdown, amb **negreta** per a destacar les dades més rellevants al paràgraf.
-- **Afegix una taula al final** amb les seguents columnes: Diada, Colla, Lloc (event_place i event_city), Data, Castells
-- No afegeixis informació dels punts obtinguts dels castells realitzats.
-"""
-
-    elif query_type == "millor_castell":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a millor castell:**
-1. Identifica el millor castell (o els millors castells) en funcio de la pregunta, estan per ordre de dificultat i punts.
-2. Proporciona **TOT EL CONTEXT** del millor castell:
-   - Data exacta i lloc/plaça
-   - Nom de la diada o esdeveniment
-   - Estat del castell que hagin completat (Descarregat/Carregat/Intent desmuntat)
-3. Si parla de castell aconseguit, vol dir que és descarregat. Si el castell és intentat o intent desmuntat, vol dir que el castell s'ha provat pero no s'ha aconseguit o fet.
-4. **NO donis opinions** ni valoracions. Respon de manera natural. 
-"""
-
-    elif query_type == "castell_historia":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a castell història:**
-1. Resumeix quantes vegades s'ha fet aquest castell i en quins estats.
-2. Proporciona **estadístiques clares**:
-   - Nombre total d'ocasions
-   - Quantitat descarregat vs carregat
-   - Primera i última data
-   - Ciutats on s'ha fet
-3. Si hi ha múltiples colles, organitza la informació per colla.
-4. **NO donis opinions** ni valoracions.
-"""
-
-    elif query_type == "location_actuations":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a actuacions per lloc:**
-1. Identifica l'any o lloc de la millor actuació basant-te en els punts totals.
-2. Proporciona **TOT EL CONTEXT** dque tinguis en funcio de la pregunta:
-   - Any i lloc/plaça
-   - Nom de la diada o esdeveniment
-   - Estat de cada castell
-3. **NO donis opinions** ni valoracions.
-"""
-
-    elif query_type == "first_castell":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a primer castell:**
-1. Identifica la primera vegada que es va aconseguir aquest castell.
-2. Proporciona **TOT EL CONTEXT** que sigui rellevant en funcio de la pregunta:
-   - Data exacta (any, mes, dia)
-   - Lloc/plaça on es va fer
-   - Nom de la diada o esdeveniment
-   - Estat del castell (Descarregat/Carregat)
-3. **NO donis opinions** ni valoracions.
-"""
-
-    elif query_type == "castell_statistics":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a estadístiques de castell:**
-1. Resumeix les estadístiques completes d'aquest castell.
-2. Proporciona **dades estructurades**:
-   - Nombre de cops descarregat vs carregat
-   - Primera data aconseguit (descarregat i carregat)
-   - Nombre de colles que l'han aconseguit
-   - Llista de colles que l'han descarregat i carregat
-   - Punts que val cada estat
-3. Organitza la informació de manera clara i fàcil de llegir.
-4. Destaca fets rellevants com la primera colla que el va aconseguir.
-5. **NO donis opinions** sobre la dificultat o importància, només fets objectius.
-
-Resposta:
-"""
-
-    elif query_type == "year_summary":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions específiques per a resum d'any:**
-1. Resumeix l'activitat castellera de l'any en qüestió.
-2. Proporciona **estadístiques clares**:
-   - Nombre d'actuacions per colla
-   - Nombre total de castells fets
-   - Nombre de castells descarregats vs carregats
-   - Classificació de les colles per punts totals
-3. Si la pregunta es refereix a una colla específica, centra't en aquesta colla.
-4. Si la pregunta es refereix a un lloc específic, centra't en aquest lloc.
-5. Organitza la informació de manera clara i fàcil de llegir.
-6. **NO donis opinions** ni valoracions.
-
-"""
-
-    elif query_type == "concurs_ranking":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta sobre el concurs de castells següent utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions:**
-1. Respon la pregunta sobre concursos de castells utilitzant les dades proporcionades.
-2. Proporciona **informació completa** segons la pregunta.
-3. **IMPORTANT**: Si hi ha dades de rondes (ronda_1_json, ronda_2_json, etc.), inclou informació sobre els castells fets:
-   - Castell code i estat (Descarregat, Carregat, Intent desmuntat, Intent)
-   - Ignora rondes que no tinguis informació sobre castells
-4. NO donis opinions ni valoracions.
-"""
-
-    elif query_type == "concurs_history":
-        return f"""
-Ets un expert en el món casteller. Respon la pregunta següent referent a la història de concursos de castells utilitzant els resultats de la base de dades.
-
-**Pregunta:** {question}
-
-**Resultats obtinguts:**
-{table_str}
-
-**Instruccions:**
-1. Proporciona estadístiques completes referents a la pregunta.
-2. NO donis opinions ni valoracions.
-"""
-
-    else:  # custom o altres
-        return f"""
-Ets un expert en el mon casteller. La teva tasca és respondre la pregunta següent utilitzant el resultat d'una consulta SQL a la base de dades.
-
-### Context
-- **Resultats obtinguts de la base de dades:**
-{table_str}
-
-- **Pregunta original de l'usuari:**
+    # Get developer message for this query type, or use default
+    developer_message = developer_instructions.get(query_type, SHARED_DEVELOPER_RULES)
+    
+    # User prompt with the actual question and data
+    user_prompt = f"""Pregunta:
 {question}
 
-### Instruccions
-1. Utilitza **la informació de la consulta** per **respondre directament la pregunta** de l'usuari.
-2. **IMPORTANT**: Si la pregunta és sobre una actuació específica, proporciona **TOT EL CONTEXT**:
-   - On es va fer (lloc/plaça)
-   - Quina diada era
-   - Tots els castells que es van fer (normalment 3 castells + 1 pilar)
-   - Les dates i detalls específics
-4. **CRÍTIC**: Quan parles de castells aconseguits, fets o realitzats:
-   - "Descarregat" = castell completament aconseguit (màxim valor)
-   - "Carregat" = castell aconseguit però no descarregat (valor mitjà)
-   - "Intent desmuntat" = castell NO aconseguit (només intentat)
-   - Sempre especifica quin estat tenia el castell
-5. **NO afegeixis comentaris genèrics**, no donis opinions ni valoracions.
-6. **SIGUES ESPECÍFIC**: Si hi ha dades sobre dates, llocs, castells, colles, inclou-les totes.
-7. No cal que mencionis els punts o puntuacions dels castells (a menys que la pregunta ho demani específicament).
+Resultats:
+{table_str}"""
 
-"""
+    return StructuredPrompt(
+        system_message=BASE_SYSTEM_MESSAGE,
+        developer_message=developer_message,
+        user_prompt=user_prompt
+    )
+
+
+# Legacy function for backward compatibility (returns single string)
+def get_sql_summary_prompt_legacy(query_type: str, question: str, table_str: str) -> str:
+    """
+    Legacy function that returns a single prompt string.
+    Use get_sql_summary_prompt() for the new structured format.
+    """
+    structured = get_sql_summary_prompt(query_type, question, table_str)
+    return f"""{structured.system_message}
+
+{structured.developer_message}
+
+{structured.user_prompt}"""
 
 

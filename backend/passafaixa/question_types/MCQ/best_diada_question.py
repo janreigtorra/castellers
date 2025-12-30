@@ -1,4 +1,5 @@
 from random import random, choice
+from typing import List, Optional
 from passafaixa.schemas import QuestionMCQ4Options
 from passafaixa.questions_utils import get_random_year, get_random_colla
 from passafaixa.db_pool import get_db_connection
@@ -7,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 
 def get_diada_question_data(colla: str = None, year: str = None) -> tuple:
 
@@ -34,64 +34,83 @@ def get_diada_question_data(colla: str = None, year: str = None) -> tuple:
             
             # Single query to get top 6 diades with points calculation using CTE
             query = f"""
-                WITH castells_punts AS (
-                    SELECT 
-                        e.id AS event_id,
-                        e.name AS event_name,
-                        e.date AS event_date,
-                        e.place AS event_place,
-                        e.city AS event_city,
-                        co.id AS colla_id,
-                        co.name AS colla_name,
-                        c.id AS castell_id,
-                        c.castell_name,
-                        c.status,
-                        CASE 
-                            WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
-                            WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-                            ELSE 0
-                        END AS punts,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY e.id, co.id
-                            ORDER BY 
-                                CASE 
-                                    WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
-                                    WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
-                                    ELSE 0
-                                END DESC
-                        ) AS rn
-                    FROM events e
-                    JOIN event_colles ec ON e.id = ec.event_fk
-                    JOIN colles co ON ec.colla_fk = co.id
-                    JOIN castells c ON ec.id = c.event_colla_fk
-                    LEFT JOIN puntuacions p ON (
-                        c.castell_name = p.castell_code_external 
-                        OR c.castell_name = p.castell_code
-                        OR c.castell_name = p.castell_code_name
-                    )
-                    WHERE 1=1
-                    {colla_filter}
-                    {year_filter}
-                ),
-                millors_castells AS (
-                    SELECT *
-                    FROM castells_punts
-                    WHERE rn <= 4  -- només els 4 millors castells per colla i esdeveniment
+               WITH castells_punts AS (
+                SELECT 
+                    e.id AS event_id,
+                    e.name AS event_name,
+                    e.date AS event_date,
+                    e.place AS event_place,
+                    e.city AS event_city,
+                    co.id AS colla_id,
+                    co.name AS colla_name,
+                    c.id AS castell_id,
+                    c.castell_name,
+                    c.status,
+                    CASE 
+                        WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
+                        WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
+                        ELSE 0
+                    END AS punts,
+                    CASE
+                        WHEN c.castell_name ~ '^[0-9]' THEN 'castell'
+                        WHEN c.castell_name ~ '^[Pp]' THEN 'pilar'
+                        ELSE 'altres'
+                    END AS tipus
+                FROM events e
+                JOIN event_colles ec ON e.id = ec.event_fk
+                JOIN colles co ON ec.colla_fk = co.id
+                JOIN castells c ON ec.id = c.event_colla_fk
+                LEFT JOIN puntuacions p ON (
+                    c.castell_name = p.castell_code_external 
+                    OR c.castell_name = p.castell_code
+                    OR c.castell_name = p.castell_code_name
                 )
+                WHERE 1=1
+                {colla_filter}
+                {year_filter}
+            ),
+            ranked AS (
                 SELECT
-                    event_id,
-                    event_name,
-                    event_date,
-                    colla_name,
-                    event_place,
-                    event_city,
-                    COUNT(castell_id) AS num_castells,
-                    SUM(punts) AS total_punts,
-                    STRING_AGG(castell_name || ' (' || status || ', ' || punts || ')', ', ' ORDER BY punts DESC) AS top4_castells
-                FROM millors_castells
-                GROUP BY event_id, event_name, event_date, event_place, event_city, colla_name
-                ORDER BY total_punts DESC
-                LIMIT 4
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY event_id, colla_id, tipus
+                        ORDER BY punts DESC
+                    ) AS rn_tipus
+                FROM castells_punts
+            ),
+            millors_castells AS (
+                SELECT *
+                FROM ranked
+                WHERE
+                    (tipus = 'castell' AND rn_tipus <= 3)
+                    OR
+                    (tipus = 'pilar' AND rn_tipus = 1)
+            )
+            SELECT
+                event_id,
+                event_name,
+                event_date,
+                colla_name,
+                event_place,
+                event_city,
+                COUNT(castell_id) AS num_castells,
+                SUM(punts) AS total_punts,
+                STRING_AGG(
+                    castell_name || ' (' || status || ', ' || punts || ')',
+                    ', '
+                    ORDER BY punts DESC
+                ) AS castells_comptats
+            FROM millors_castells
+            GROUP BY
+                event_id,
+                event_name,
+                event_date,
+                event_place,
+                event_city,
+                colla_name
+            ORDER BY total_punts DESC
+            LIMIT 4;
+
             """
             
             cur.execute(query, params)
@@ -173,18 +192,22 @@ def get_diada_question_data(colla: str = None, year: str = None) -> tuple:
         import traceback
         print(f"Error getting diada question data: {e}")
         traceback.print_exc()
-        # Return fallback values instead of None - ensure these are always valid strings
-        return (("TotSants, Vilafranca", ""), ["Sant Fèlix, Vilafranca", "Santa Tecla, Tarragona", "El Mercadal, Vilafranca"])
+        # Return empty values to trigger error handling in the generate function
+        return (("", ""), ["", "", ""])
 
-def generate_best_diada_question() -> QuestionMCQ4Options:
+def generate_best_diada_question(selected_colles: List[str] = None, selected_years: List[int] = None) -> QuestionMCQ4Options:
     """
     Generate a question asking which was the best diada for a colla/year.
+    
+    Args:
+        selected_colles: Optional list of colla names to pick from when add_colla is True.
+        selected_years: Optional list of years to pick from when add_year is True.
     """
     if not DATABASE_URL:
         return QuestionMCQ4Options(
             question="Quin va ser la millor actuació castellera: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
@@ -197,22 +220,31 @@ def generate_best_diada_question() -> QuestionMCQ4Options:
     
     for attempt in range(max_attempts):
         try:
-            # Let's decide if we add the year to the question or not (70% probability to be True)
-            add_year = random() < 0.70
+            # Let's decide if we add the year to the question or not
+            # If selected_years is provided, always add year (True)
+            if selected_years and len(selected_years) > 0:
+                add_year = True
+            else:
+                add_year = random() < 0.70
+            
             year = None
             if add_year:
-                # Get a random year with weighted probability (recent years more likely)
-                year = get_random_year()
+                # Get a random year - use selected_years if provided (equal probability)
+                year = get_random_year(selected_years=selected_years)
 
-            # Let's decide if we add the colla to the question or not (70% probability to be True)
-            if not add_year:
+            # Let's decide if we add the colla to the question or not
+            # If selected_colles is provided, always add colla (True)
+            if selected_colles and len(selected_colles) > 0:
+                add_colla = True
+            elif not add_year:
                 add_colla = True
             else:
                 add_colla = random() < 0.50
 
             colla = None
             if add_colla:
-                colla = get_random_colla(year)
+                # Use selected_colles if provided (equal probability), otherwise use weighted random
+                colla = get_random_colla(year, selected_colles=selected_colles)
 
             # Get both correct answer and options in a single query
             correct_answer_tuple, options = get_diada_question_data(colla, year)
@@ -228,8 +260,8 @@ def generate_best_diada_question() -> QuestionMCQ4Options:
                 traceback.print_exc()
                 return QuestionMCQ4Options(
                     question="Quin va ser la millor actuació castellera: Error?",
-                    answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                    correct_answer="Error al obtenir les opcions",
+                    answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                    correct_answer="Error al generar la resposta",
                     is_error=True
                 )
             continue
@@ -238,24 +270,24 @@ def generate_best_diada_question() -> QuestionMCQ4Options:
     if not correct_answer_tuple or not isinstance(correct_answer_tuple, tuple) or len(correct_answer_tuple) == 0 or not correct_answer_tuple[0]:
         return QuestionMCQ4Options(
             question="Quin va ser la millor actuació castellera: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )
     
     try:
         # correct_answer_tuple is [formatted_string, castells_fets]
-        diada_correcte = str(correct_answer_tuple[0]) if correct_answer_tuple[0] else "Error al obtenir les opcions"
+        diada_correcte = str(correct_answer_tuple[0]) if correct_answer_tuple[0] else "Error al generar la resposta"
         
         if options and isinstance(options, list) and len(options) >= 3:
-            diada_opcion1 = str(options[0]) if options[0] else "Error al obtenir les opcions"
-            diada_opcion2 = str(options[1]) if options[1] else "Error al obtenir les opcions"
-            diada_opcion3 = str(options[2]) if options[2] else "Error al obtenir les opcions"
+            diada_opcion1 = str(options[0]) if options[0] else "Error al generar la resposta"
+            diada_opcion2 = str(options[1]) if options[1] else "Error al generar la resposta"
+            diada_opcion3 = str(options[2]) if options[2] else "Error al generar la resposta"
         else:
             return QuestionMCQ4Options(
                 question="Quin va ser la millor actuació castellera: Error?",
-                answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-                correct_answer="Error al obtenir les opcions",
+                answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+                correct_answer="Error al generar la resposta",
                 is_error=True
             )
 
@@ -280,7 +312,7 @@ def generate_best_diada_question() -> QuestionMCQ4Options:
         traceback.print_exc()
         return QuestionMCQ4Options(
             question="Quin va ser la millor actuació castellera: Error?",
-            answers=["Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions", "Error al obtenir les opcions"],
-            correct_answer="Error al obtenir les opcions",
+            answers=["Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta", "Error al generar la resposta"],
+            correct_answer="Error al generar la resposta",
             is_error=True
         )

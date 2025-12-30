@@ -1,5 +1,6 @@
 from random import choice, shuffle
 import random
+from typing import List, Optional
 from passafaixa.schemas import QuestionOrdering
 from passafaixa.db_pool import get_db_connection
 import os
@@ -24,8 +25,14 @@ def load_concurs_anys():
         return []
 
 
-def select_year_jornada(concurs_data):
-    """Select a year and jornada with weighted probabilities"""
+def select_year_jornada(concurs_data, selected_years: List[int] = None):
+    """
+    Select a year and jornada with weighted probabilities.
+    
+    Args:
+        concurs_data: List of concurs data from JSON
+        selected_years: Optional list of years to filter to (equal probability)
+    """
     if not concurs_data:
         return None, None
     
@@ -38,21 +45,35 @@ def select_year_jornada(concurs_data):
             years_data[year] = []
         years_data[year].append(jornada)
     
-    # Calculate weights for years (recent years have higher probability)
-    years_list = sorted(years_data.keys())
-    weights = []
-    
-    for year in years_list:
-        # Recent years (2016+) get higher weight
-        if year >= 2016:
-            weight = 0.5
-        elif year >= 2000:
-            weight = 0.35
-        elif year >= 1980:
-            weight = 0.10
+    # If selected_years is provided, filter to only those years
+    if selected_years and len(selected_years) > 0:
+        selected_years_set = set(int(y) for y in selected_years)
+        years_list = [y for y in sorted(years_data.keys()) if y in selected_years_set]
+        if not years_list:
+            # Fallback to all years if none of the selected years are in concurs data
+            years_list = sorted(years_data.keys())
+            weights = [1] * len(years_list)  # Equal weights for fallback
         else:
-            weight = 0.05
-        weights.append(weight)
+            weights = [1] * len(years_list)  # Equal weights for selected years
+    else:
+        # Calculate weights for years (recent years have higher probability)
+        years_list = sorted(years_data.keys())
+        weights = []
+        
+        for year in years_list:
+            # Recent years (2016+) get higher weight
+            if year >= 2016:
+                weight = 0.5
+            elif year >= 2000:
+                weight = 0.35
+            elif year >= 1980:
+                weight = 0.10
+            else:
+                weight = 0.05
+            weights.append(weight)
+    
+    if not years_list:
+        return None, None
     
     # Select a year based on weighted probability
     selected_year = random.choices(years_list, weights=weights, k=1)[0]
@@ -75,14 +96,17 @@ def select_year_jornada(concurs_data):
     return selected_year, selected_jornada
 
 
-def generate_concurs_ranking_question() -> QuestionOrdering:
+def generate_concurs_ranking_question(selected_years: List[int] = None) -> QuestionOrdering:
     """
     Generate a question asking to order colles by their ranking position in a concurs jornada.
+    
+    Args:
+        selected_years: Optional list of years to pick from.
     """
     if not DATABASE_URL:
         return QuestionOrdering(
             question="Ordena les colles en funció de la seva posició del ranking de la jornada XX de l'any XX del concurs de castells",
-            options=["Error al obtenir les opcions"],
+            options=["Error al generar la resposta"],
             correct_answer_order=[],
             is_error=True
         )
@@ -97,8 +121,8 @@ def generate_concurs_ranking_question() -> QuestionOrdering:
             if not concurs_data:
                 continue
             
-            # Select year and jornada
-            year, jornada = select_year_jornada(concurs_data)
+            # Select year and jornada - use selected_years if provided
+            year, jornada = select_year_jornada(concurs_data, selected_years=selected_years)
             if not year:
                 continue
             
@@ -163,7 +187,7 @@ def generate_concurs_ranking_question() -> QuestionOrdering:
                 traceback.print_exc()
                 return QuestionOrdering(
                     question="Ordena les colles en funció de la seva posició del ranking de la jornada XX de l'any XX del concurs de castells",
-                    options=["Error al obtenir les opcions"],
+                    options=["Error al generar la resposta"],
                     correct_answer_order=[],
                     is_error=True
                 )
@@ -172,7 +196,7 @@ def generate_concurs_ranking_question() -> QuestionOrdering:
     # If all attempts failed
     return QuestionOrdering(
         question="Ordena les colles en funció de la seva posició del ranking de la jornada XX de l'any XX del concurs de castells",
-        options=["Error al obtenir les opcions"],
+        options=["Error al generar la resposta"],
         correct_answer_order=[],
         is_error=True
     )

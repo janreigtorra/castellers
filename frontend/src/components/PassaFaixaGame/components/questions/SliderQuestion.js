@@ -1,30 +1,22 @@
-import React, { useState } from 'react';
-import { calculateSliderScore } from '../../utils/scoring';
+import React, { useState, useEffect } from 'react';
 
 const SliderQuestion = ({ 
   question, 
   selectedAnswer, 
-  onSubmit,
-  onNext,
-  isLastQuestion = false
+  onSubmit
 }) => {
   const [sliderValue, setSliderValue] = useState(question.slider_min);
   const showResult = selectedAnswer !== null;
+
+  // Reset slider value when question changes
+  useEffect(() => {
+    setSliderValue(question.slider_min);
+  }, [question]);
 
   const handleSubmit = () => {
     if (showResult || sliderValue === null) return;
     onSubmit(sliderValue);
   };
-
-  let scoreInfo = null;
-  if (showResult) {
-    const points = calculateSliderScore(
-      selectedAnswer,
-      question.correct_answer,
-      question.half_point || 5
-    );
-    scoreInfo = { points, isPerfect: points === 1.0 };
-  }
 
   return (
     <div className="passafaixa-slider-container">
@@ -50,51 +42,14 @@ const SliderQuestion = ({
       
       {!showResult && (
         <button
-          className="passafaixa-slider-submit-btn"
+          className="passafaixa-submit-btn passafaixa-submit-btn-active"
           onClick={handleSubmit}
-          disabled={sliderValue === null}
         >
           Confirmar Resposta
         </button>
-      )}
-      
-      {showResult && (
-        <div className="passafaixa-feedback">
-          {(() => {
-            const percentage = Math.round(scoreInfo.points * 100);
-            
-            if (scoreInfo.isPerfect) {
-              return <p className="passafaixa-feedback-correct">Correcte! 🎉</p>;
-            } else if (scoreInfo.points > 0) {
-              return (
-                <div>
-                  <p className="passafaixa-feedback-partial">
-                    Gairebé! Has obtingut {percentage}% dels punts.
-                  </p>
-                  <p className="passafaixa-feedback-info">
-                    La resposta correcta és: <strong>{question.correct_answer}</strong>
-                  </p>
-                </div>
-              );
-            } else {
-              return (
-                <p className="passafaixa-feedback-incorrect">
-                  Incorrecte. La resposta correcta és: <strong>{question.correct_answer}</strong>
-                </p>
-              );
-            }
-          })()}
-          <button 
-            className="passafaixa-next-btn"
-            onClick={onNext}
-          >
-            {isLastQuestion ? 'Veure Resultats' : 'Següent'}
-          </button>
-        </div>
       )}
     </div>
   );
 };
 
 export default SliderQuestion;
-

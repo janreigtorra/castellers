@@ -175,6 +175,7 @@ function App() {
                 onSessionSaved={handleSessionSaved}
                 onSaveClick={saveChatRef}
                 onMessagesChange={setUnsavedMessagesCount}
+                onCollaIdentified={handleColorChange}
               />
             </main>
           </div>
@@ -183,6 +184,8 @@ function App() {
               <PassaFaixaGame 
                 theme={theme}
                 onBack={() => setCurrentPage('chat')}
+                onColorChange={handleColorChange}
+                selectedColor={selectedColor}
               />
             </main>
           )}

@@ -4,6 +4,7 @@
   flex-direction: column;
   background: white;
   position: relative;
+  overflow: hidden;
 }
 
 .welcome-page::before {
@@ -54,10 +55,8 @@
 
 .welcome-right-section {
   flex: 1;
-  position: relative;
   min-width: 0;
   display: flex;
-  gap: 3rem;
   align-items: flex-start;
 }
 
@@ -124,41 +123,9 @@
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.welcome-login-btn.hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 .welcome-login-btn:hover {
   background: white;
   color: #000;
-}
-
-.welcome-login-spacer {
-  width: 400px;
-  flex-shrink: 0;
-  visibility: hidden;
-}
-
-.welcome-login-container {
-  width: 400px;
-  flex-shrink: 0;
-  position: absolute;
-  right: 0;
-  top: 0;
-  animation: slideIn 0.3s ease-out;
-  z-index: 10;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 
 @media (max-width: 968px) {
@@ -175,9 +142,6 @@
 
   .welcome-text-content {
     max-width: 100%;
-  }
-
-  .welcome-login-container {
     width: 100%;
   }
 
@@ -193,4 +157,55 @@
   .welcome-subtitle {
     font-size: 1.1rem;
   }
+}
+
+/* Login Modal Overlay */
+.login-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.login-modal {
+  background: white;
+  border-radius: 8px;
+  padding: 2rem;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scrolling banners in welcome page */
+.welcome-page > .scrolling-banner {
+  flex-shrink: 0;
+  padding: 1rem 0;
 }

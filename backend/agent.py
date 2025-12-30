@@ -5,6 +5,7 @@ Agent "Xiquet": respon preguntes sobre castells usant LLM + RAG + SQL.
 
 import json
 import os
+import unicodedata
 from typing import Dict, Any, List, Optional
 from langdetect import detect
 from database_pipeline.rag_index_supabase import search_query_supabase
@@ -26,8 +27,49 @@ from utility_functions import (
     get_all_diada_options
 
 )
-from llm_sql import LLMSQLGenerator, get_sql_summary_prompt
-from llm_function import llm_call, list_available_providers, list_provider_models
+from llm_sql import LLMSQLGenerator, get_sql_summary_prompt, StructuredPrompt, NoResultsFoundError, NO_RESULTS_MESSAGE, SQL_RESULT_LIMIT, LLM_CONTEXT_LIMIT
+from llm_function import llm_call, list_available_providers, list_provider_models, is_guardrail_violation
+from util_dics import SQL_QUERY_PATTERNS, IS_SQL_QUERY_PATTERNS, COLUMN_MAPPINGS, TITLE_MAPPINGS
+from difflib import SequenceMatcher
+import re
+
+
+def sanitize_llm_response(response: str) -> str:
+    """
+    Post-process LLM response to remove unwanted formatting like tables.
+    """
+    if not response:
+        return response
+    
+    lines = response.split('\n')
+    clean_lines = []
+    
+    for line in lines:
+        # Detect table rows: lines with 2+ pipe characters (e.g., "| col1 | col2 |")
+        pipe_count = line.count('|')
+        
+        if pipe_count >= 2:
+            # This is likely a table row - skip it
+            print(f"[DEBUG] Removing table line: {line[:80]}...")
+            continue
+        
+        # Also detect markdown table separator lines (e.g., "|---|---|")
+        if re.match(r'^[\s|:-]+$', line) and '|' in line:
+            print(f"[DEBUG] Removing table separator: {line}")
+            continue
+        
+        clean_lines.append(line)
+    
+    # Join lines
+    result = '\n'.join(clean_lines)
+    
+    # Clean up excessive newlines and spaces
+    result = re.sub(r'\n{3,}', '\n\n', result)  # Max 2 consecutive newlines
+    result = re.sub(r'\s{2,}', ' ', result)     # Max 1 space
+    result = re.sub(r'\s+\.', '.', result)      # Remove space before period
+    result = re.sub(r'\s+,', ',', result)       # Remove space before comma
+    
+    return result.strip()
 
 # Load environment variables from .env file
 load_dotenv()
@@ -37,7 +79,10 @@ load_dotenv()
 
 MODEL_NAME = "sambanova:gpt-oss-120b" 
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
-MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.1-8B-Instruct"
+# MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.1-8B-Instruct"
+# MODEL_NAME_RESPONSE = "sambanova:Qwen3-235B"
+MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
+
 
 
 # Available options:
@@ -71,16 +116,32 @@ class Xiquet:
         self.editions = []
         self.jornades = []
         self.positions = []
+        # Table data to be sent to frontend (avoids LLM generating tables)
+        self.table_data = None
         self.sql_generator = LLMSQLGenerator()
     
     def abans_de_res(self, question: str) -> Optional[FirstCallResponseFormat]:
         """
         Analitza la pregunta abans de processar-la i retorna una resposta directa si es compleixen certes condicions.
         """
-        # Analitza si la pregunta no és en català
+        # 1. Primer comprova guardrails (sempre s'executa, independent de la detecció d'idioma)
+        if is_guardrail_violation(question):
+            response = (
+                "Sóc **el Xiquet**, un assistent especialitzat **exclusivament** en el món casteller. \n\n"
+                "Només puc respondre preguntes sobre castells, colles, diades, concursos i història castellera.\n"
+                "Si tens una pregunta castellera, estaré encantat d'ajudar-te!"
+            )
+            return FirstCallResponseFormat(
+                tools="direct",
+                sql_query_type="",
+                direct_response=response,
+                colla=[], castells=[], anys=[], llocs=[], diades=[]
+            )
+        
+        # 2. Analitza si la pregunta no és en català/espanyol/portuguès
         try:
             lang = detect(question)
-            if lang != "ca":
+            if lang not in ["ca", "es", 'pt']:
                 if lang in language_names:
                     response = f"Ho sento, no parlo {language_names[lang]}. Només puc respondre preguntes en català i relacionades amb el món casteller. Però sempre es bon moment per apendre a parlar català!"
                 else:
@@ -88,27 +149,29 @@ class Xiquet:
                 
                 return FirstCallResponseFormat(
                     tools="direct",
+                    sql_query_type="",
                     direct_response=response,
                     colla=[], castells=[], anys=[], llocs=[], diades=[]
                 )
         except Exception:
             # Si no es pot detectar l'idioma, continua processant
+            print(f"Error en la detecció de l'idioma")
             pass
         
-        # Analitza si la pregunta té més de 25 tokens
-        # Utilitzem una aproximació simple: dividir per espais i puntuació
+        # 3. Analitza si la pregunta té més de 25 tokens
         import re
         tokens = re.findall(r'\b\w+\b', question)
         if len(tokens) > 25:
             return FirstCallResponseFormat(
                 tools="direct",
+                sql_query_type="",
                 direct_response="La teva pregunta és massa llarga. Si us plau, fes una pregunta més concisa i específica sobre el món casteller.",
                 colla=[], castells=[], anys=[], llocs=[], diades=[]
             )
         
         # Si no es compleix cap condició, retorna None per continuar processant
         return None
-    
+
     def decide_route(self, question: str) -> FirstCallResponseFormat:
         """
         Decideix la ruta:
@@ -132,11 +195,14 @@ class Xiquet:
             return direct_response
         
         # Extract entities from question (heuristics)
+        entity_start = datetime.now()
         self.colles_castelleres = get_colles_castelleres_subset(question)
         self.castells = get_castells_with_status_subset(question)
         self.anys = get_anys_subset(question)
         self.llocs = get_llocs_subset(question)
         self.diades = get_diades_subset(question)
+        entity_time = (datetime.now() - entity_start).total_seconds() * 1000
+        print(f"[TIMING] Entity extraction: {entity_time:.2f}ms")
 
         # Build dynamic entities section
         entities_section = ""
@@ -195,19 +261,17 @@ class Xiquet:
         Elements a extreure:{entities_section}
 
         IMPORTANT: No confonguis el nom de les colles amb el fet de que estigui parlant de una localitat o diada. 
-        Per exemple, si la pregunta parla dels "castellers de Sabadell", no has d'extreure "Sabadell" com a lloc ni "Diada dels castellers de Sabadell" com a diada a nose que ho estigui parlant explicitament. 
+        Per exemple, si la pregunta parla dels "castellers de Sabadell", no has d'extreure "Sabadell" com a lloc ni "Diada dels castellers de Sabadell" com a diada a nose que la pregunta faci referència a aquella especifica diada. 
 
 
         ### 2. Elecció de l'eina adequada
-        Decideix quina eina utilitzar per respondre la pregunta: sql, rag, hybrid o direct.
+        Decideix quina eina utilitzar per respondre la pregunta: sql, rag o direct.
 
         - **"sql"**: si la pregunta requereix **informació quantitativa o estadística** que es pot obtenir amb una consulta a la base de dades. 
             Preguntes com millor actuació, millor castells, rankings o consultes del concurs, quantes vegades s'ha fet un castell, on s'han realitzat castells, resums d'una temporada o any, estadístiques d'un castell/s, història de concursos, etc. 
             Prioritza la consulta SQL sobre la resta quan tinguis dubtes.
 
-        - **"rag"**: si la pregunta requereix **coneixement textual o descriptiu**, com història, valors, fets generals o informació no numèrica.  
-
-        - **"hybrid"**: si la pregunta combina informació **estadística i contextual** o si un context textual pot ajudar a interpretar millor la dada SQL.
+        - **"rag"**: si la pregunta requereix **coneixement textual o descriptiu**, com història, valors o conceptes generals sobre el mon casteller.  
 
         - **"direct"**: si la pregunta és **molt general, bàsica o no relacionada amb castells**.  
 
@@ -217,8 +281,7 @@ class Xiquet:
         {FirstCallResponseFormat.model_json_schema()}
 
         Regles:
-        - El camp `"tools"` ha de ser exactament un d'aquests valors: `"direct"`, `"rag"`, `"sql"`, `"hybrid"`.
-        - Si `"tools"` és `"sql"` o `"hybrid"`, **NO** triïs el camp `"sql_query_type"` - es farà en un segon pas.
+        - El camp `"tools"` ha de ser exactament un d'aquests valors: `"direct"`, `"rag"`, `"sql"`.
         - Si `"tools"` és `"direct"`, **afegeix també una resposta breu i clara** al camp `"direct_response"`.
         - Assegura't que **totes les llistes** (`colla`, `castells`, `anys`, `llocs`, `diades`, `edicions`, `jornades`, `posicions`) contenen només elements exactes o són buides.
 
@@ -228,20 +291,57 @@ class Xiquet:
         response = llm_call(route_prompt, model=MODEL_NAME_ROUTE, response_format=FirstCallResponseFormat)
         llm_time = (datetime.now() - llm_start).total_seconds() * 1000
         print(f"[TIMING] decide_route() LLM call: {llm_time:.2f}ms")
+        
+        # Handle case where provider returns dict instead of Pydantic model
+        if isinstance(response, dict):
+            print(f"[WARNING] LLM returned dict instead of FirstCallResponseFormat, converting...")
+            try:
+                response = FirstCallResponseFormat(**response)
+            except Exception as e:
+                print(f"[ERROR] Failed to convert dict to FirstCallResponseFormat: {e}")
+                return FirstCallResponseFormat(
+                    tools="direct",
+                    sql_query_type="",
+                    direct_response="Ho sento, hi ha hagut un problema processant la teva pregunta. Torna-ho a provar.",
+                    colla=[],
+                    castells=[],
+                    anys=[],
+                    llocs=[],
+                    diades=[]
+                )
+        
         self.response = response
         
+        sql_type_start = datetime.now()
+        skip_sql_check = False
+        if response.tools == "rag" or response.tools == "direct":
+            if response.tools == "direct":
+                threshold = 0.85
+            else:
+                threshold = 0.8
+            # Only attempt SQL determination if entities exist
+            if response.colla or response.castells or response.anys or response.llocs or response.diades:
+                response.sql_query_type = self._determine_sql_query_type(question, response, IS_SQL_QUERY_PATTERNS, threshold=threshold)
+                if response.sql_query_type != "custom":
+                    response.tools = "sql"
+                    skip_sql_check = True
+
+        
         # If SQL or hybrid, determine the specific query type
-        if response.tools in ["sql", "hybrid"]:
+        if response.tools in ["sql", "hybrid"] and not skip_sql_check:
             # Option 1: Fast fuzzy matching (current default)
-            response.sql_query_type = self._determine_sql_query_type(question, response)
+            response.sql_query_type = self._determine_sql_query_type(question, response, SQL_QUERY_PATTERNS)
             
             # Option 2: LLM-based classification (uncomment to use)
             # response.sql_query_type = self._determine_sql_query_type_llm_call(question, response)
+        sql_type_time = (datetime.now() - sql_type_start).total_seconds() * 1000
+        print(f"[TIMING] SQL query type determination: {sql_type_time:.2f}ms")
 
         # Validate tool
         if response.tools not in ["direct", "rag", "sql", "hybrid"]:
             return FirstCallResponseFormat(
                 tools="direct",
+                sql_query_type="",
                 direct_response="No estic segur de com respondre aquesta pregunta, però ho estic intentant!",
                 colla=[],
                 castells=[],
@@ -255,13 +355,31 @@ class Xiquet:
             if response.sql_query_type not in ["millor_diada", "millor_castell", "castell_historia", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "custom"]:
                 response.sql_query_type = "custom"
 
+        validation_start = datetime.now()
+        
+        # Helper function to remove accents for comparison
+        def normalize_accents(text: str) -> str:
+            return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+        
         # Validate colla (only if not empty)
         if response.colla:
             valid_colles = get_all_colla_options()
-            for colla in response.colla:
+            # Create a mapping of normalized names to original names
+            normalized_to_original = {normalize_accents(c).lower(): c for c in valid_colles}
+            
+            for i, colla in enumerate(response.colla):
                 if colla not in valid_colles:
-                    print(f"Error: Colla {colla} no és vàlida")
-                    response.colla.remove(colla) 
+                    # Try matching without accents
+                    normalized_colla = normalize_accents(colla).lower()
+                    if normalized_colla in normalized_to_original:
+                        matched = normalized_to_original[normalized_colla]
+                        print(f"[Accent Match] Colla '{colla}' -> '{matched}'")
+                        response.colla[i] = matched
+                    else:
+                        print(f"Error: Colla {colla} no és vàlida")
+                        response.colla[i] = None
+            # Remove None values
+            response.colla = [c for c in response.colla if c is not None] 
         
         # Validate castells (only if not empty) - be more flexible
         if response.castells:
@@ -306,6 +424,8 @@ class Xiquet:
                 if diada not in valid_diades:
                     print(f"Error: Diada {diada} no és vàlida")
                     response.diades.remove(diada)
+        validation_time = (datetime.now() - validation_start).total_seconds() * 1000
+        print(f"[TIMING] Entity validation: {validation_time:.2f}ms")
 
         if DEBUG:
             print(f"castells: {response.castells}")
@@ -331,24 +451,10 @@ class Xiquet:
 
         return response
 
-    def _determine_sql_query_type(self, question: str, response: FirstCallResponseFormat) -> str:
+    def _determine_sql_query_type(self, question: str, response: FirstCallResponseFormat, query_patterns: dict = SQL_QUERY_PATTERNS, threshold: float = 0.3) -> str:
         """Determine the specific SQL query type using fuzzy matching with similarity scores"""
-        from difflib import SequenceMatcher
-        
+    
         question_lower = question.lower()
-        
-        # Define query types with their characteristic keywords
-        query_patterns = {
-            "millor_diada": ["millor diada", "millor actuació", "millor actuacio", "millor actuacion", "millor actuacions", "quina diada", "quina actuació", "millor actuacions", "millors actuacions", "millors actuacions"],
-            "millor_castell": ["millor castell", "millor torre", "millor construcció", "millor construccio", "millor torre", "millor construcció"],
-            "castell_historia": ["quants", "quant", "vegades", "cops", "història", "historia", "ha fet", "han fet", "quantes vegades"],
-            "location_actuations": ["quin any", "quin lloc", "millor any", "millor lloc", "quina ciutat", "quina població", "millor ciutat"],
-            "first_castell": ["primer", "primera", "primer cop", "primera vegada", "primer castell", "primera vegada"],
-            "castell_statistics": ["estadístiques", "estadisticas", "estadística", "estadistica", "estadístiques castell"],
-            "year_summary": ["resum", "resum temporada", "activitat", "com va ser la temporada", "com va ser l'any", "resum any", "com va anar la temporada", "com va anar l'any", 'que van fer a la temporada', 'que van fer a l\'any'],
-            "concurs_ranking": ["concurs", "concursos", "classificació concurs", "classificacio concurs", "guanyador concurs", "guanyadora concurs", "quina classificació", "quin concurs", "concurs de castells"],
-            "concurs_history": ["història concurs", "historia concurs", "concursos celebrats", "història dels concursos"]
-        }
         
         # Calculate similarity scores for each query type
         scores = {}
@@ -371,9 +477,13 @@ class Xiquet:
         best_match = max(scores.items(), key=lambda x: x[1])
         best_query_type, best_score = best_match
         
-        # Threshold for accepting a match (adjust as needed)
-        threshold = 0.3
+        # If concurs_history but jornades or positions are populated, change to concurs_ranking
+        if best_query_type == "concurs_history" and (response.jornades or response.positions):
+            if DEBUG:
+                print(f"[Fuzzy Match] Overriding concurs_history -> concurs_ranking (jornades: {response.jornades}, positions: {response.positions})")
+            best_query_type = "concurs_ranking"
         
+        # Threshold for accepting a match (adjust as needed)
         if best_score >= threshold:
             if DEBUG:
                 print(f"[Fuzzy Match] Best match: {best_query_type} (score: {best_score:.2f})")
@@ -467,69 +577,159 @@ class Xiquet:
         """
         return self.sql_generator.execute_sql_query(sql_query, params)
 
+    def _rerank_results(self, question: str, results: list, top_k: int = 5) -> list:
+        """
+        Re-rank RAG results. 
+        Cross-encoder disabled by default as it adds 17+ seconds for minimal benefit with few results.
+        The vector similarity from pgvector is usually sufficient.
+        """
+        if not results:
+            return results
+        
+        # Simply return top_k results sorted by original similarity score
+        # This is already done by pgvector, but ensure we limit to top_k
+        return results[:top_k]
+
     def handle_rag(self) -> str:
         """
         Use RAG to answer the question by searching through embeddings.
+        Includes: relevance filtering, cross-encoder re-ranking, and smart prompting.
         """
         from datetime import datetime
         
+        # Configuration
+        MIN_SIMILARITY_THRESHOLD = 0.25  # Minimum similarity score to consider
+        INITIAL_RETRIEVAL_K = 15  # Retrieve more candidates for re-ranking
+        FINAL_TOP_K = 5  # Final number of results after re-ranking
+        
         try:
-            # Search for relevant documents
+            # Step 1: Initial retrieval (retrieve more candidates for re-ranking)
             rag_search_start = datetime.now()
-            results = search_query_supabase(self.question, k=10)
+            results = search_query_supabase(self.question, k=INITIAL_RETRIEVAL_K)
             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
-            print(f"[TIMING] RAG search_query_supabase(): {rag_search_time:.2f}ms")
+            print(f"[TIMING] RAG search_query_supabase(): {rag_search_time:.2f}ms (retrieved {len(results)} candidates)")
             
             if not results:
                 return "No he trobat informació rellevant per respondre la teva pregunta."
             
-            # Prepare context from search results
+            # Step 2: Relevance score filtering (remove low-quality results)
+            filtered_results = [(doc, score) for doc, score in results if score >= MIN_SIMILARITY_THRESHOLD]
+            print(f"[RAG] Filtered from {len(results)} to {len(filtered_results)} results (threshold: {MIN_SIMILARITY_THRESHOLD})")
+            
+            if not filtered_results:
+                return "No he trobat informació prou rellevant per respondre la teva pregunta. Prova a reformular la pregunta."
+            
+            # Step 3: Re-rank with cross-encoder for better semantic matching
+            reranked_results = self._rerank_results(self.question, filtered_results, top_k=FINAL_TOP_K)
+            print(f"[RAG] Re-ranked to top {len(reranked_results)} results")
+            
+            # Step 4: Build context from re-ranked results (simple text concatenation)
             context_parts = []
-            for i, (doc_info, score) in enumerate(results, 1):
-                meta = doc_info.get("meta", {})
+            for i, (doc_info, score) in enumerate(reranked_results, 1):
                 text = doc_info.get("text", "")
-                
-                # Add metadata context
-                context_info = []
-                if meta.get("colla_name"):
-                    context_info.append(f"Colla: {meta['colla_name']}")
-                if meta.get("date"):
-                    context_info.append(f"Data: {meta['date']}")
-                if meta.get("place"):
-                    context_info.append(f"Lloc: {meta['place']}")
-                if meta.get("category"):
-                    context_info.append(f"Categoria: {meta['category']}")
-                
-                context_str = f"[Resultat {i}] " + "; ".join(context_info) + f"\n{text}"
-                context_parts.append(context_str)
+                context_parts.append(f"[Document {i}]\n{text}")
             
             context = "\n\n".join(context_parts)
             
-            # Generate answer using RAG context
-            rag_llm_start = datetime.now()
-            rag_prompt = f"""
-            Ets un expert en el món casteller. Utilitza la informació següent per respondre la pregunta de l'usuari.
-
-            ### Pregunta de l'usuari:
-            {self.question}
-
-            ### Informació rellevant trobada:
-            {context}
-
-            ### Instruccions:
-            1. Respon la pregunta utilitzant la informació proporcionada si es rellevant a la pregunta.
-            2. Si hi ha informació sobre colles específiques, dates o llocs, inclou-la en la resposta.
-            3. Completa la resposta amb informació contextual relevant si cal.
-
-            """
+            # Step 5: Generate answer with improved prompt
+            rag_system = """Ets un expert casteller amb criteri tècnic i rigor històric.
+Sempre respons exclusivament en català.
+Segueixes estrictament les instruccions de format i sortida."""
             
-            answer = llm_call(rag_prompt, model=MODEL_NAME_RESPONSE)
+            rag_developer = """INSTRUCCIONS ESTRICTES (OBLIGATÒRIES):
+
+PROHIBIT:
+- Afegir taules
+- Afegir llistes amb guions o punts
+- Donar opinions o valoracions personals
+
+FORMAT DE SORTIDA:
+- Markdown, text narratiu (paràgrafs) (NO TAULES)
+- Únic ús de **negreta** per destacar fets rellevants (màxim 3-4 elements)
+
+SOBRE LA INFORMACIÓ PROPORCIONADA:
+- Utilitza la informació proporcionada si és rellevant; si no, respon amb el teu propi coneixement casteller.
+- Si no tens informació suficient, digues-ho honestament i no inventis dades específiques.
+
+Respon en 1-3 paràgrafs segons la complexitat de la pregunta."""
+
+            rag_user = f"""Pregunta:
+{self.question}
+
+Informació trobada als documents:
+{context}
+
+Respon la pregunta de forma breu i directa. Si la informació dels documents no és rellevant, utilitza el teu coneixement casteller."""
+            
+            rag_llm_start = datetime.now()
+            answer = llm_call(
+                prompt=rag_user,
+                model=MODEL_NAME_RESPONSE,
+                system_message=rag_system,
+                developer_message=rag_developer
+            )
             rag_llm_time = (datetime.now() - rag_llm_start).total_seconds() * 1000
             print(f"[TIMING] handle_rag() LLM call: {rag_llm_time:.2f}ms")
+            
+            # Sanitize response to remove any tables
+            answer = sanitize_llm_response(answer)
             return f"{answer}\n\n*Font: Cerca semàntica en documents castellers*"
             
         except Exception as e:
             return f"Error en la cerca semàntica: {e}"
+
+    def _format_table_for_frontend(self, rows: list, query_type: str) -> dict:
+        """
+        Format SQL results as a structured table for frontend display.
+        Returns a dict with 'title', 'columns' (with nice names), and 'rows'.
+        Only includes columns specified for each query type.
+        """
+        if not rows:
+            return None
+        
+        # ============================================================
+        # COLUMNS TO SHOW PER QUERY TYPE
+        # Define which columns to display for each query type (in order)
+        # Use the database column names here
+        # ============================================================
+        columns_per_query_type = {
+            'millor_diada': ['ranking', 'event_name', 'event_date', 'colla_name', 'event_city', 'castells_fets'],
+            'millor_castell': ['castell_name', 'event_name', 'event_date', 'colla_name', 'event_city', 'status'],
+            'castell_historia': ['castell_name', 'status', 'count_occurrences', 'colla_name', 'first_date', 'last_date', 'cities'],
+            'location_actuations': ['event_name', 'date', 'city', 'colla_name', 'castells_fets'],
+            'first_castell': ['castell_name', 'status','event_name', 'date', 'colla_name', 'city'],
+            'castell_statistics': ['castell_name', 'cops_descarregat', 'cops_carregat', 'cops_intent_desmuntat', 'cops_intent', 'primera_data_descarregat', 'primera_data_carregat', 'colles_descarregat', 'colles_carregat', 'colles_intentat',  'primeres_colles_descarregat', 'primeres_colles_carregat', 'primeres_colles_intentat',],
+            'concurs_ranking': ['colla_name', 'position', 'total_points', 'jornada', 'primera_ronda', 'segona_ronda', 'tercera_ronda', 'quarta_ronda', ' cinquena_ronda'],
+            'concurs_history': ['any', 'jornada', 'colles_participants', 'colla_guanyadora', 'punts_guanyador', 'castells_r1_descarregats', 'castells_r2_descarregats', 'castells_r3_descarregats', 'castells_r4_descarregats', 'castells_r5_descarregats'],
+            'year_summary': ['colla_name', 'num_actuacions', 'num_castells', 'castells_descarregats', 'castells_carregats', 'castells_intent_desmuntat', 'castells_intent'],
+        }
+        # ============================================================
+        
+        # Get original headers from the data
+        all_headers = list(rows[0].keys())
+        
+        # Determine which columns to show
+        if query_type in columns_per_query_type:
+            # Use only specified columns (in the specified order)
+            selected_columns = [col for col in columns_per_query_type[query_type] if col in all_headers]
+        else:
+            # Default: show all columns
+            selected_columns = all_headers
+        
+        # Map headers to nice display names
+        nice_headers = [COLUMN_MAPPINGS.get(col, col.replace('_', ' ').title()) for col in selected_columns]
+        
+        # Format rows with only selected columns
+        formatted_rows = []
+        for row in rows:
+            formatted_row = [str(row.get(col, '-')) if row.get(col) is not None else '-' for col in selected_columns]
+            formatted_rows.append(formatted_row)
+        
+        return {
+            'title': TITLE_MAPPINGS.get(query_type, 'Resultats'),
+            'columns': nice_headers,
+            'rows': formatted_rows
+        }
 
     def handle_sql(self) -> str:
         """
@@ -547,36 +747,48 @@ class Xiquet:
             
             # Execute the query
             sql_exec_start = datetime.now()
-            rows = self.execute_sql_query(sql_query, params)
+            try:
+                rows = self.execute_sql_query(sql_query, params)
+            except NoResultsFoundError:
+                self.table_data = None
+                return NO_RESULTS_MESSAGE
             sql_exec_time = (datetime.now() - sql_exec_start).total_seconds() * 1000
             print(f"[TIMING] execute_sql_query(): {sql_exec_time:.2f}ms")
 
-            # If no results
-            if not rows:
-                return f"No he trobat resultats per la teva consulta.\nConsulta SQL utilitzada:\n{sql_query}"
-
             # Summarize results into a readable answer
-            # Convert rows to a friendly table
+            # Convert rows to a friendly table (limited for LLM context)
             header = list(rows[0].keys())
-            table_str = "\n".join([" | ".join(header)] + [" | ".join(str(v) for v in r.values()) for r in rows[:10]])
-            print("[SQL Results]\n", table_str)
+            table_str = "\n".join([" | ".join(header)] + [" | ".join(str(v) for v in r.values()) for r in rows[:LLM_CONTEXT_LIMIT]])
+            print("[SQL Results for LLM]\n", table_str)
             
             # Get the SQL query type for specific prompt
             sql_query_type = getattr(self.response, 'sql_query_type', 'custom')
             
-            # Use specific prompt for the query type
-            summary_prompt = get_sql_summary_prompt(sql_query_type, self.question, table_str)
+            # Store table data for frontend display (full results up to SQL_RESULT_LIMIT)
+            # Create a nice table structure with proper column titles
+            self.table_data = self._format_table_for_frontend(rows[:SQL_RESULT_LIMIT], sql_query_type)
+            
+            # Use structured prompt with system/developer/user separation
+            structured_prompt = get_sql_summary_prompt(sql_query_type, self.question, table_str)
 
             try:
                 sql_llm_start = datetime.now()
-                final_answer = llm_call(summary_prompt, model=MODEL_NAME_RESPONSE)
+                final_answer = llm_call(
+                    prompt=structured_prompt.user_prompt,
+                    model=MODEL_NAME_RESPONSE,
+                    system_message=structured_prompt.system_message,
+                    developer_message=structured_prompt.developer_message
+                )
                 sql_llm_time = (datetime.now() - sql_llm_start).total_seconds() * 1000
                 print(f"[TIMING] handle_sql() LLM summary call: {sql_llm_time:.2f}ms")
+                
+                # Sanitize response to remove any tables the LLM might have added
+                final_answer = sanitize_llm_response(final_answer)
             except Exception as e:
                 return f"He pogut obtenir dades, però no generar una explicació: {e}\nConsulta SQL:\n{sql_query}"
 
-            # Return the final answer with provenance
-            return f"{final_answer}\n```"
+            # Return the final answer with source attribution
+            return f"{final_answer}\n\n*Font: Base de dades de la CCCC*"
             
         except Exception as e:
             return str(e)
@@ -596,7 +808,10 @@ class Xiquet:
             print(f"[TIMING] hybrid create_sql_query(): {sql_gen_time:.2f}ms")
             
             sql_exec_start = datetime.now()
-            sql_rows = self.execute_sql_query(sql_query, params)
+            try:
+                sql_rows = self.execute_sql_query(sql_query, params)
+            except NoResultsFoundError:
+                sql_rows = []  # Continue with RAG context only
             sql_exec_time = (datetime.now() - sql_exec_start).total_seconds() * 1000
             print(f"[TIMING] hybrid execute_sql_query(): {sql_exec_time:.2f}ms")
             
@@ -647,35 +862,54 @@ class Xiquet:
             else:
                 rag_context = ""
             
-            # Step 5: Generate comprehensive answer using both sources
-            hybrid_prompt = f"""
-            Ets un expert en el món casteller. Utilitza tant les dades estructurades de la base de dades com la informació contextual dels documents per respondre la pregunta de l'usuari de manera completa i precisa.
+            # Step 5: Generate comprehensive answer using both sources with structured prompts
+            hybrid_system = """Ets un expert casteller amb criteri tècnic i rigor històric.
+Sempre respons exclusivament en català.
+Segueixes estrictament les instruccions de format i sortida."""
+            
+            hybrid_developer = """INSTRUCCIONS ESTRICTES (OBLIGATÒRIES):
 
-            ### Pregunta de l'usuari:
-            {self.question}
+PROHIBIT:
+- Afegir taules
+- Afegir llistes amb guions o punts
+- Repetir dades literals
+- Mencionar punts o puntuacions numèriques
+- Donar opinions o valoracions personals
 
-            {sql_context}
+FORMAT DE SORTIDA:
+- Markdown, text narratiu (paràgrafs)
+- Únic ús de **negreta** per destacar fets rellevants (màxim 3-4 elements)
 
-            {rag_context}
+CONTEXT ESPECÍFIC:
+- Combina la informació de les dues fonts (SQL i RAG)
+- Prioritza dades SQL per informació específica (dates, estadístiques)
+- Utilitza RAG per context històric o explicacions
+- Respon en 1-2 paràgrafs màxim"""
 
-            ### Instruccions:
-            1. **Combina** la informació de les dues fonts per donar una resposta completa.
-            2. Si les dades SQL proporcionen informació específica (dates, nombres, estadístiques), utilitza-la com a base.
-            3. Si la informació contextual dels documents proporciona context històric, explicacions o detalls addicionals, integra-la per enriquir la resposta.
-            4. No donis valoracions ni opinions.
-            """
+            hybrid_user = f"""Pregunta:
+{self.question}
+
+{sql_context}
+
+{rag_context}
+
+Respon de forma breu i directa combinant ambdues fonts."""
             
             hybrid_llm_start = datetime.now()
-            answer = llm_call(hybrid_prompt, model=MODEL_NAME_RESPONSE)
+            answer = llm_call(
+                prompt=hybrid_user,
+                model=MODEL_NAME_RESPONSE,
+                system_message=hybrid_system,
+                developer_message=hybrid_developer
+            )
             hybrid_llm_time = (datetime.now() - hybrid_llm_start).total_seconds() * 1000
             print(f"[TIMING] handle_hybrid() LLM call: {hybrid_llm_time:.2f}ms")
             
+            # Sanitize response to remove any tables
+            answer = sanitize_llm_response(answer)
+            
             # Step 6: Add provenance information
-            provenance = f"""
-            *Fonts utilitzades:*
-            - Dades estructurades de la base de dades (SQL)
-            - Cerca semàntica en documents castellers (RAG)
-            """
+            provenance = "*Fonts: SQL + RAG*"
             
             return f"{answer}\n\n{provenance}"
             

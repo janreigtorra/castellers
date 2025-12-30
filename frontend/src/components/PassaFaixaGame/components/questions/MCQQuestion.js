@@ -1,22 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 const MCQQuestion = ({ question, selectedAnswer, onAnswerSelect }) => {
+  const [pendingAnswer, setPendingAnswer] = useState(null);
+  const showResult = selectedAnswer !== null;
+
+  // Reset pending answer when question changes
+  useEffect(() => {
+    setPendingAnswer(null);
+  }, [question]);
+
+  const handleOptionClick = (answer) => {
+    if (showResult) return;
+    setPendingAnswer(answer);
+  };
+
+  const handleConfirm = () => {
+    if (pendingAnswer === null) return;
+    onAnswerSelect(pendingAnswer);
+  };
+
   return (
     <>
       <div className="passafaixa-answers">
         {question.answers.map((answer, index) => {
-          const isSelected = selectedAnswer === answer;
-          const isCorrect = answer === question.correct_answer;
-          const showResult = selectedAnswer !== null;
+          const isPending = pendingAnswer === answer;
+          const isSelectedAnswer = selectedAnswer === answer;
+          const isCorrectAnswer = answer === question.correct_answer;
           
           let answerClass = 'passafaixa-answer';
           if (showResult) {
-            if (isCorrect) {
+            if (isCorrectAnswer) {
               answerClass += ' passafaixa-answer-correct';
-            } else if (isSelected && !isCorrect) {
+            } else if (isSelectedAnswer && !isCorrectAnswer) {
               answerClass += ' passafaixa-answer-incorrect';
             }
-          } else if (isSelected) {
+          } else if (isPending) {
             answerClass += ' passafaixa-answer-selected';
           }
 
@@ -24,8 +42,8 @@ const MCQQuestion = ({ question, selectedAnswer, onAnswerSelect }) => {
             <button
               key={index}
               className={answerClass}
-              onClick={() => onAnswerSelect(answer)}
-              disabled={selectedAnswer !== null}
+              onClick={() => handleOptionClick(answer)}
+              disabled={showResult}
             >
               {answer}
             </button>
@@ -33,20 +51,16 @@ const MCQQuestion = ({ question, selectedAnswer, onAnswerSelect }) => {
         })}
       </div>
 
-      {selectedAnswer !== null && (
-        <div className="passafaixa-feedback">
-          {selectedAnswer === question.correct_answer ? (
-            <p className="passafaixa-feedback-correct">Correcte! 🎉</p>
-          ) : (
-            <p className="passafaixa-feedback-incorrect">
-              Incorrecte. La resposta correcta és: <strong>{question.correct_answer}</strong>
-            </p>
-          )}
-        </div>
+      {!showResult && pendingAnswer !== null && (
+        <button
+          className="passafaixa-submit-btn passafaixa-submit-btn-active"
+          onClick={handleConfirm}
+        >
+          Confirmar Resposta
+        </button>
       )}
     </>
   );
 };
 
 export default MCQQuestion;
-

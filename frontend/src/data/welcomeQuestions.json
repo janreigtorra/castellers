@@ -1,0 +1,53 @@
+{
+  "questions": [
+    {
+      "question": "Quina va ser la millor actuació dels Castellers de Vilafranca l'any 2024?",
+      "colla": "Castellers de Vilafranca"
+    },
+    {
+      "question": "Quants 3d10fm han descarregat els Minyons de Terrassa al llarg de la seva història?",
+      "colla": "Minyons de Terrassa"
+    },
+    {
+      "question": "Quantes vegades ha descarregat la colla Joves dels Xiquets de Valls el 2d9fm?",
+      "colla": "Colla Joves Xiquets de Valls"
+    },
+    {
+      "question": "Quins castells han fet la Colla Vella dels Xiquets de Valls aquest any?",
+      "colla": "Colla Vella dels Xiquets de Valls"
+    },
+    {
+      "question": "Quina és la millor temporada dels Capgrossos de Mataró?",
+      "colla": "Capgrossos de Mataró"
+    },
+    {
+      "question": "Quan es van fundar els Castellers de Lleida?",
+      "colla": "Castellers de Lleida"
+    },
+    {
+      "question": "Quina posició van quedar els Xiquets de Tarragona al Concurs de Castells del 2024?",
+      "colla": "Xiquets de Tarragona"
+    },
+    {
+      "question": "Quina va ser la millor actuació dels Bordegassos de Vilanova al 2015?",
+      "colla": "Bordegassos de Vilanova"
+    },
+    {
+      "question": "A quin lloc van aconseguir el primer 4d8 els Marrecs de Salt?",
+      "colla": "Marrecs de Salt"
+    }, 
+    {
+      "question": "Quina va ser la millor actuació dels Castellers de Barcelona al 2024?",
+      "colla": "Castellers de Barcelona"
+    },
+    {
+      "question": "Quants 5d8 han descarregat els Castellers de Sabadell?",
+      "colla": "Castellers de Sabadell"
+    },
+    {
+      "question": "Quants 7d8 han descarregat els Castellers de Sants?",
+      "colla": "Castellers de Sants"
+    }
+  ]
+}
+

@@ -40,10 +40,17 @@ def get_cached_model(model_name: str = MODEL_NAME) -> SentenceTransformer:
         _cached_model_name = model_name
         model_load_time = (datetime.now() - model_load_start).total_seconds() * 1000
         print(f"[TIMING] RAG SentenceTransformer model load: {model_load_time:.2f}ms (first load)")
-    else:
-        print(f"[TIMING] RAG SentenceTransformer model load: 0.00ms (cached)")
     
     return _cached_model
+
+def preload_rag_model(model_name: str = MODEL_NAME):
+    """
+    Pre-load the RAG model at startup to avoid delay on first request.
+    Call this during application startup.
+    """
+    print(f"[RAG] Pre-loading SentenceTransformer model: {model_name}")
+    get_cached_model(model_name)
+    print(f"[RAG] Model pre-loaded and cached")
 # ------------------------------------
 
 # ---------- UTILS DE TEXT ----------
@@ -78,6 +85,15 @@ def get_supabase_connection():
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL not set in .env file")
     return psycopg2.connect(DATABASE_URL)
+
+def get_pooled_connection():
+    """Get a connection from the shared pool (faster for repeated queries)"""
+    try:
+        from passafaixa.db_pool import get_db_connection
+        return get_db_connection()
+    except ImportError:
+        # Fallback to direct connection if pool not available
+        return get_supabase_connection()
 
 def enable_pgvector(conn):
     """Habilita l'extensió pgvector si no està habilitada"""
@@ -446,12 +462,36 @@ def search_query_supabase(query: str, k: int = 5, model_name: str = MODEL_NAME) 
     embed_time = (datetime.now() - embed_start).total_seconds() * 1000
     print(f"[TIMING] RAG query embedding generation: {embed_time:.2f}ms")
     
-    # Database connection
+    # Try to use connection pool for faster connections
     conn_start = datetime.now()
-    conn = get_supabase_connection()
-    conn_time = (datetime.now() - conn_start).total_seconds() * 1000
-    if conn_time > 10:
-        print(f"[TIMING] RAG database connection: {conn_time:.2f}ms")
+    use_pool = False
+    try:
+        from passafaixa.db_pool import get_db_connection
+        use_pool = True
+    except ImportError:
+        pass
+    
+    if use_pool:
+        # Use pooled connection (context manager handles return to pool)
+        with get_db_connection() as conn:
+            conn_time = (datetime.now() - conn_start).total_seconds() * 1000
+            if conn_time > 10:
+                print(f"[TIMING] RAG database connection (pooled): {conn_time:.2f}ms")
+            return _execute_rag_search(conn, q_emb, k)
+    else:
+        # Fallback to direct connection
+        conn = get_supabase_connection()
+        conn_time = (datetime.now() - conn_start).total_seconds() * 1000
+        if conn_time > 10:
+            print(f"[TIMING] RAG database connection: {conn_time:.2f}ms")
+        try:
+            return _execute_rag_search(conn, q_emb, k)
+        finally:
+            conn.close()
+
+def _execute_rag_search(conn, q_emb, k: int) -> List[Tuple[Dict, float]]:
+    """Execute the actual RAG search query"""
+    from datetime import datetime
     
     cur = conn.cursor()
     
@@ -584,7 +624,7 @@ def search_query_supabase(query: str, k: int = 5, model_name: str = MODEL_NAME) 
         return []
     finally:
         cur.close()
-        conn.close()
+        # Note: Don't close conn here - caller handles it (pool returns, or direct closes)
 
 # ---------- MAIN ----------
 def main():

@@ -6,8 +6,9 @@ Utility functions for fuzzy matching entities in questions.
 import psycopg2
 import re
 import os
+import time
 from typing import List, Optional
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz, process  # 10-100x faster than fuzzywuzzy
 from pydantic import BaseModel
 from typing import Literal
 from dataclasses import dataclass
@@ -15,6 +16,29 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# ============================================================
+# SIMPLE CACHE - Stores database results to avoid repeated queries
+# ============================================================
+_cache = {}
+_CACHE_TTL = 3600  # 1 hour in seconds
+
+def _get_cached(key: str, fetch_fn):
+    """Get from cache or fetch and cache."""
+    now = time.time()
+    if key in _cache:
+        data, timestamp = _cache[key]
+        if now - timestamp < _CACHE_TTL:
+            return data
+    
+    data = fetch_fn()
+    _cache[key] = (data, now)
+    return data
+
+def clear_cache():
+    """Clear all cached data (useful for testing or manual refresh)."""
+    global _cache
+    _cache = {}
 
 # Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -102,74 +126,72 @@ class FirstCallResponseFormat(BaseModel):
 
 
 def get_all_colla_options() -> list[str]:
-    """
-    Get all colles from the database.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT name FROM colles WHERE name IS NOT NULL")
-    colles_names = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return colles_names
+    """Get all colles from the database (cached)."""
+    def fetch():
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT name FROM colles WHERE name IS NOT NULL")
+        colles_names = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return colles_names
+    return _get_cached('colles', fetch)
     
 def get_all_castell_options() -> list[str]:
-    """
-    Get all castells from the database.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT castell_code FROM puntuacions WHERE castell_code IS NOT NULL")
-    castells_codes = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return castells_codes
+    """Get all castells from the database (cached)."""
+    def fetch():
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT castell_code FROM puntuacions WHERE castell_code IS NOT NULL")
+        castells_codes = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return castells_codes
+    return _get_cached('castells', fetch)
     
 def get_all_any_options() -> list[str]:
-    """
-    Get all years from the database by extracting them from event dates.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT date FROM events WHERE date IS NOT NULL")
-    dates = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    
-    # Extract years from dates
-    years = set()
-    for date in dates:
-        if date:
-            # Extract year from date (assuming format YYYY-MM-DD or similar)
-            year_match = re.search(r'\b(19|20)\d{2}\b', str(date))
-            if year_match:
-                years.add(year_match.group())
-    
-    return sorted(list(years))
+    """Get all years from the database (cached)."""
+    def fetch():
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT date FROM events WHERE date IS NOT NULL")
+        dates = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        
+        # Extract years from dates
+        years = set()
+        for date in dates:
+            if date:
+                year_match = re.search(r'\b(19|20)\d{2}\b', str(date))
+                if year_match:
+                    years.add(year_match.group())
+        return sorted(list(years))
+    return _get_cached('anys', fetch)
     
 def get_all_lloc_options() -> list[str]:
-    """
-    Get all llocs from the database.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT city FROM events WHERE city IS NOT NULL")
-    llocs = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return llocs
+    """Get all llocs from the database (cached)."""
+    def fetch():
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT city FROM events WHERE city IS NOT NULL")
+        llocs = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return llocs
+    return _get_cached('llocs', fetch)
     
 def get_all_diada_options() -> list[str]:
-    """
-    Get all diades from the database.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT name FROM events WHERE name IS NOT NULL")
-    diades = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return diades
+    """Get all diades from the database (cached)."""
+    def fetch():
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT name FROM events WHERE name IS NOT NULL")
+        diades = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return diades
+    return _get_cached('diades', fetch)
 
 
 
@@ -193,51 +215,24 @@ def clean_text_for_matching(text: str, words_to_remove: List[str]) -> str:
 
 def get_colles_castelleres_subset(question: str, top_n: int = 5) -> str:
     """
-    Get all colles castelleres from the database and calculate fuzzy matching with the question.
-    Return the list of colles that have a similarity score greater than 0.5.
-    Exclude common words like "castellera", "Castellers", "colla".
+    Get colles matching the question using fast batch fuzzy matching.
     """
-    # Get all colles from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM colles WHERE name IS NOT NULL")
-    colles_names = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    
+    colles_names = get_all_colla_options()
     if not colles_names:
         return ""
     
-    # Clean the question
-    words_to_remove = ['castellera', 'castellers', 'colla', 'colles', 'de', 'del', 'dels', 'la', 'el', 'les', 'els', 'xiquets']
-    question_clean = clean_text_for_matching(question, words_to_remove)
+    # Use rapidfuzz.process.extract for batch matching (much faster)
+    matches = process.extract(
+        question.lower(), 
+        colles_names, 
+        scorer=fuzz.partial_ratio,
+        limit=top_n,
+        score_cutoff=85
+    )
     
-    matching_colles = []
-    
-    for colla_name in colles_names:
-        if not colla_name:
-            continue
-            
-        # Clean colla name for comparison
-        colla_clean = clean_text_for_matching(colla_name, words_to_remove)
-        
-        # Calculate fuzzy match score
-        score = fuzz.partial_ratio(question_clean, colla_clean)
-        
-        if score >= 85:  # 0.8 * 100 for fuzzywuzzy scoring
-            matching_colles.append({
-                'name': colla_name,
-                'score': score,
-                'clean_name': colla_clean
-            })
-    
-    # Sort by score (highest first) and return as comma-separated string
-    matching_colles.sort(key=lambda x: x['score'], reverse=True)
-    
-    if matching_colles:
-        return ", ".join([colla['name'] for colla in matching_colles[:top_n]])
-    else:
-        return ""
+    if matches:
+        return ", ".join([match[0] for match in matches])
+    return ""
 
 def parse_castell_code_from_text(text: str) -> str:
     """
@@ -413,48 +408,29 @@ def parse_castell_code_from_text(text: str) -> str:
 
 def get_castells_subset(question: str, top_n: int = 3) -> str:
     """
-    Get all castells from the database and calculate fuzzy matching with the question.
-    Return the list of castells that have a similarity score greater than 0.5.
-    Exclude common words like "castell", "castells".
+    Get castells matching the question using fast batch fuzzy matching.
     """
-    # First try to parse castell code directly from text
+    # First try to parse castell code directly from text (fast path)
     parsed_code = parse_castell_code_from_text(question)
     if parsed_code:
         return parsed_code
     
-    # Get all castells from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT castell_code FROM puntuacions WHERE castell_code_name IS NOT NULL")
-    castells_codes = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    
+    castells_codes = get_all_castell_options()
     if not castells_codes:
         return ""
     
-    matching_castells = []
+    # Use rapidfuzz.process.extract for batch matching
+    matches = process.extract(
+        question,
+        castells_codes,
+        scorer=fuzz.partial_ratio,
+        limit=top_n,
+        score_cutoff=30
+    )
     
-    for castell_code in castells_codes:
-        if not castell_code:
-            continue
-            
-        # Calculate fuzzy match score
-        score = fuzz.partial_ratio(question, castell_code)
-        
-        if score >= 30:  # 0.3 * 100 for fuzzywuzzy scoring
-            matching_castells.append({
-                'name': castell_code,
-                'score': score
-            })
-    
-    # Sort by score (highest first) and return as comma-separated string
-    matching_castells.sort(key=lambda x: x['score'], reverse=True)
-    
-    if matching_castells:
-        return ", ".join([castell['name'] for castell in matching_castells[:top_n]])
-    else:
-        return ""
+    if matches:
+        return ", ".join([match[0] for match in matches])
+    return ""
 
 def get_anys_subset(question: str, top_n: int = 5) -> str:
     """
@@ -520,148 +496,135 @@ def get_anys_subset(question: str, top_n: int = 5) -> str:
 
 def get_llocs_subset(question: str, top_n: int = 3) -> str:
     """
-    Get all cities from the database and calculate fuzzy matching with the question.
-    Return the list of cities that have a similarity score greater than 0.5.
-    Exclude common words like "lloc", "llocs".
+    Get cities matching the question using fast batch fuzzy matching.
     """
-    # Get all cities from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT city FROM events WHERE city IS NOT NULL")
-    cities = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()    
-    
-    # Use only cities
-    locations = [city for city in cities if city]  # Remove None/empty values
+    cities = get_all_lloc_options()
+    locations = [city for city in cities if city]
     
     if not locations:
         return ""
     
-    # Clean the question
-    words_to_remove = ['lloc', 'llocs', 'ciutat', 'ciutats', 'població', 'poblacions', 'de', 'del', 'dels', 'la', 'el', 'les', 'els']
-    question_clean = clean_text_for_matching(question, words_to_remove)
+    # Use rapidfuzz.process.extract for batch matching
+    matches = process.extract(
+        question.lower(),
+        locations,
+        scorer=fuzz.partial_ratio,
+        limit=top_n,
+        score_cutoff=50
+    )
     
-    matching_locations = []
-    
-    for location in locations:
-        if not location:
-            continue
-            
-        # Clean location name for comparison
-        location_clean = clean_text_for_matching(location, words_to_remove)
-        
-        # Calculate fuzzy match score
-        score = fuzz.partial_ratio(question_clean, location_clean)
-        
-        if score >= 50:  # 0.5 * 100 for fuzzywuzzy scoring
-            matching_locations.append({
-                'name': location,
-                'score': score,
-                'clean_name': location_clean
-            })
-    
-    # Sort by score (highest first) and return as comma-separated string
-    matching_locations.sort(key=lambda x: x['score'], reverse=True)
-    
-    if matching_locations:
-        return ", ".join([location['name'] for location in matching_locations[:top_n]])
-    else:
-        return ""
+    if matches:
+        return ", ".join([match[0] for match in matches])
+    return ""
 
-def get_diades_subset(question: str, top_n: int = 4) -> str:
+def get_diades_subset(question: str, top_n: int = 6) -> str:
     """
-    Get all diades (events) from the database and calculate fuzzy matching with the question.
-    Return the list of diades that have a similarity score greater than 0.5.
-    Exclude common words like "diada", "diades".
+    Get diades matching the question using priority keywords + fuzzy matching.
     """
-    # Get all diades from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT name FROM events WHERE name IS NOT NULL")
-    diades_names = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
+    diades_names = get_all_diada_options()
     
     if not diades_names:
         return ""
     
-    # Clean the question
-    words_to_remove = ['diada', 'diades', 'festival', 'festivals', 'actuació', 'actuacions', 'de',
-                         'del', 'dels', 'la', 'el', 'les', 'els', 'festa', 'festiu', 'festa major', 
-                         'major', 'major de', 'local', 'locals']
-    question_clean = clean_text_for_matching(question, words_to_remove)
+    # Priority mapping: common diada keywords -> full diada names
+    # If any of these keywords appear in the question, add the diada(s) to the top
+    priority_diades = {
+        'sant magi': ['Diada de Sant Magí a Tarragona'],
+        'sant magí': ['Diada de Sant Magí a Tarragona'],
+        'santa tecla': ['Diada de Santa Tecla a Tarragona'],
+        'merce': ['Diada de la Mercè a Barcelona', 'Diada de la Mercè (colles convidades) a Barcelona'],
+        'mercè': ['Diada de la Mercè a Barcelona', 'Diada de la Mercè (colles convidades) a Barcelona'],
+        'sant felix': ['Diada de Sant Fèlix a Vilafranca del Penedès'],
+        'sant fèlix': ['Diada de Sant Fèlix a Vilafranca del Penedès'],
+        'sant ramon': ['Diada de Sant Ramon a Vilafranca del Penedès'],
+        'les santes': ['Les Santes a Mataró'],
+        'tots sants': ['Diada de Tots Sants a Vilafranca del Penedès'],
+        'sant narcis': ['Diada de Sant Narcís a Girona'],
+        'sant narcís': ['Diada de Sant Narcís a Girona'],
+        'santa ursula': ['Diada de Santa Úrsula a Valls'],
+        'santa úrsula': ['Diada de Santa Úrsula a Valls'],
+        'les neus': ['Diada de les Neus de Vilanova i la Geltrú'],
+        'santa teresa': ['Diada de Santa Teresa al Vendrell'],
+        'mercadal': ['Diada del Mercadal a Reus'],
+    }
     
-    matching_diades = []
+    question_lower = question.lower()
+    result_diades = []
     
-    for diada_name in diades_names:
-        if not diada_name:
-            continue
-            
-        # Clean diada name for comparison
-        diada_clean = clean_text_for_matching(diada_name, words_to_remove)
-        
-        # Calculate fuzzy match score
-        score = fuzz.partial_ratio(question_clean, diada_clean)
-        
-        if score >= 50:  # 0.5 * 100 for fuzzywuzzy scoring
-            matching_diades.append({
-                'name': diada_name,
-                'score': score,
-                'clean_name': diada_clean
-            })
+    # Step 1: Check for priority diades in the question - these go FIRST
+    for keyword, diada_names in priority_diades.items():
+        if keyword in question_lower:
+            for diada in diada_names:
+                if diada not in result_diades:
+                    result_diades.append(diada)
     
-    # Sort by score (highest first) and return as comma-separated string
-    matching_diades.sort(key=lambda x: x['score'], reverse=True)
+    # Step 2: Also do fuzzy matching to find additional diades
+    # Common words to remove before matching - these cause false positives
+    words_to_remove = [
+        'diada', 'diades', 'actuació', 'actuacions', 'actuacio',
+        'castellers', 'casteller', 'castell', 'castells',
+        'colla', 'colles', 'jornada', 'jornades',
+        'millor', 'millors', 'pitjor', 'primera', 'primer', 'última', 'últim',
+        'quina', 'quin', 'quines', 'quins', 'quan', 'quant', 'quantes', 'quants',
+        'historia', 'història', 'temporada', 'any', 'anys',
+        'part', 'llarg', 'estat', 'sido', 'fer', 'fet', 'feta', 'fets',
+        'dels', 'les', 'els', 'per', 'que', 'com', 'amb', 'una', 'uns'
+    ]
     
-    if matching_diades:
-        return ", ".join([diada['name'] for diada in matching_diades[:top_n]])
-    else:
-        return ""
+    # Clean the question by removing common words
+    question_clean = clean_text_for_matching(question_lower, words_to_remove)
+    
+    # Use rapidfuzz.process.extract for batch matching
+    matches = process.extract(
+        question_clean,
+        diades_names,
+        scorer=fuzz.partial_ratio,
+        limit=top_n,
+        score_cutoff=50
+    )
+    
+    # Add fuzzy matches (avoiding duplicates)
+    if matches:
+        for match in matches:
+            if match[0] not in result_diades:
+                result_diades.append(match[0])
+    
+    # Return up to top_n results
+    if result_diades:
+        return ", ".join(result_diades[:top_n])
+    return ""
 
 def get_castells_with_status_subset(question: str, top_n: int = 5) -> List[Castell]:
     """
-    Extract castells with their status from the question text.
-    Returns a list of Castell objects with castell_code and optional status.
+    Extract castells with their status using fast batch fuzzy matching.
     """
-    import re
-    
-    # First try to parse castell code directly from text
+    # First try to parse castell code directly from text (fast path)
     parsed_code = parse_castell_code_from_text(question)
     if parsed_code:
-        # Extract status for this castell
         status = extract_status_for_castell(question, parsed_code)
         return [Castell(castell_code=parsed_code, status=status)]
     
-    # Get all castells from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT castell_code FROM puntuacions WHERE castell_code_name IS NOT NULL")
-    castells_codes = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    
+    castells_codes = get_all_castell_options()
     if not castells_codes:
         return []
     
-    matching_castells = []
+    # Use rapidfuzz.process.extract for batch matching
+    matches = process.extract(
+        question,
+        castells_codes,
+        scorer=fuzz.partial_ratio,
+        limit=top_n,
+        score_cutoff=30
+    )
     
-    for castell_code in castells_codes:
-        if not castell_code:
-            continue
-            
-        # Calculate fuzzy match score
-        score = fuzz.partial_ratio(question, castell_code)
-        
-        if score >= 30:  # 0.3 * 100 for fuzzywuzzy scoring
-            # Extract status for this castell
-            status = extract_status_for_castell(question, castell_code)
-            matching_castells.append(Castell(castell_code=castell_code, status=status))
+    # Extract status for matched castells
+    result = []
+    for match in matches:
+        castell_code = match[0]
+        status = extract_status_for_castell(question, castell_code)
+        result.append(Castell(castell_code=castell_code, status=status))
     
-    # Sort by score (highest first)
-    matching_castells.sort(key=lambda x: fuzz.partial_ratio(question, x.castell_code), reverse=True)
-    
-    return matching_castells[:top_n]
+    return result
 
 
 def extract_status_for_castell(question: str, castell_code: str) -> Optional[str]:

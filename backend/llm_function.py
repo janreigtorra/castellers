@@ -8,6 +8,7 @@ import os
 from this import d
 from typing import Dict, Any, Optional, Union, List
 from dotenv import load_dotenv
+from util_dics import META_LLM_KEYWORDS, TECH_PROGRAMMING_KEYWORDS, NON_CASTELLER_DOMAINS
 
 # Import providers from llm_providers package
 from llm_providers import (
@@ -68,6 +69,7 @@ def llm_call(
     model: str,
     response_format=None,
     system_message: str = "Ets Xiquet, un expert en el món casteller. Respon sempre en català.",
+    developer_message: Optional[str] = None,
     custom_config: Optional[LLMConfig] = None
 ) -> Union[str, Any]:
     """
@@ -77,11 +79,17 @@ def llm_call(
         prompt: The user prompt
         model: Provider:model format (e.g., "groq:llama-3.1-70b-versatile") or legacy model name
         response_format: Pydantic model for structured output (optional)
-        system_message: System message for the LLM
+        system_message: System message for the LLM (identity/persona)
+        developer_message: Developer instructions with strict formatting rules (optional)
         custom_config: Custom LLMConfig for advanced usage
     
     Returns:
         Generated response (string or parsed object)
+    
+    Message structure:
+        - SYSTEM: Sets the persona/identity of the assistant
+        - DEVELOPER (optional): Strict formatting rules, prohibitions, output format
+        - USER: The actual question/prompt with data
     """
     from datetime import datetime
     
@@ -104,11 +112,18 @@ def llm_call(
     if not config.api_key and config.provider not in ["ollama"]:
         raise ValueError(f"API key not found for provider '{config.provider}'. Set {config.provider.upper()}_API_KEY environment variable.")
     
-    # Prepare messages
-    messages = [
-        {"role": "system", "content": system_message},
-        {"role": "user", "content": prompt}
-    ]
+    # Prepare messages with proper separation
+    messages = [{"role": "system", "content": system_message}]
+    
+    # Add developer message if provided (strict instructions)
+    # For providers that don't support "developer" role, we inject it as a system message
+    if developer_message:
+        # Most providers don't support "developer" role yet, so we add it as additional system context
+        messages.append({"role": "system", "content": developer_message})
+    
+    # Add user message
+    messages.append({"role": "user", "content": prompt})
+
     
     # Get provider and generate response
     provider = llm_manager.get_provider(config.provider)
@@ -122,11 +137,32 @@ def llm_call(
         api_time = (datetime.now() - api_start).total_seconds() * 1000
         
         total_time = (datetime.now() - llm_start).total_seconds() * 1000
-        print(f"[TIMING] LLM API call ({config.provider}:{config.model}): {api_time:.2f}ms (total: {total_time:.2f}ms)")
+        
+        # Get token usage if available
+        token_info = ""
+        if hasattr(provider, 'last_usage') and provider.last_usage:
+            usage = provider.last_usage
+            token_info = f" | tokens: {usage.get('input', '?')} in, {usage.get('output', '?')} out"
+        
+        print(f"[TIMING] LLM API call ({config.provider}:{config.model}): {api_time:.2f}ms{token_info}")
         
         return result
     except Exception as e:
         raise Exception(f"LLM call failed with {config.provider}:{config.model}: {e}")
+
+def is_guardrail_violation(question: str) -> bool:
+    q = question.lower()
+
+    for keyword_list in [
+        META_LLM_KEYWORDS,
+        TECH_PROGRAMMING_KEYWORDS,
+        NON_CASTELLER_DOMAINS
+    ]:
+        if any(k in q for k in keyword_list):
+            return True
+
+    return False
+
 
 # Example usage and testing
 if __name__ == "__main__":

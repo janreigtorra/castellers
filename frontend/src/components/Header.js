@@ -18,6 +18,7 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
         style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}
       >
         <div className="header-logo">
+          <img src="/xiquet_images/xiquet_logo.png" alt="Xiquet AI" width="55" height="55" />
           <h1>Xiquet AI</h1>
         </div>
         <div className="header-nav">

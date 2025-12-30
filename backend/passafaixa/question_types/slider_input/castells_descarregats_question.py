@@ -1,4 +1,5 @@
 from random import random, randint, choices
+from typing import List, Optional
 from passafaixa.schemas import QuestionSliderInput
 from passafaixa.questions_utils import get_random_year, get_random_colla
 from passafaixa.db_pool import get_db_connection
@@ -75,66 +76,66 @@ def get_castells_with_points(colla: str = None, year: str = None) -> list:
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-        
-        # Build WHERE clause filters
-        colla_filter = ""
-        year_filter = ""
-        params = []
-        
-        if colla:
-            colla_filter = "AND co.name = %s"
-            params.append(colla)
-        
-        if year:
-            year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
-            params.append(year)
-        
-        # Query to get castells with descarregat points
-        # Exclude Pde4
-        query = f"""
-            SELECT 
-                c.castell_name,
-                c.status,
-                COALESCE(p.punts_descarregat, 0) AS punts_descarregat
-            FROM castells c
-            JOIN event_colles ec ON c.event_colla_fk = ec.id
-            JOIN events e ON ec.event_fk = e.id
-            JOIN colles co ON ec.colla_fk = co.id
-            LEFT JOIN puntuacions p ON (
-                c.castell_name = p.castell_code_external 
-                OR c.castell_name = p.castell_code
-                OR c.castell_name = p.castell_code_name
-            )
-            WHERE c.castell_name != 'Pde4'
-            AND c.castell_name != 'Pde4cam'
-            AND c.castell_name != 'Pde4ps'
-            AND c.castell_name != 'Pde 4'
-            AND c.castell_name != 'P de 4'
-            {colla_filter}
-            {year_filter}
-        """
-        
-        cur.execute(query, params)
-        rows = cur.fetchall()
-        cur.close()
-        
-        # Convert to list of dicts
-        castells = []
-        for row in rows:
-            castell_name = row[0]
-            if not castell_name:
-                continue
-            # Additional check to exclude Pde4 (case insensitive, handle variations)
-            castell_normalized = castell_name.lower().replace(" ", "").replace("-", "")
-            if castell_normalized == "pde4" or castell_normalized.startswith("pde4"):
-                continue
-            castells.append({
-                "castell_name": castell_name,
-                "status": row[1],
-                "punts_descarregat": row[2] or 0
-            })
-        
-        return castells
+            
+            # Build WHERE clause filters
+            colla_filter = ""
+            year_filter = ""
+            params = []
+            
+            if colla:
+                colla_filter = "AND co.name = %s"
+                params.append(colla)
+            
+            if year:
+                year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
+                params.append(year)
+            
+            # Query to get castells with descarregat points
+            # Exclude Pde4
+            query = f"""
+                SELECT 
+                    c.castell_name,
+                    c.status,
+                    COALESCE(p.punts_descarregat, 0) AS punts_descarregat
+                FROM castells c
+                JOIN event_colles ec ON c.event_colla_fk = ec.id
+                JOIN events e ON ec.event_fk = e.id
+                JOIN colles co ON ec.colla_fk = co.id
+                LEFT JOIN puntuacions p ON (
+                    c.castell_name = p.castell_code_external 
+                    OR c.castell_name = p.castell_code
+                    OR c.castell_name = p.castell_code_name
+                )
+                WHERE c.castell_name != 'Pde4'
+                AND c.castell_name != 'Pde4cam'
+                AND c.castell_name != 'Pde4ps'
+                AND c.castell_name != 'Pde 4'
+                AND c.castell_name != 'P de 4'
+                {colla_filter}
+                {year_filter}
+            """
+            
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            cur.close()
+            
+            # Convert to list of dicts
+            castells = []
+            for row in rows:
+                castell_name = row[0]
+                if not castell_name:
+                    continue
+                # Additional check to exclude Pde4 (case insensitive, handle variations)
+                castell_normalized = castell_name.lower().replace(" ", "").replace("-", "")
+                if castell_normalized == "pde4" or castell_normalized.startswith("pde4"):
+                    continue
+                castells.append({
+                    "castell_name": castell_name,
+                    "status": row[1],
+                    "punts_descarregat": row[2] or 0
+                })
+            
+            return castells
         
     except Exception as e:
         print(f"Error querying database for castells: {e}")
@@ -149,51 +150,57 @@ def get_castell_count(colla: str, year: str, castell_name: str, status: str) -> 
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-        
-        # Build filters
-        colla_filter = ""
-        year_filter = ""
-        params = []
-        
-        if colla:
-            colla_filter = "AND co.name = %s"
-            params.append(colla)
-        
-        if year:
-            year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
-            params.append(year)
-        
-        # Query to count specific castell
-        query = f"""
-            SELECT COUNT(*)
-            FROM castells c
-            JOIN event_colles ec ON c.event_colla_fk = ec.id
-            JOIN events e ON ec.event_fk = e.id
-            JOIN colles co ON ec.colla_fk = co.id
-            WHERE c.castell_name = %s
-            AND c.status = %s
-            {colla_filter}
-            {year_filter}
-        """
-        
-        params.insert(0, status)
-        params.insert(0, castell_name)
-        cur.execute(query, params)
-        row = cur.fetchone()
-        cur.close()
-        
-        if row:
-            return row[0] or 0
-        return 0
+            
+            # Build filters
+            colla_filter = ""
+            year_filter = ""
+            params = []
+            
+            if colla:
+                colla_filter = "AND co.name = %s"
+                params.append(colla)
+            
+            if year:
+                year_filter = "AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
+                params.append(year)
+            
+            # Query to count specific castell
+            query = f"""
+                SELECT COUNT(*)
+                FROM castells c
+                JOIN event_colles ec ON c.event_colla_fk = ec.id
+                JOIN events e ON ec.event_fk = e.id
+                JOIN colles co ON ec.colla_fk = co.id
+                WHERE c.castell_name = %s
+                AND c.status = %s
+                {colla_filter}
+                {year_filter}
+            """
+            
+            params.insert(0, status)
+            params.insert(0, castell_name)
+            cur.execute(query, params)
+            row = cur.fetchone()
+            cur.close()
+            
+            if row:
+                return row[0] or 0
+            return 0
         
     except Exception as e:
         print(f"Error querying database for castell count: {e}")
         return 0
 
 
-def generate_castells_descarregats_any_question() -> QuestionSliderInput:
+def generate_castells_descarregats_any_question(selected_colles: List[str] = None, selected_years: List[int] = None) -> QuestionSliderInput:
     """
     Generate a slider input question asking how many castells were descarregat/carregat.
+    
+    Args:
+        selected_colles: Optional list of colla names. If provided, always asks for colla
+                         and picks from these with equal probability.
+        selected_years: Optional list of years. If provided, always asks for year
+                        and picks from these with equal probability.
     """
     if not DATABASE_URL:
         return QuestionSliderInput(
@@ -212,23 +219,32 @@ def generate_castells_descarregats_any_question() -> QuestionSliderInput:
     for attempt in range(max_attempts):
         try:
             # Decide if asking for year
-            ask_for_year = random() < ASK_FOR_YEAR
+            # If selected_years is provided, always ask for year
+            if selected_years and len(selected_years) > 0:
+                ask_for_year = True
+            else:
+                ask_for_year = random() < ASK_FOR_YEAR
             
-            # If not asking for year, always ask for colla. Otherwise, decide with probability
-            if not ask_for_year:
+            # If selected_colles is provided, always ask for colla
+            # Otherwise, if not asking for year, always ask for colla
+            # Otherwise, decide with probability
+            if selected_colles and len(selected_colles) > 0:
+                ask_for_colla = True
+            elif not ask_for_year:
                 ask_for_colla = True
             else:
                 ask_for_colla = random() < ASK_FOR_COLLA
             
-            # Get year if needed
+            # Get year if needed - use selected_years if provided (equal probability)
             year = None
             if ask_for_year:
-                year = get_random_year()
+                year = get_random_year(selected_years=selected_years)
             
             # Get colla if needed
             colla = None
             if ask_for_colla:
-                colla = get_random_colla(year)
+                # Use selected_colles if provided (equal probability), otherwise use weighted random
+                colla = get_random_colla(year, selected_colles=selected_colles)
             
             # Get all castells that the colla did in that year
             castells = get_castells_with_points(colla, year)

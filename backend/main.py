@@ -7,12 +7,14 @@ Wraps the existing agent.py functionality with REST API endpoints
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import uuid
 from datetime import datetime
 import os
 import asyncio
+import json
 from dotenv import load_dotenv
 
 # Import our existing agent and Supabase auth
@@ -47,12 +49,21 @@ security = HTTPBearer(auto_error=False)
 # Initialize database connection pool on startup
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connection pool when the app starts"""
+    """Initialize database connection pool and preload ML models when the app starts"""
+    # Initialize connection pool
     try:
         init_connection_pool(min_conn=2, max_conn=10)
     except Exception as e:
         print(f"Warning: Failed to initialize connection pool: {e}")
         print("Question generation will use direct connections (slower)")
+    
+    # Pre-load RAG model to avoid delay on first request
+    try:
+        from database_pipeline.rag_index_supabase import preload_rag_model
+        preload_rag_model()
+    except Exception as e:
+        print(f"Warning: Failed to preload RAG model: {e}")
+        print("RAG model will be loaded on first request (slower)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -67,6 +78,22 @@ class ChatMessage(BaseModel):
     content: str
     session_id: Optional[str] = None
 
+class TableData(BaseModel):
+    title: str
+    columns: List[str]
+    rows: List[List[str]]
+
+class CastellEntity(BaseModel):
+    castell_code: str
+    status: Optional[str] = None
+
+class IdentifiedEntities(BaseModel):
+    colles: List[str] = []
+    castells: List[CastellEntity] = []
+    anys: List[int] = []
+    llocs: List[str] = []
+    diades: List[str] = []
+
 class ChatResponse(BaseModel):
     id: str
     content: str
@@ -75,6 +102,8 @@ class ChatResponse(BaseModel):
     timestamp: datetime
     response_time_ms: int
     session_id: Optional[str] = None
+    table_data: Optional[TableData] = None
+    identified_entities: Optional[IdentifiedEntities] = None
 
 class SaveChatRequest(BaseModel):
     title: str
@@ -190,9 +219,10 @@ async def chat_with_xiquet(
         init_time = (datetime.now() - init_start).total_seconds() * 1000
         print(f"[TIMING] Agent initialization: {init_time:.2f}ms")
         
-        # Process the question
+        # Process the question - MUST use asyncio.to_thread to avoid blocking event loop!
+        # This allows other async requests (like /api/chat/route) to run in parallel
         process_start = datetime.now()
-        response_text = xiquet.process_question(message.content)
+        response_text = await asyncio.to_thread(xiquet.process_question, message.content)
         process_time = (datetime.now() - process_start).total_seconds() * 1000
         
         end_time = datetime.now()
@@ -233,6 +263,31 @@ async def chat_with_xiquet(
         if not message_id:
             message_id = f"temp_{uuid.uuid4()}"
         
+        # Get table data if available (for SQL queries)
+        table_data = None
+        if hasattr(xiquet, 'table_data') and xiquet.table_data:
+            table_data = TableData(**xiquet.table_data)
+        
+        # Get identified entities from the agent
+        identified_entities = None
+        if hasattr(xiquet, 'response') and xiquet.response:
+            castells_list = []
+            if xiquet.castells:
+                for c in xiquet.castells:
+                    if hasattr(c, 'castell_code'):
+                        castells_list.append(CastellEntity(
+                            castell_code=c.castell_code,
+                            status=c.status if hasattr(c, 'status') else None
+                        ))
+            
+            identified_entities = IdentifiedEntities(
+                colles=xiquet.colles_castelleres or [],
+                castells=castells_list,
+                anys=xiquet.anys or [],
+                llocs=xiquet.llocs or [],
+                diades=xiquet.diades or []
+            )
+        
         chat_response = ChatResponse(
             id=message_id,
             content=message.content,
@@ -240,7 +295,9 @@ async def chat_with_xiquet(
             route_used=route_used,
             timestamp=datetime.now(),
             response_time_ms=response_time,
-            session_id=session_id
+            session_id=session_id,
+            table_data=table_data,
+            identified_entities=identified_entities
         )
         
         return chat_response
@@ -276,6 +333,63 @@ async def chat_with_xiquet(
         )
         
         return error_response
+
+class RouteResponse(BaseModel):
+    route_used: str
+    identified_entities: IdentifiedEntities
+
+@app.post("/api/chat/route", response_model=RouteResponse)
+async def get_chat_route(
+    message: ChatMessage,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Quick endpoint that ONLY runs decide_route and returns identified entities.
+    Use this to get entities immediately, then call /api/chat for the full response.
+    """
+    try:
+        from datetime import datetime
+        start_time = datetime.now()
+        
+        print(f"\n[ROUTE] Getting route for: {message.content[:100]}...")
+        
+        # Initialize Xiquet agent and run decide_route
+        xiquet = Xiquet()
+        route_response = await asyncio.to_thread(xiquet.decide_route, message.content)
+        
+        route_time = (datetime.now() - start_time).total_seconds() * 1000
+        print(f"[ROUTE] decide_route() completed in {route_time:.2f}ms")
+        
+        # Build identified entities
+        castells_list = []
+        if xiquet.castells:
+            for c in xiquet.castells:
+                if hasattr(c, 'castell_code'):
+                    castells_list.append(CastellEntity(
+                        castell_code=c.castell_code,
+                        status=c.status if hasattr(c, 'status') else None
+                    ))
+        
+        identified_entities = IdentifiedEntities(
+            colles=xiquet.colles_castelleres or [],
+            castells=castells_list,
+            anys=xiquet.anys or [],
+            llocs=xiquet.llocs or [],
+            diades=xiquet.diades or []
+        )
+        
+        route_used = route_response.tools if route_response else 'unknown'
+        
+        return RouteResponse(
+            route_used=route_used,
+            identified_entities=identified_entities
+        )
+        
+    except Exception as e:
+        import traceback
+        print(f"ERROR in route endpoint: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chat/history")
 async def get_chat_history(
@@ -508,15 +622,20 @@ async def logout(current_user: dict = Depends(get_current_user)):
         return {"message": f"Logout completed with warning: {str(e)}"}
 
 # PassaFaixa game endpoints
-async def generate_single_question_with_retry(max_retries: int = 10):
+async def generate_single_question_with_retry(selected_colles: List[str] = None, selected_years: List[int] = None, max_retries: int = 10):
     """
     Generate a single question with retry logic.
     Runs in a thread pool to allow parallel execution.
+    
+    Args:
+        selected_colles: Optional list of colla names to filter questions.
+        selected_years: Optional list of years to filter questions.
+        max_retries: Maximum number of retry attempts.
     """
     for retry in range(max_retries):
         try:
             # Run the synchronous generate_question in a thread pool
-            question = await asyncio.to_thread(generate_question)
+            question = await asyncio.to_thread(generate_question, selected_colles, selected_years)
             if question and not question.is_error:
                 return question.model_dump()
         except Exception as e:
@@ -528,6 +647,8 @@ async def generate_single_question_with_retry(max_retries: int = 10):
 @app.get("/api/passafaixa/questions")
 async def get_game_questions(
     num_questions: int = 10,
+    colles: Optional[str] = None,
+    years: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -536,27 +657,55 @@ async def get_game_questions(
     
     Uses parallel generation with batching to optimize performance while
     respecting database connection pool limits.
+    
+    Args:
+        num_questions: Number of questions to generate.
+        colles: Comma-separated list of colla names to filter questions.
+                If provided, only generates questions about these colles.
+        years: Comma-separated list of years to filter questions.
+               If provided, only generates questions about these years.
     """
     try:
+        # Parse selected_colles from comma-separated string
+        selected_colles = None
+        if colles:
+            selected_colles = [c.strip() for c in colles.split(",") if c.strip()]
+            if len(selected_colles) == 0:
+                selected_colles = None
+        
+        # Parse selected_years from comma-separated string
+        selected_years = None
+        if years:
+            try:
+                selected_years = [int(y.strip()) for y in years.split(",") if y.strip()]
+                if len(selected_years) == 0:
+                    selected_years = None
+            except ValueError:
+                selected_years = None
+        
         questions = []
+        seen_question_texts = set()  # Track seen questions to avoid duplicates
         max_concurrent = min(10, num_questions + 10)  # Limit concurrent tasks to avoid overwhelming the pool
         batch_size = max_concurrent
+        max_attempts = 5  # Maximum number of batch attempts to prevent infinite loops
+        attempt = 0
         
         # Generate questions in batches to respect connection pool limits
-        while len(questions) < num_questions:
+        while len(questions) < num_questions and attempt < max_attempts:
+            attempt += 1
             # Calculate how many more we need
             remaining = num_questions - len(questions)
             
-            # Generate a batch (generate a few extra to account for errors)
-            batch_to_generate = min(batch_size, remaining + 3)
+            # Generate a batch (generate extra to account for errors and duplicates)
+            batch_to_generate = min(batch_size, remaining + 5)
             
             # Create tasks for parallel generation
-            tasks = [generate_single_question_with_retry() for _ in range(batch_to_generate)]
+            tasks = [generate_single_question_with_retry(selected_colles, selected_years) for _ in range(batch_to_generate)]
             
             # Execute batch in parallel
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Filter out None, exceptions, and errors
+            # Filter out None, exceptions, errors, and duplicates
             for result in results:
                 if result is None:
                     continue
@@ -564,9 +713,13 @@ async def get_game_questions(
                     print(f"Exception in question generation: {result}")
                     continue
                 if isinstance(result, dict):
-                    questions.append(result)
-                    if len(questions) >= num_questions:
-                        break
+                    # Check for duplicate question text
+                    question_text = result.get("question", "")
+                    if question_text and question_text not in seen_question_texts:
+                        seen_question_texts.add(question_text)
+                        questions.append(result)
+                        if len(questions) >= num_questions:
+                            break
             
             # Safety check to prevent infinite loop
             if len(questions) >= num_questions * 2:

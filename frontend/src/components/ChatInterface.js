@@ -2,8 +2,230 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiService } from '../apiService';
+import { COLOR_THEMES } from '../colorTheme';
+import WelcomeMessage from './WelcomeMessage';
 
-const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange }) => {
+// Mapping from colles_fundacio.json color_code to colorTheme.js keys
+const COLOR_CODE_TO_THEME = {
+  'darkgreen': 'darkgreen',
+  'skyblue': 'bluesky',
+  'turquese': 'turquese',
+  'lightgreen': 'lightgreen',
+  'yellow': 'yellow',
+  'darkblue': 'darkblue',
+  'lila': 'lila',
+  'granate': 'granate',
+  'blue': 'blue',
+  'red': 'red',
+  'green': 'green',
+  'brown': 'brown',
+  'gray': 'gray',
+  'rosat': 'rosat',
+  'malva': 'malva',
+  'orange': 'orange',
+  'white': 'white',
+  'darkturquesa': 'darkturquesa',
+  'ralles': 'ralles'
+};
+
+// Colles to color_code mapping (loaded from colles_fundacio.json data)
+const COLLES_COLORS = {
+  "Al·lots de Llevant": "darkgreen",
+  "Angelets de Vallespir": "skyblue",
+  "Arreplegats de la Zona Universitària": "turquese",
+  "Bergants del Campus de Terrassa": "lightgreen",
+  "Bordegassos de Vilanova": "yellow",
+  "Brivalls de Cornudella": "darkblue",
+  "Capgrossos de Mataró": "darkblue",
+  "Castellers d'Altafulla": "lila",
+  "La Global": "darkblue",
+  "Castellers d'Andorra": "granate",
+  "Castellers d'Esparreguera": "granate",
+  "Castellers d'Esplugues": "blue",
+  "Castellers de Badalona": "yellow",
+  "Castellers de Barcelona": "red",
+  "Castellers de Berga": "darkblue",
+  "Castellers de Caldes de Montbui": "darkgreen",
+  "Castellers de Castellar del Vallès": "granate",
+  "Castellers de Castelldefels": "yellow",
+  "Castellers de Cerdanyola": "green",
+  "Castellers de Cornellà": "lila",
+  "Castellers de Terrassa": "darkturquesa",
+  "Castellers de la Sagrada Família": "green",
+  "Castellers de la Vila de Gràcia": "darkblue",
+  "Castellers de les Gavarres": "brown",
+  "Castellers de les Roquetes": "gray",
+  "Castellers de Lleida": "granate",
+  "Castellers de Mallorca": "granate",
+  "Castellers de Mediona": "darkblue",
+  "Castellers de Mollet": "lightgreen",
+  "Castellers de Montcada i Reixac": "orange",
+  "Castellers de Rubí": "red",
+  "Castellers de Sabadell": "darkgreen",
+  "Castellers de Sant Adrià": "granate",
+  "Castellers de Sant Cugat": "darkgreen",
+  "Castellers de Tortosa": "granate",
+  "Castellers de Sant Feliu": "rosat",
+  "Castellers de Sant Vicenç dels Horts": "orange",
+  "Castellers de Santa Coloma": "skyblue",
+  "Castellers de Santpedor": "yellow",
+  "Castellers de Sants": "gray",
+  "Castellers de Sarrià": "granate",
+  "Castellers de Solsona": "yellow",
+  "Castellers del Poble Sec": "skyblue",
+  "Castellers de Viladecans": "lightgreen",
+  "Castellers de Vilafranca": "turquese",
+  "Castellers del Baix Montseny": "blue",
+  "Castellers del Foix de Cubelles": "white",
+  "Castellers del Pallars": "white",
+  "Castellers del Prat de Llobregat": "blue",
+  "Castellers del Riberal": "green",
+  "Colla Castellera de Figueres": "lila",
+  "Colla Castellera de Gavà": "blue",
+  "Colla Castellera Els Encantats de Begues": "darkgreen",
+  "Colla Castellera de l'Alt Maresme i la Selva Marítima": "red",
+  "Colla Castellera de l'Esquerra de l'Eixample": "lila",
+  "Colla Castellera de la Gavarresa": "granate",
+  "Colla Castellera de Madrid": "red",
+  "Colla Castellera Jove de Barcelona": "granate",
+  "Colla Castellera La Bisbal del Penedès": "orange",
+  "Colla Castellera Nyerros de la Plana": "gray",
+  "Colla Castellera Sant Pere i Sant Pau": "green",
+  "Colla Jove de Castellers de Sitges": "granate",
+  "Colla Jove de l'Hospitalet": "green",
+  "Colla Jove Xiquets de Tarragona": "malva",
+  "Colla Jove Xiquets de Vilafranca": "darkblue",
+  "Colla Joves Xiquets de Valls": "red",
+  "Colla Vella dels Xiquets de Valls": "rosat",
+  "Engrescats de URL": "yellow",
+  "Esperxats de l'Estany": "darkturquesa",
+  "Ganàpies de la UAB": "blue",
+  "Laietans de Gramenet": "green",
+  "Llunàtics UPC Vilanova": "blue",
+  "Los Xics Caleros": "skyblue",
+  "Manyacs de Parets": "malva",
+  "Margeners de Guissona": "brown",
+  "Marrecs de Salt": "blue",
+  "Matossers de Molins de Rei": "brown",
+  "Minyons de l'Arboç": "red",
+  "Minyons de Santa Cristina d'Aro": "lightgreen",
+  "Tirallongues de Manresa": "gray",
+  "Minyons de Terrassa": "malva",
+  "Moixiganguers d'Igualada": "lila",
+  "Nens del Vendrell": "red",
+  "Nois de la Torre": "skyblue",
+  "Torraires de Montblanc": "granate",
+  "Passerells del TCM": "malva",
+  "Pataquers de la URV": "orange",
+  "Penjats del Campus de Manresa": "red",
+  "Sagals d'Osona": "orange",
+  "Salats de Súria": "rosat",
+  "Trempats de la UPF": "brown",
+  "Vailets de Gelida": "lightgreen",
+  "Vailets de l'Empordà": "skyblue",
+  "Xerrics d'Olot": "granate",
+  "Xicots de Vilafranca": "red",
+  "Xics de Granollers": "granate",
+  "Xiqüelos i Xiqüeles del Delta": "blue",
+  "Xiquets d'Alcover": "white",
+  "Xiquets de Cambrils": "granate",
+  "Xiquets de Reus": "brown",
+  "Xiquets de Tarragona": "ralles",
+  "Xiquets de Vila-seca": "skyblue",
+  "Xiquets del Serrallo": "darkblue",
+  "Xoriguers de la UdG": "blue",
+  "Pallagos del Conflent": "granate",
+  "Emboirats de la Universitat de Vic": "red",
+  "Colla Castellera de Cerdanya": "white",
+  "Xiquets de Montblanc": "white",
+  "Xiquets de Torredembarra": "white",
+  "Descargolats de l'EEBE": "white",
+  "Grillats del Campus del Baix Llobregat": "white",
+  "Marracos de la Universitat de Lleida": "gray"
+};
+
+// SVG Icons for entity chips
+const CollaIcon = ({ color = "currentColor" }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {/* Center person (front) */}
+    <circle cx="12" cy="7" r="3" />
+    <path d="M7 21v-2a5 5 0 0 1 10 0v2" />
+    {/* Left person (back) */}
+    <circle cx="5" cy="8" r="2" />
+    <path d="M1 21v-1a4 4 0 0 1 4-4" />
+    {/* Right person (back) */}
+    <circle cx="19" cy="8" r="2" />
+    <path d="M23 21v-1a4 4 0 0 0-4-4" />
+  </svg>
+);
+
+const CastellIcon = ({ color = "currentColor" }) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    {/* Base */}
+    <circle cx="8" cy="18" r="2" />
+    <circle cx="16" cy="18" r="2" />
+    <line x1="8" y1="16" x2="8" y2="14" />
+    <line x1="16" y1="16" x2="16" y2="14" />
+
+    {/* Segon pis */}
+    <circle cx="12" cy="13" r="2" />
+    <line x1="12" y1="11" x2="12" y2="9" />
+
+    {/* Enxaneta */}
+    <circle cx="12" cy="7" r="1.5" />
+  </svg>
+);
+
+
+const CalendarIcon = ({ color = "currentColor" }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <path d="M16 2v4" />
+    <path d="M8 2v4" />
+    <path d="M3 10h18" />
+    <path d="M8 14h.01" />
+    <path d="M12 14h.01" />
+    <path d="M16 14h.01" />
+    <path d="M8 18h.01" />
+    <path d="M12 18h.01" />
+  </svg>
+);
+
+const LocationIcon = ({ color = "currentColor" }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+    <circle cx="12" cy="9" r="2.5" />
+  </svg>
+);
+
+const DiadaIcon = ({ color = "currentColor" }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+  </svg>
+);
+
+// Helper to check if there are any entities to display
+const hasEntities = (entities) => {
+  if (!entities) return false;
+  return (
+    (entities.colles && entities.colles.length > 0) ||
+    (entities.castells && entities.castells.length > 0) ||
+    (entities.anys && entities.anys.length > 0) ||
+    (entities.llocs && entities.llocs.length > 0) ||
+    (entities.diades && entities.diades.length > 0)
+  );
+};
+
+const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -13,10 +235,12 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const [isSaving, setIsSaving] = useState(false);
   const [thinkingFrame, setThinkingFrame] = useState(1); // For animation: 1 or 2
   const [expandedTables, setExpandedTables] = useState(new Set()); // Track expanded tables
+  const [identifiedEntities, setIdentifiedEntities] = useState(null); // Track entities identified by the agent
   const messagesEndRef = useRef(null);
   const previousSessionIdRef = useRef(null); // Track previous sessionId to detect new conversation
   const tableCounterRef = useRef(0); // Table counter for generating unique IDs
   const tableInstanceMapRef = useRef(new Map()); // Map to track table instances and their IDs
+  const [thinkingDots, setThinkingDots] = useState('');
 
   // Helper functions for localStorage persistence
   const getUnsavedChatKey = useCallback(() => {
@@ -257,12 +481,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     }
   }, [user, sessionId, clearUnsavedChatFromStorage, loadUnsavedChatFromStorage]);
 
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    
-    if (!inputMessage.trim() || isLoading) return;
-
-    const messageContent = inputMessage.trim();
+  // Core function to send a message (used by both form submit and question chips)
+  const sendMessageContent = async (messageContent) => {
+    if (!messageContent.trim() || isLoading) return;
     const tempId = `temp_${Date.now()}`;
     
     const userMessage = {
@@ -277,13 +498,42 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
 
     // Add user message immediately
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
     setIsLoading(true);
     setError('');
+    setIdentifiedEntities(null); // Clear previous entities
     // Note: scroll will be handled by useEffect when messages.length changes
 
     try {
-      const response = await apiService.sendMessage(messageContent, sessionId);
+      // Callback to handle entities as soon as they arrive (before full response)
+      const handleEntitiesReceived = (entities, routeUsed) => {
+        console.log('[ChatInterface] ENTITIES CALLBACK FIRED!', entities);
+        console.log('[ChatInterface] Setting identifiedEntities state NOW');
+        
+        // Force immediate state update
+        setIdentifiedEntities(entities);
+        
+        // If a colla was identified, change the app color theme
+        if (entities.colles && entities.colles.length > 0) {
+          const firstColla = entities.colles[0];
+          console.log('[ChatInterface] Colla identified:', firstColla);
+          const colorCode = COLLES_COLORS[firstColla];
+          if (colorCode && onCollaIdentified) {
+            const themeKey = COLOR_CODE_TO_THEME[colorCode];
+            if (themeKey && COLOR_THEMES[themeKey]) {
+              console.log('[ChatInterface] Changing theme to:', themeKey);
+              onCollaIdentified(themeKey);
+            }
+          }
+        }
+      };
+
+      // Use two-phase request - entities arrive FAST via /route, full response via /chat
+      // Both run in parallel, but route is much faster so entities appear first
+      const response = await apiService.sendMessageWithEntities(
+        messageContent, 
+        sessionId, 
+        handleEntitiesReceived
+      );
 
       // Replace temporary user message and add assistant response
       // The backend saves both user message and response in one row
@@ -305,7 +555,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         route_used: response.route_used || '',
         timestamp: response.timestamp,
         response_time_ms: response.response_time_ms || 0,
-        isUser: false
+        isUser: false,
+        table_data: response.table_data || null,  // Table data from SQL queries
+        identified_entities: response.identified_entities || null  // Store entities with the message
       };
 
       // Replace temporary message with real messages from database
@@ -335,6 +587,20 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Form submit handler
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputMessage.trim()) return;
+    const messageContent = inputMessage.trim();
+    setInputMessage('');
+    await sendMessageContent(messageContent);
+  };
+
+  // Handler for clicking on question chips in the welcome screen
+  const handleQuestionClick = (question) => {
+    sendMessageContent(question);
   };
 
   const formatTimestamp = (timestamp) => {
@@ -401,6 +667,82 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   
   // Check if we have complete conversations (messages with answers)
   const hasCompleteConversations = messages.some(msg => !msg.isUser && msg.response && msg.response.trim().length > 0);
+
+  // DataTable component for displaying SQL query results
+  const DataTable = ({ tableData }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    if (!tableData || !tableData.rows || tableData.rows.length === 0) {
+      return null;
+    }
+    
+    const { title, columns, rows } = tableData;
+    const shouldCollapse = rows.length > 3;
+    const displayedRows = shouldCollapse && !isExpanded ? rows.slice(0, 3) : rows;
+    
+    // Determine button colors based on theme
+    const isWhiteTheme = theme?.secondary && 
+      (theme.secondary.toLowerCase() === '#ffffff' || 
+       theme.secondary.toLowerCase() === '#fff' ||
+       theme.secondary.toLowerCase() === 'white');
+    const buttonBgColor = isWhiteTheme ? '#808080' : (theme?.secondary || '#d0282c');
+    const buttonHoverColor = isWhiteTheme ? '#666666' : (theme?.accent || '#b02226');
+    
+    return (
+      <div className="data-table-container">
+        {/* {title && <div className="data-table-title">Referencia a la base de dades: {title}</div>} */}
+        <div className="data-table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {columns.map((col, idx) => (
+                  <th key={idx}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {displayedRows.map((row, rowIdx) => (
+                <tr key={rowIdx}>
+                  {row.map((cell, cellIdx) => (
+                    <td key={cellIdx}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+              {shouldCollapse && (
+                <tr 
+                  className="table-expand-row"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  style={{ 
+                    '--row-bg-color': buttonBgColor,
+                    '--row-hover-color': buttonHoverColor
+                  }}
+                >
+                  <td colSpan={columns.length}>
+                    <svg 
+                      width="16" 
+                      height="16" 
+                      viewBox="0 0 16 16" 
+                      fill="none" 
+                      xmlns="http://www.w3.org/2000/svg"
+                      style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                    >
+                      <path 
+                        d="M4 6L8 10L12 6" 
+                        stroke="white" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   // Collapsible table component for tables with more than 2 rows
   // Must be defined before any early returns to satisfy React Hooks rules
@@ -471,63 +813,74 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         setExpandedTables(newExpanded);
       };
 
-      // Clone and modify children to show only first 2 rows in tbody
-      const modifiedChildren = shouldCollapse && !isExpanded && tbodyElement
-        ? React.Children.map(children, (child) => {
-            if (child && typeof child === 'object' && 'type' in child) {
-              if (child.type === 'tbody' || (child.props && child.props.children && child.type !== 'thead')) {
-                const tbodyRows = React.Children.toArray(child.props?.children || []);
-                const visibleRows = tbodyRows.slice(0, 2);
-                return React.cloneElement(child, {
-                  children: visibleRows
-                });
-              }
-            }
-            return child;
-          })
-        : children;
+      // Count columns for the expand row
+      let columnCount = 1;
+      const theadElement = childrenArrayForCount.find(child => 
+        child && typeof child === 'object' && 'type' in child && child.type === 'thead'
+      );
+      if (theadElement && theadElement.props && theadElement.props.children) {
+        const headerRow = React.Children.toArray(theadElement.props.children)[0];
+        if (headerRow && headerRow.props && headerRow.props.children) {
+          columnCount = React.Children.count(headerRow.props.children);
+        }
+      }
+
+      // Create the expand/collapse row
+      const expandRow = shouldCollapse ? (
+        <tr 
+          className="table-expand-row"
+          onClick={toggleExpanded}
+          style={{ 
+            '--row-bg-color': buttonBackgroundColor,
+            '--row-hover-color': buttonHoverColor,
+            cursor: 'pointer'
+          }}
+        >
+          <td colSpan={columnCount} style={{ textAlign: 'center', padding: '6px 0' }}>
+            <svg 
+              width="16" 
+              height="16" 
+              viewBox="0 0 16 16" 
+              fill="none" 
+              xmlns="http://www.w3.org/2000/svg"
+              style={{ 
+                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease'
+              }}
+            >
+              <path 
+                d="M4 6L8 10L12 6" 
+                stroke="white" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              />
+            </svg>
+          </td>
+        </tr>
+      ) : null;
+
+      // Clone and modify children to show only first 2 rows in tbody + expand row
+      const modifiedChildren = React.Children.map(children, (child) => {
+        if (child && typeof child === 'object' && 'type' in child) {
+          if (child.type === 'tbody' || (child.props && child.props.children && child.type !== 'thead')) {
+            const tbodyRows = React.Children.toArray(child.props?.children || []);
+            const visibleRows = shouldCollapse && !isExpanded 
+              ? tbodyRows.slice(0, 2) 
+              : tbodyRows;
+            return React.cloneElement(child, {
+              children: [...visibleRows, expandRow]
+            });
+          }
+        }
+        return child;
+      });
 
       return (
         <div className="collapsible-table-wrapper">
           <table {...props}>
             {modifiedChildren}
           </table>
-          {shouldCollapse && (
-            <button 
-              className="table-toggle-button" 
-              onClick={toggleExpanded}
-              type="button"
-              aria-label={isExpanded ? 'Mostrar menys' : `Mostrar totes les ${rowCount} files`}
-              style={{ 
-                background: buttonBackgroundColor,
-                '--button-hover-color': buttonHoverColor
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = buttonHoverColor;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = buttonBackgroundColor;
-              }}
-            >
-              <svg 
-                width="16" 
-                height="16" 
-                viewBox="0 0 16 16" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg"
-                className={isExpanded ? 'table-toggle-icon expanded' : 'table-toggle-icon'}
-                style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-              >
-                <path 
-                  d="M4 6L8 10L12 6" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
         </div>
       );
     };
@@ -537,6 +890,21 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const markdownComponents = {
     table: CollapsibleTable,
   };
+  useEffect(() => {
+    if (!isLoading) {
+      setThinkingDots('');
+      return;
+    }
+  
+    let dots = 0;
+    const interval = setInterval(() => {
+      dots = (dots + 1) % 4; // 0,1,2,3
+      setThinkingDots('.'.repeat(dots));
+    }, 400); // velocitat (ms)
+  
+    return () => clearInterval(interval);
+  }, [isLoading]);
+  
 
   if (!user) {
     return null; // This should not happen as App.js handles this case
@@ -574,7 +942,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       // Show animated thinking images
       return `/xiquet_images/think_${thinkingFrame}.png`;
     } else {
-      return theme?.image || '/xiquet_images/basic_white.png';
+      return theme?.image || '/xiquet_images/colors/basic_white.png';
     }
   };
 
@@ -585,6 +953,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       return '120px'; // Same size for thinking and responses
     }
   };
+
+
 
   return (
     <div className="chat-container" style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}>
@@ -598,27 +968,25 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
           />
           {isLoading && (
             <div className="xiquet-thinking-bubble">
-              <span className="spinner"></span> Pensant...
+              <span className="spinner"></span> Pensant{thinkingDots}
             </div>
           )}
         </div>
       )}
       <div className="chat-messages" style={{ background: chatBackgroundColor }}>
         {messages.length === 0 && (
-          <div className="welcome-message">
-            <img 
-              src={theme?.image || '/xiquet_images/basic_white.png'} 
-              alt="Xiquet" 
-              className="welcome-xiquet-icon-large"
-            />
-            <div className="welcome-text-container">
-              <p className="welcome-text-main">Hola! Sóc el Xiquet, l'agent d'Intel·ligència Artificial expert en el món casteller.</p>
-              <p className="welcome-text-sub">Fes-me qualsevol pregunta sobre castells!</p>
-            </div>
-          </div>
+          <WelcomeMessage 
+            theme={theme} 
+            onQuestionClick={handleQuestionClick}
+          />
         )}
         
-        {messages.map((message) => (
+        {messages.map((message, index) => {
+          // Each completed message uses its own stored entities (not the shared identifiedEntities state)
+          // This prevents old chips from changing when a new question is asked
+          const entitiesToShow = message.identified_entities;
+          
+          return (
           <div key={message.id} className={`message-wrapper ${message.isUser ? 'user' : 'assistant'}`}>
             {message.isUser ? (
               <div className={`message ${message.isUser ? 'user' : 'assistant'}`} style={{ background: inputBackgroundColor, borderColor: messageBorderColor }}>
@@ -628,13 +996,131 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
               </div>
             ) : (
               <div className="assistant-response">
+                  {/* Show chips - uses identifiedEntities for most recent to avoid reload */}
+                  {hasEntities(entitiesToShow) && (() => {
+                    // Get theme color from first colla if available
+                    const firstColla = entitiesToShow.colles?.[0];
+                    const colorCode = firstColla ? COLLES_COLORS[firstColla] : null;
+                    const themeKey = colorCode ? COLOR_CODE_TO_THEME[colorCode] : null;
+                    const selectedThemeColor = themeKey && COLOR_THEMES[themeKey] ? COLOR_THEMES[themeKey].secondary : null;
+                    
+                    // Style for non-colla chips when a color is selected
+                    const themedChipStyle = selectedThemeColor ? {
+                      backgroundColor: 'white',
+                      color: selectedThemeColor,
+                      border: `2px solid ${selectedThemeColor}`
+                    } : {};
+                    const themedIconColor = selectedThemeColor || 'white';
+                    
+                    return (
+                    <div className="response-entities-chips">
+                      {entitiesToShow.colles && entitiesToShow.colles.map((colla, idx) => {
+                        const collaColorCode = COLLES_COLORS[colla];
+                        const collaThemeKey = collaColorCode ? COLOR_CODE_TO_THEME[collaColorCode] : null;
+                        const themeColor = collaThemeKey && COLOR_THEMES[collaThemeKey] ? COLOR_THEMES[collaThemeKey].secondary : '#666';
+                        const textColor = collaColorCode === 'white' ? '#333' : 'white';
+                        return (
+                          <span 
+                            key={`colla-${idx}`} 
+                            className="entity-chip entity-chip-colla"
+                            style={{ backgroundColor: themeColor, color: textColor }}
+                          >
+                            <CollaIcon color={textColor} /> {colla}
+                          </span>
+                        );
+                      })}
+                      {entitiesToShow.castells && entitiesToShow.castells.map((castell, idx) => (
+                        <span key={`castell-${idx}`} className="entity-chip entity-chip-castell" style={themedChipStyle}>
+                          <CastellIcon color={themedIconColor} /> {castell.castell_code}{castell.status ? ` (${castell.status})` : ''}
+                        </span>
+                      ))}
+                      {entitiesToShow.anys && entitiesToShow.anys.map((any, idx) => (
+                        <span key={`any-${idx}`} className="entity-chip entity-chip-any" style={themedChipStyle}>
+                          <CalendarIcon color={themedIconColor} /> {any}
+                        </span>
+                      ))}
+                      {entitiesToShow.llocs && entitiesToShow.llocs.map((lloc, idx) => (
+                        <span key={`lloc-${idx}`} className="entity-chip entity-chip-lloc" style={themedChipStyle}>
+                          <LocationIcon color={themedIconColor} /> {lloc}
+                        </span>
+                      ))}
+                      {entitiesToShow.diades && entitiesToShow.diades.map((diada, idx) => (
+                        <span key={`diada-${idx}`} className="entity-chip entity-chip-diada" style={themedChipStyle}>
+                          <DiadaIcon color={themedIconColor} /> {diada}
+                        </span>
+                      ))}
+                    </div>
+                  );})()}
                 <div className="assistant-content">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.response}</ReactMarkdown>
+                  {/* Display table data from SQL queries */}
+                  {message.table_data && <DataTable tableData={message.table_data} />}
                 </div>
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
+        
+        {/* Loading state - shows entity chips while waiting for response */}
+        {isLoading && hasEntities(identifiedEntities) && (() => {
+          // Get theme color from first colla if available
+          const firstColla = identifiedEntities.colles?.[0];
+          const colorCode = firstColla ? COLLES_COLORS[firstColla] : null;
+          const themeKey = colorCode ? COLOR_CODE_TO_THEME[colorCode] : null;
+          const selectedThemeColor = themeKey && COLOR_THEMES[themeKey] ? COLOR_THEMES[themeKey].secondary : null;
+          
+          // Style for non-colla chips when a color is selected
+          const themedChipStyle = selectedThemeColor ? {
+            backgroundColor: 'white',
+            color: selectedThemeColor,
+            border: `2px solid ${selectedThemeColor}`
+          } : {};
+          const themedIconColor = selectedThemeColor || 'white';
+          
+          return (
+          <div className="message-wrapper assistant">
+            <div className="assistant-response">
+              <div className="response-entities-chips">
+                {identifiedEntities.colles && identifiedEntities.colles.map((colla, idx) => {
+                  const collaColorCode = COLLES_COLORS[colla];
+                  const collaThemeKey = collaColorCode ? COLOR_CODE_TO_THEME[collaColorCode] : null;
+                  const themeColor = collaThemeKey && COLOR_THEMES[collaThemeKey] ? COLOR_THEMES[collaThemeKey].secondary : '#666';
+                  const textColor = collaColorCode === 'white' ? '#333' : 'white';
+                  return (
+                    <span 
+                      key={`colla-${idx}`} 
+                      className="entity-chip entity-chip-colla"
+                      style={{ backgroundColor: themeColor, color: textColor }}
+                    >
+                      <CollaIcon color={textColor} /> {colla}
+                    </span>
+                  );
+                })}
+                {identifiedEntities.castells && identifiedEntities.castells.map((castell, idx) => (
+                  <span key={`castell-${idx}`} className="entity-chip entity-chip-castell" style={themedChipStyle}>
+                    <CastellIcon color={themedIconColor} /> {castell.castell_code}{castell.status ? ` (${castell.status})` : ''}
+                  </span>
+                ))}
+                {identifiedEntities.anys && identifiedEntities.anys.map((any, idx) => (
+                  <span key={`any-${idx}`} className="entity-chip entity-chip-any" style={themedChipStyle}>
+                    <CalendarIcon color={themedIconColor} /> {any}
+                  </span>
+                ))}
+                {identifiedEntities.llocs && identifiedEntities.llocs.map((lloc, idx) => (
+                  <span key={`lloc-${idx}`} className="entity-chip entity-chip-lloc" style={themedChipStyle}>
+                    <LocationIcon color={themedIconColor} /> {lloc}
+                  </span>
+                ))}
+                {identifiedEntities.diades && identifiedEntities.diades.map((diada, idx) => (
+                  <span key={`diada-${idx}`} className="entity-chip entity-chip-diada" style={themedChipStyle}>
+                    <DiadaIcon color={themedIconColor} /> {diada}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        );})()}
         
         {error && (
           <div className="error">

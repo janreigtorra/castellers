@@ -1,4 +1,5 @@
 from random import choice, shuffle
+from typing import List, Optional
 from passafaixa.schemas import QuestionMCQMultipleOptions
 from passafaixa.questions_utils import get_random_year, get_random_colla
 from passafaixa.db_pool import get_db_connection
@@ -95,15 +96,19 @@ def find_similar_castells(correct_castells: list, castells_data: list, num_optio
         return similar_castells[:num_options]
 
 
-def generate_actuacio_colla_diada_question() -> QuestionMCQMultipleOptions:
+def generate_actuacio_colla_diada_question(selected_colles: List[str] = None, selected_years: List[int] = None) -> QuestionMCQMultipleOptions:
     """
     Generate a question asking which castells were made in a specific actuació.
     Returns 8 options: 4 correct castells + 4 wrong options (2 same castells different status + 2 similar castells).
+    
+    Args:
+        selected_colles: Optional list of colla names to pick from.
+        selected_years: Optional list of years to pick from.
     """
     if not DATABASE_URL:
         return QuestionMCQMultipleOptions(
             question="Quina va ser l'actuació de la colla XX a la diada XX l'any XX? Selecciona tots els castells fets.",
-            options=["Error al obtenir les opcions"] * 8,
+            options=["Error al generar la resposta"] * 8,
             correct_answer=[],
             is_error=True
         )
@@ -113,11 +118,12 @@ def generate_actuacio_colla_diada_question() -> QuestionMCQMultipleOptions:
     
     for attempt in range(max_attempts):
         try:
-            # Get a random year
-            year = get_random_year()
+            # Get a random year - use selected_years if provided (equal probability)
+            year = get_random_year(selected_years=selected_years)
             
             # Get a random colla that was active in that year
-            colla = get_random_colla(year)
+            # Use selected_colles if provided (equal probability), otherwise use weighted random
+            colla = get_random_colla(year, selected_colles=selected_colles)
             
             with get_db_connection() as conn:
                 cur = conn.cursor()
@@ -288,7 +294,7 @@ def generate_actuacio_colla_diada_question() -> QuestionMCQMultipleOptions:
                 traceback.print_exc()
                 return QuestionMCQMultipleOptions(
                     question="Quina va ser l'actuació de la colla XX a la diada XX l'any XX? Selecciona tots els castells fets.",
-                    options=["Error al obtenir les opcions"] * 8,
+                    options=["Error al generar la resposta"] * 8,
                     correct_answer=[],
                     is_error=True
                 )
@@ -297,7 +303,7 @@ def generate_actuacio_colla_diada_question() -> QuestionMCQMultipleOptions:
     # If all attempts failed
     return QuestionMCQMultipleOptions(
         question="Quina va ser l'actuació de la colla XX a la diada XX l'any XX? Selecciona tots els castells fets.",
-        options=["Error al obtenir les opcions"] * 8,
+        options=["Error al generar la resposta"] * 8,
         correct_answer=[],
         is_error=True
     )

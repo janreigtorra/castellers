@@ -97,7 +97,6 @@
 .header-logo {
   display: flex;
   align-items: center;
-  gap: 1rem;
   width: 320px;
   padding-right: 2rem;
 }
@@ -194,7 +193,7 @@
 }
 
 .header button {
-  background: #f82327;
+  background: #000000;
   color: white;
   border: none;
   padding: 0.6rem 1.2rem;
@@ -243,9 +242,11 @@
   /* Background color set dynamically via inline style */
 }
 
-.chat-messages:has(.welcome-message) {
+.chat-messages:has(.welcome-container) {
   justify-content: center;
   align-items: center;
+  overflow: hidden;
+  padding: 1rem;
 }
 
 .chat-messages::-webkit-scrollbar {
@@ -267,19 +268,19 @@
 
 .welcome-message {
   text-align: left;
-  padding: 3rem 2rem;
+  padding: 1rem 2rem;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 2rem;
-  max-width: 1000px;
+  gap: 1.5rem;
+  max-width: 900px;
   margin: 0 auto;
   width: 100%;
 }
 
 .welcome-xiquet-icon-large {
-  width: 400px;
-  height: 400px;
+  width: 280px;
+  height: 280px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -287,7 +288,7 @@
 .welcome-text-container {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
   flex: 1;
 }
 
@@ -304,6 +305,90 @@
   margin: 0;
 }
 
+/* Welcome container with scrolling banners */
+.welcome-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+/* Scrolling banner styles */
+.scrolling-banner {
+  width: 100%;
+  overflow: hidden;
+  padding: 0.5rem 0;
+  flex-shrink: 0;
+  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+}
+
+.scrolling-content {
+  display: flex;
+  gap: 1rem;
+  width: max-content;
+}
+
+.scrolling-banner.left .scrolling-content {
+  animation: scrollLeft 40s linear infinite;
+}
+
+.scrolling-banner.right .scrolling-content {
+  animation: scrollRight 40s linear infinite;
+}
+
+@keyframes scrollLeft {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes scrollRight {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Pause animation on hover */
+.scrolling-banner:hover .scrolling-content {
+  animation-play-state: paused;
+}
+
+/* Question chip styles */
+.question-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: var(--theme-background);
+  border: 2px solid var(--theme-border);
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: var(--theme-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.question-chip:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.question-chip:active {
+  transform: scale(0.98);
+}
+
 .message-wrapper {
   display: flex;
   align-items: flex-start;
@@ -315,6 +400,7 @@
 
 .message-wrapper.user {
   justify-content: flex-end;
+  margin-top: 1.2rem; /* Add spacing above user messages */
   margin-bottom: 1.5rem; /* Keep spacing for user messages */
 }
 
@@ -424,6 +510,39 @@
   display: block;
   overflow-x: auto;
   max-width: 100%;
+}
+
+/* Loading state content (Pensant...) */
+.assistant-content.loading-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--theme-text-secondary, #666);
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+.assistant-content.loading-content .spinner {
+  flex-shrink: 0;
+}
+
+/* Scrollbar styling for assistant content */
+.assistant-content::-webkit-scrollbar {
+  height: 8px;
+}
+
+.assistant-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.assistant-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.assistant-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 /* Remove any borders or backgrounds from all markdown elements */
@@ -561,10 +680,10 @@
 
 .assistant-content table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
-  margin: 1.5rem 0;
+  margin: 0.25rem 0 1rem 0;
   font-size: 0.95rem;
-  min-width: 100%;
   display: table;
   table-layout: auto;
 }
@@ -593,34 +712,148 @@
   background: rgba(0, 0, 0, 0.02);
 }
 
+/* Ensure table last row has bottom border (only when no expand bar) */
+.assistant-content table tr:last-child:not(.table-expand-row) td,
+.assistant-content table tr:last-child:not(.table-expand-row) th {
+  border-bottom: 1px solid var(--theme-border) !important;
+}
+
 .collapsible-table-wrapper {
   margin: 1.5rem 0;
 }
 
-.table-toggle-button {
-  margin-top: 0.75rem;
-  padding: 0.5rem;
-  background: var(--theme-color, #d0282c);
-  color: white;
-  border: none;
-  border-radius: 4px;
+/* Expand row inside table */
+.table-expand-row {
+  background: var(--row-bg-color, #d0282c) !important;
+  opacity: 0.3;
   cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.table-expand-row:hover {
+  opacity: 0.75;
+}
+
+.table-expand-row td {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.5px 0 !important;
+  text-align: center;
+  border-radius: 0 0 6px 6px;
+}
+
+.table-expand-row svg {
+  display: inline-block;
+  vertical-align: middle;
+  width: 14px;
+  height: 14px;
+}
+
+/* DataTable component styles - for SQL query results */
+.data-table-container {
+  margin: 1.5rem 0;
+  border-radius: 8px;
+  overflow: hidden; /* Clip content but allow wrapper to scroll */
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  position: relative;
+  max-width: calc(100vw - 520px); /* Account for sidebar (320px) + icon margin (160px) + padding (40px) */
+  width: 100%;
+}
+
+.data-table-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: black;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  transition: background-color 0.2s, transform 0.2s;
+  font-style: italic;
 }
 
-.table-toggle-button:hover {
-  background: var(--theme-accent, #b02226);
-  opacity: 0.9;
-  transform: scale(1.05);
+
+.data-table-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
 }
 
-.table-toggle-icon {
-  transition: transform 0.2s;
+/* Scrollbar styling for data table */
+.data-table-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+
+.data-table-wrapper::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.data-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.data-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.375rem;
+  margin: 0;
+  padding: 0;
+  table-layout: auto;
+}
+
+.data-table th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+  color: #333;
+  font-size: 0.700rem;
+}
+
+.data-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  vertical-align: top;
+  color: #444;
+  font-size: 0.700rem;
+  max-width: 140px;
+  min-width: 50px;
+  line-height: 1.3;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-height: 3.9em; /* ~3 lines (3 * 1.3 line-height) */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none; /* Remove border from last row for seamless button attachment */
+}
+
+.data-table tbody tr:hover td {
+  background: rgba(var(--theme-color-rgb, 208, 40, 44), 0.04);
+}
+
+.data-table tbody tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.data-table tbody tr:nth-child(even):hover td {
+  background: rgba(var(--theme-color-rgb, 208, 40, 44), 0.06);
+}
+
+/* Table expand row in data tables */
+.data-table-container .table-expand-row {
+  margin: 0;
 }
 
 .assistant-content tr:hover td {
@@ -738,6 +971,106 @@
   width: 16px;
   height: 16px;
   border-width: 2px;
+}
+
+/* Identified entities chips */
+.identified-entities-chips {
+  position: absolute;
+  bottom: 180px; /* Above the thinking bubble */
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-width: 350px;
+  z-index: 7;
+  pointer-events: none;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  animation: chipPop 0.3s ease-out;
+  animation-fill-mode: backwards;
+}
+
+.entity-chip svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.entity-chip:nth-child(1) { animation-delay: 0s; }
+.entity-chip:nth-child(2) { animation-delay: 0.1s; }
+.entity-chip:nth-child(3) { animation-delay: 0.2s; }
+.entity-chip:nth-child(4) { animation-delay: 0.3s; }
+.entity-chip:nth-child(5) { animation-delay: 0.4s; }
+.entity-chip:nth-child(6) { animation-delay: 0.5s; }
+
+@keyframes chipPop {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.entity-chip-colla {
+  /* Color is set dynamically via inline style */
+  font-weight: 600;
+}
+
+.entity-chip-castell {
+  background: #b82226;
+  color: white;
+}
+
+.entity-chip-any {
+  background: #b82226;
+  color: white;
+}
+
+.entity-chip-lloc {
+  background: #b82226;
+  color: white;
+}
+
+.entity-chip-diada {
+  background:#b82226;
+  color: white;
+}
+
+/* Response entity chips (inline with messages) */
+.response-entities-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.response-entities-chips .entity-chip {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.65rem;
 }
 
 /* Chat input */
@@ -1057,6 +1390,11 @@
 
 .session-manager.collapsed .collapse-btn {
   margin: 0 auto;
+}
+
+/* Adjust table width when sidebar is collapsed */
+.session-manager.collapsed ~ .main-content-with-sessions .data-table-container {
+  max-width: calc(100vw - 250px); /* Account for collapsed sidebar (50px) + icon margin (160px) + padding (40px) */
 }
 
 .new-session-btn {
@@ -1390,5 +1728,9 @@
 
   .assistant-response {
     margin-left: 110px; /* Adjust for smaller icon on mobile (10px + 80px + 20px margin) */
+  }
+
+  .data-table-container {
+    max-width: calc(100vw - 420px); /* Account for sidebar (280px) + icon margin (110px) + padding (30px) */
   }
 }

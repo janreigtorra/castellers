@@ -1,22 +1,14 @@
 import React from 'react';
-import { calculateMultipleOptionsScore } from '../../utils/scoring';
 
 const MultipleOptionsQuestion = ({ 
   question, 
   selectedAnswers, 
   selectedAnswer, 
   onAnswerToggle, 
-  onSubmit,
-  onNext,
-  isLastQuestion = false
+  onSubmit
 }) => {
   const showResult = selectedAnswer !== null;
   const correctAnswers = question.correct_answer || [];
-  
-  let scoreInfo = null;
-  if (showResult) {
-    scoreInfo = calculateMultipleOptionsScore(selectedAnswer, correctAnswers);
-  }
 
   return (
     <>
@@ -56,65 +48,16 @@ const MultipleOptionsQuestion = ({
         })}
       </div>
 
-      {!showResult && (
+      {!showResult && selectedAnswers.length > 0 && (
         <button
-          className="passafaixa-submit-btn"
+          className="passafaixa-submit-btn passafaixa-submit-btn-active"
           onClick={onSubmit}
-          disabled={selectedAnswers.length === 0}
         >
           Confirmar Resposta
         </button>
-      )}
-
-      {showResult && (
-        <div className="passafaixa-feedback">
-          {(() => {
-            const percentage = Math.round(scoreInfo.points * 100);
-            
-            if (scoreInfo.isPerfect) {
-              return <p className="passafaixa-feedback-correct">Correcte! 🎉</p>;
-            } else if (scoreInfo.points > 0) {
-              return (
-                <div>
-                  <p className="passafaixa-feedback-partial">
-                    Gairebé! Has obtingut {percentage}% dels punts.
-                  </p>
-                  <p className="passafaixa-feedback-info">
-                    Les respostes correctes són:
-                  </p>
-                  <ul className="passafaixa-correct-answers-list">
-                    {correctAnswers.map((ans, idx) => (
-                      <li key={idx}><strong>{ans}</strong></li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            } else {
-              return (
-                <div>
-                  <p className="passafaixa-feedback-incorrect">
-                    Incorrecte. Les respostes correctes són:
-                  </p>
-                  <ul className="passafaixa-correct-answers-list">
-                    {correctAnswers.map((ans, idx) => (
-                      <li key={idx}><strong>{ans}</strong></li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            }
-          })()}
-          <button 
-            className="passafaixa-next-btn"
-            onClick={onNext}
-          >
-            {isLastQuestion ? 'Veure Resultats' : 'Següent'}
-          </button>
-        </div>
       )}
     </>
   );
 };
 
 export default MultipleOptionsQuestion;
-

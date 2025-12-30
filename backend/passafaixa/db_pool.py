@@ -64,6 +64,25 @@ def get_connection_pool():
     return _connection_pool
 
 
+def _is_connection_healthy(conn):
+    """
+    Check if a connection is still healthy by running a simple query.
+    Returns True if healthy, False otherwise.
+    """
+    try:
+        # Check if connection is closed
+        if conn.closed:
+            return False
+        # Try a simple query to verify connection is alive
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+        return True
+    except Exception:
+        return False
+
+
 @contextmanager
 def get_db_connection():
     """
@@ -78,10 +97,30 @@ def get_db_connection():
     """
     pool = get_connection_pool()
     conn = None
+    conn_is_bad = False
     
     try:
         conn = pool.getconn()
+        
+        # Verify connection is healthy before using it
+        if not _is_connection_healthy(conn):
+            # Connection is stale, close it and get a new one
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            conn = pool.getconn()
+            
+            # If still unhealthy, try one more time
+            if not _is_connection_healthy(conn):
+                try:
+                    pool.putconn(conn, close=True)
+                except Exception:
+                    pass
+                conn = pool.getconn()
+        
         yield conn
+        
     except psycopg2.pool.PoolError as e:
         # If pool is exhausted, wait a bit and retry once
         import time
@@ -91,11 +130,23 @@ def get_db_connection():
             yield conn
         except Exception as retry_e:
             raise Exception(f"Failed to get connection from pool (retry): {retry_e}")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+        # Connection error - mark as bad so we close it instead of returning to pool
+        conn_is_bad = True
+        raise Exception(f"Database error: {e}")
     except Exception as e:
         raise Exception(f"Database error: {e}")
     finally:
         if conn:
-            pool.putconn(conn)
+            try:
+                if conn_is_bad or conn.closed:
+                    # Close the bad connection instead of returning to pool
+                    pool.putconn(conn, close=True)
+                else:
+                    pool.putconn(conn)
+            except Exception:
+                # If we can't return the connection, just ignore
+                pass
 
 
 def close_connection_pool():
