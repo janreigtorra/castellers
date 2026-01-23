@@ -3,13 +3,15 @@
 rag_index_supabase.py
 Genera embeddings i els emmagatzema a Supabase amb pgvector.
 Llegeix dades des de Supabase PostgreSQL i crea un index vectorial.
+
+Uses OpenAI embeddings API for lightweight deployment (no heavy ML dependencies).
 """
 
 import os
 import json
 import psycopg2
 from typing import List, Dict, Any, Tuple
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 import numpy as np
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -18,39 +20,77 @@ load_dotenv()
 
 # ---------- CONFIGURACIÓ ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
-MODEL_NAME = "all-MiniLM-L6-v2"   # equilibrat i ràpid
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI's fast & cheap model
+EMBEDDING_DIMENSIONS = 512  # Reduced dimensions for faster search (default is 1536)
 CHUNK_SIZE_WORDS = 200            # paraules per chunk
 OVERLAP_WORDS = 50                # solapament entre chunks
-BATCH_SIZE = 256                  # per generar embeddings en batches
+BATCH_SIZE = 100                  # OpenAI allows up to 2048 texts per request
 # ------------------------------------
 
-# ---------- MODEL CACHING ----------
-# Cache the SentenceTransformer model globally to avoid reloading on every request
-_cached_model = None
-_cached_model_name = None
+# ---------- OPENAI CLIENT ----------
+_openai_client = None
 
-def get_cached_model(model_name: str = MODEL_NAME) -> SentenceTransformer:
-    """Get cached SentenceTransformer model or load it if not cached"""
-    global _cached_model, _cached_model_name
-    
-    if _cached_model is None or _cached_model_name != model_name:
-        from datetime import datetime
-        model_load_start = datetime.now()
-        _cached_model = SentenceTransformer(model_name)
-        _cached_model_name = model_name
-        model_load_time = (datetime.now() - model_load_start).total_seconds() * 1000
-        print(f"[TIMING] RAG SentenceTransformer model load: {model_load_time:.2f}ms (first load)")
-    
-    return _cached_model
+def get_openai_client() -> OpenAI:
+    """Get cached OpenAI client"""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
 
-def preload_rag_model(model_name: str = MODEL_NAME):
+def get_embeddings_batch(texts: List[str]) -> np.ndarray:
     """
-    Pre-load the RAG model at startup to avoid delay on first request.
-    Call this during application startup.
+    Get embeddings for a batch of texts using OpenAI API.
+    Returns normalized embeddings as numpy array.
     """
-    print(f"[RAG] Pre-loading SentenceTransformer model: {model_name}")
-    get_cached_model(model_name)
-    print(f"[RAG] Model pre-loaded and cached")
+    client = get_openai_client()
+    
+    # OpenAI API call
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=texts,
+        dimensions=EMBEDDING_DIMENSIONS
+    )
+    
+    # Extract embeddings and convert to numpy
+    embeddings = np.array([item.embedding for item in response.data], dtype="float32")
+    
+    # Normalize for cosine similarity
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1e-9
+    embeddings = embeddings / norms
+    
+    return embeddings
+
+def get_embedding_single(text: str) -> np.ndarray:
+    """Get embedding for a single text (used for queries)"""
+    client = get_openai_client()
+    
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=[text],
+        dimensions=EMBEDDING_DIMENSIONS
+    )
+    
+    embedding = np.array(response.data[0].embedding, dtype="float32")
+    
+    # Normalize
+    norm = np.linalg.norm(embedding)
+    if norm > 0:
+        embedding = embedding / norm
+    
+    return embedding
+
+def preload_rag_model(model_name: str = None):
+    """
+    Pre-load check for OpenAI API connectivity.
+    With OpenAI embeddings, there's no heavy model to load - just verify API key.
+    """
+    print(f"[RAG] Using OpenAI embeddings ({EMBEDDING_MODEL}, {EMBEDDING_DIMENSIONS}d)")
+    if not OPENAI_API_KEY:
+        print("[RAG] WARNING: OPENAI_API_KEY not set!")
+    else:
+        print(f"[RAG] OpenAI API key configured ✓")
 # ------------------------------------
 
 # ---------- UTILS DE TEXT ----------
@@ -111,12 +151,16 @@ def create_embeddings_table(conn):
     """Crea la taula per emmagatzemar embeddings"""
     cur = conn.cursor()
     
+    # Drop old table if dimensions changed (384 -> 512)
+    # This is safe because we always rebuild embeddings from scratch
+    cur.execute("DROP TABLE IF EXISTS embeddings CASCADE;")
+    
     # Crear taula embeddings
-    cur.execute("""
+    cur.execute(f"""
         CREATE TABLE IF NOT EXISTS embeddings (
             id SERIAL PRIMARY KEY,
             chunk_text TEXT NOT NULL,
-            embedding vector(384),  -- all-MiniLM-L6-v2 dimensions
+            embedding vector({EMBEDDING_DIMENSIONS}),  -- OpenAI text-embedding-3-small
             source_table TEXT,
             source_pk INTEGER,
             colla_fk INTEGER,
@@ -353,17 +397,15 @@ def gather_documents_from_supabase() -> List[Dict[str, Any]]:
     return docs
 
 # ---------- INDEXACIÓ A SUPABASE ----------
-def index_documents_to_supabase(docs: List[Dict[str, Any]], model_name: str = MODEL_NAME):
-    """Indexa documents a Supabase amb pgvector"""
+def index_documents_to_supabase(docs: List[Dict[str, Any]]):
+    """Indexa documents a Supabase amb pgvector using OpenAI embeddings"""
     
     # Configurar connexió
     conn = get_supabase_connection()
     enable_pgvector(conn)
     create_embeddings_table(conn)
     
-    # Carregar model
-    print("Carregant model d'embeddings:", model_name)
-    model = SentenceTransformer(model_name)
+    print(f"Using OpenAI embeddings: {EMBEDDING_MODEL} ({EMBEDDING_DIMENSIONS}d)")
     
     # Preparar chunks
     doc_texts = []
@@ -384,25 +426,20 @@ def index_documents_to_supabase(docs: List[Dict[str, Any]], model_name: str = MO
         print("No s'han trobat documents per indexar.")
         return
     
-    # Netejar embeddings existents
     cur = conn.cursor()
-    cur.execute("DELETE FROM embeddings")
-    conn.commit()
-    print("Existing embeddings cleared")
     
     # Generar i emmagatzemar embeddings en batches
+    total_tokens = 0
     for i in tqdm(range(0, len(doc_texts), BATCH_SIZE), desc="Processing batches"):
         batch_texts = doc_texts[i:i+BATCH_SIZE]
         batch_meta = doc_meta[i:i+BATCH_SIZE]
         
-        # Generar embeddings
-        embeddings = model.encode(batch_texts, show_progress_bar=False, convert_to_numpy=True)
-        embeddings = embeddings.astype("float32")
-        
-        # Normalitzar per cosinus similarity
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms[norms == 0.0] = 1e-9
-        embeddings = embeddings / norms
+        # Generar embeddings amb OpenAI
+        try:
+            embeddings = get_embeddings_batch(batch_texts)
+        except Exception as e:
+            print(f"Error generating embeddings for batch {i//BATCH_SIZE}: {e}")
+            continue
         
         # Inserir a Supabase
         for j, (text, meta, embedding) in enumerate(zip(batch_texts, batch_meta, embeddings)):
@@ -444,23 +481,21 @@ def index_documents_to_supabase(docs: List[Dict[str, Any]], model_name: str = MO
     print("Embeddings indexed to Supabase successfully!")
 
 # ---------- CERCA VECTORIAL ----------
-def search_query_supabase(query: str, k: int = 5, model_name: str = MODEL_NAME) -> List[Tuple[Dict, float]]:
+def search_query_supabase(query: str, k: int = 5) -> List[Tuple[Dict, float]]:
     """
     Cerca vectorial a Supabase amb pgvector.
     Retorna una llista de tuples (doc_info, score) on doc_info té format {"meta": {...}, "text": "..."}
     Compatible amb el format esperat per agent.py
+    
+    Uses OpenAI embeddings for query (fast API call, no local model needed).
     """
     from datetime import datetime
     
-    # Get cached model (or load if first time)
-    model = get_cached_model(model_name)
-    
-    # Generate query embedding
+    # Generate query embedding with OpenAI
     embed_start = datetime.now()
-    q_emb = model.encode([query], convert_to_numpy=True).astype("float32")
-    q_emb = q_emb / np.linalg.norm(q_emb, axis=1, keepdims=True)
+    q_emb = get_embedding_single(query)
     embed_time = (datetime.now() - embed_start).total_seconds() * 1000
-    print(f"[TIMING] RAG query embedding generation: {embed_time:.2f}ms")
+    print(f"[TIMING] RAG query embedding (OpenAI API): {embed_time:.2f}ms")
     
     # Try to use connection pool for faster connections
     conn_start = datetime.now()
@@ -501,7 +536,8 @@ def _execute_rag_search(conn, q_emb, k: int) -> List[Tuple[Dict, float]]:
         db_search_start = datetime.now()
         
         # Convert embedding to list for psycopg2
-        query_embedding_list = q_emb[0].tolist()
+        # q_emb is already a 1D numpy array from get_embedding_single()
+        query_embedding_list = q_emb.tolist()
         
         # Check which column exists and use appropriate query
         # First, get ALL columns to see what we're working with
@@ -628,22 +664,30 @@ def _execute_rag_search(conn, q_emb, k: int) -> List[Tuple[Dict, float]]:
 
 # ---------- MAIN ----------
 def main():
-    print("Creating Supabase Vector Index")
-    print("=" * 40)
+    print("Creating Supabase Vector Index with OpenAI Embeddings")
+    print("=" * 50)
     
     if not DATABASE_URL:
-        print("DATABASE_URL not set in .env file")
+        print("ERROR: DATABASE_URL not set in .env file")
+        return
+    
+    if not OPENAI_API_KEY:
+        print("ERROR: OPENAI_API_KEY not set in .env file")
         return
     
     try:
+        print(f"Using OpenAI model: {EMBEDDING_MODEL} ({EMBEDDING_DIMENSIONS}d)")
+        print()
+        
         print("Extracting documents from Supabase...")
         docs = gather_documents_from_supabase()
         print(f"Found {len(docs)} documents")
         
         print("Indexing documents to Supabase...")
-        index_documents_to_supabase(docs, model_name=MODEL_NAME)
+        index_documents_to_supabase(docs)
         
-        print("\nVector index created successfully!")
+        print("\n" + "=" * 50)
+        print("Vector index created successfully!")
         print("You can now use search_query_supabase(query, k) for vector search.")
         
     except Exception as e:

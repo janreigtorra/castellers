@@ -4,7 +4,7 @@ load_castellers_info_chunks.py
 Carrega els chunks de castellers_info_chunks.json a Supabase amb embeddings optimitzats.
 
 Utilitza:
-- Model multilingüe: paraphrase-multilingual-MiniLM-L12-v2 (384 dimensions)
+- OpenAI text-embedding-3-small (512 dimensions) - lightweight, no local model needed
 - Embeddings combinats: 0.2 * title + 0.8 * text (ponderat)
 - Taula dedicada amb estructura optimitzada per cerca híbrida
 """
@@ -13,7 +13,7 @@ import os
 import json
 import psycopg2
 from typing import List, Dict, Any, Tuple
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 import numpy as np
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -52,37 +52,67 @@ def convert_to_pooler_url(database_url: str) -> str:
 
 _raw_database_url = os.getenv("DATABASE_URL")
 DATABASE_URL = convert_to_pooler_url(_raw_database_url) if _raw_database_url else None
-MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"  # Multilingual model (Catalan support)
-EMBEDDING_DIM = 384  # Model output dimensions
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI's fast & cheap model
+EMBEDDING_DIM = 512  # Reduced dimensions for faster search
 TITLE_WEIGHT = 0.2
 TEXT_WEIGHT = 0.8
 BATCH_SIZE = 64  # Smaller batches for stability
 JSON_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data_basic", "castellers_info_chunks.json")
 
-# ---------- MODEL CACHING ----------
-_cached_model = None
-_cached_model_name = None
+# ---------- OPENAI CLIENT ----------
+_openai_client = None
 
-def get_cached_model(model_name: str = MODEL_NAME) -> SentenceTransformer:
-    """Get cached SentenceTransformer model or load it if not cached"""
-    global _cached_model, _cached_model_name
+def get_openai_client() -> OpenAI:
+    """Get cached OpenAI client"""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
+
+def get_embeddings_batch(texts: List[str]) -> np.ndarray:
+    """Get embeddings for a batch of texts using OpenAI API"""
+    client = get_openai_client()
     
-    if _cached_model is None or _cached_model_name != model_name:
-        from datetime import datetime
-        model_load_start = datetime.now()
-        print(f"[RAG] Loading multilingual model: {model_name}...", flush=True)
-        _cached_model = SentenceTransformer(model_name)
-        _cached_model_name = model_name
-        model_load_time = (datetime.now() - model_load_start).total_seconds() * 1000
-        print(f"[TIMING] Multilingual model load: {model_load_time:.2f}ms", flush=True)
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=texts,
+        dimensions=EMBEDDING_DIM
+    )
     
-    return _cached_model
+    embeddings = np.array([item.embedding for item in response.data], dtype="float32")
+    
+    # Normalize for cosine similarity
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1e-9
+    embeddings = embeddings / norms
+    
+    return embeddings
+
+def get_embedding_single(text: str) -> np.ndarray:
+    """Get embedding for a single text"""
+    client = get_openai_client()
+    
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=[text],
+        dimensions=EMBEDDING_DIM
+    )
+    
+    embedding = np.array(response.data[0].embedding, dtype="float32")
+    norm = np.linalg.norm(embedding)
+    if norm > 0:
+        embedding = embedding / norm
+    
+    return embedding
 
 def preload_multilingual_model():
-    """Pre-load the multilingual model at startup to avoid delay on first request"""
-    print(f"[RAG] Pre-loading multilingual model: {MODEL_NAME}", flush=True)
-    get_cached_model(MODEL_NAME)
-    print(f"[RAG] Multilingual model pre-loaded and cached", flush=True)
+    """Check OpenAI API connectivity (no heavy model to preload with OpenAI)"""
+    print(f"[RAG] Using OpenAI embeddings ({EMBEDDING_MODEL}, {EMBEDDING_DIM}d)", flush=True)
+    if not OPENAI_API_KEY:
+        print("[RAG] WARNING: OPENAI_API_KEY not set!", flush=True)
+    else:
+        print(f"[RAG] OpenAI API key configured ✓", flush=True)
 # ------------------------------------
 
 
@@ -228,28 +258,26 @@ def load_json_chunks(json_path: str) -> List[Dict[str, Any]]:
 
 
 def create_weighted_embedding(
-    model: SentenceTransformer,
     title: str,
     text: str,
     title_weight: float = TITLE_WEIGHT,
     text_weight: float = TEXT_WEIGHT
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Crea embeddings per title, text i la combinació ponderada.
+    Crea embeddings per title, text i la combinació ponderada using OpenAI.
     
     Returns:
         Tuple of (title_embedding, text_embedding, combined_embedding)
     """
-    # Generate individual embeddings
-    title_emb = model.encode(title, convert_to_numpy=True).astype("float32")
-    text_emb = model.encode(text, convert_to_numpy=True).astype("float32")
+    # Get embeddings for both texts in one batch (more efficient)
+    embeddings = get_embeddings_batch([title, text])
+    title_emb = embeddings[0]
+    text_emb = embeddings[1]
     
     # Create weighted combination
     combined_emb = title_weight * title_emb + text_weight * text_emb
     
-    # Normalize all embeddings for cosine similarity
-    title_emb = title_emb / np.linalg.norm(title_emb)
-    text_emb = text_emb / np.linalg.norm(text_emb)
+    # Normalize combined embedding (individual ones already normalized)
     combined_emb = combined_emb / np.linalg.norm(combined_emb)
     
     return title_emb, text_emb, combined_emb
@@ -257,17 +285,18 @@ def create_weighted_embedding(
 
 def index_chunks_to_supabase(chunks: List[Dict[str, Any]]):
     """
-    Indexa els chunks a Supabase amb embeddings ponderats.
+    Indexa els chunks a Supabase amb embeddings ponderats using OpenAI.
     """
     # Setup connection
     conn = get_supabase_connection()
     enable_pgvector(conn)
     create_castellers_info_chunks_table(conn)
     
-    # Load multilingual model
-    print(f"\n📥 Loading embedding model: {MODEL_NAME}")
-    model = SentenceTransformer(MODEL_NAME)
-    print(f"✓ Model loaded (embedding dimension: {EMBEDDING_DIM})")
+    # Verify OpenAI API key
+    print(f"\n📥 Using OpenAI embeddings: {EMBEDDING_MODEL}")
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY not set in .env file")
+    print(f"✓ OpenAI configured (embedding dimension: {EMBEDDING_DIM})")
     
     cur = conn.cursor()
     
@@ -301,9 +330,9 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]]):
                 keywords = chunk.get("keywords", []) or []
                 castells = chunk.get("castells", []) or []
                 
-                # Generate embeddings
+                # Generate embeddings with OpenAI
                 title_emb, text_emb, combined_emb = create_weighted_embedding(
-                    model, title, text, TITLE_WEIGHT, TEXT_WEIGHT
+                    title, text, TITLE_WEIGHT, TEXT_WEIGHT
                 )
                 
                 # Insert into database (using numeric ID, no conflicts possible)
@@ -361,17 +390,15 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]]):
 
 def search_castellers_info(
     query: str,
-    k: int = 50,
-    model_name: str = MODEL_NAME
+    k: int = 50
 ) -> List[Tuple[Dict, float]]:
     """
-    Cerca semàntica a la taula castellers_info_chunks.
+    Cerca semàntica a la taula castellers_info_chunks using OpenAI embeddings.
     Returns top k results with all metadata for reranking.
     
     Args:
         query: Text de cerca
         k: Nombre de resultats (default 50 for reranking)
-        model_name: Model d'embeddings a utilitzar
     
     Returns:
         Lista de tuples (doc_info, similarity_score)
@@ -380,20 +407,12 @@ def search_castellers_info(
     
     print(f"[RAG Search] Starting search for: {query[:50]}...", flush=True)
     
-    # Get cached model
-    print(f"[RAG Search] Step 1: Loading model...", flush=True)
-    model_start = datetime.now()
-    model = get_cached_model(model_name)
-    model_time = (datetime.now() - model_start).total_seconds() * 1000
-    print(f"[RAG Search] Model loaded in {model_time:.2f}ms", flush=True)
-    
-    # Generate query embedding
-    print(f"[RAG Search] Step 2: Generating embedding...", flush=True)
+    # Generate query embedding with OpenAI
+    print(f"[RAG Search] Generating embedding with OpenAI...", flush=True)
     embed_start = datetime.now()
-    q_emb = model.encode(query, convert_to_numpy=True).astype("float32")
-    q_emb = q_emb / np.linalg.norm(q_emb)
+    q_emb = get_embedding_single(query)
     embed_time = (datetime.now() - embed_start).total_seconds() * 1000
-    print(f"[TIMING] Query embedding: {embed_time:.2f}ms", flush=True)
+    print(f"[TIMING] Query embedding (OpenAI API): {embed_time:.2f}ms", flush=True)
     
     # Connect to database
     print(f"[RAG Search] Step 3: Connecting to database...", flush=True)
@@ -493,7 +512,7 @@ def main():
     print("🏰 Castellers Info Chunks - Embedding Indexer")
     print("="*60)
     print(f"\n📊 Configuration:")
-    print(f"   Model: {MODEL_NAME}")
+    print(f"   Model: {EMBEDDING_MODEL}")
     print(f"   Embedding dimensions: {EMBEDDING_DIM}")
     print(f"   Weights: title={TITLE_WEIGHT}, text={TEXT_WEIGHT}")
     print(f"   JSON file: {JSON_FILE_PATH}")

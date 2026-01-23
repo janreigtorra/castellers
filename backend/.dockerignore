@@ -1,0 +1,37 @@
+# Virtual environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data files that should come from Supabase, not bundled
+data_basic/
+database.db
+*.db
+
+# Development files
+.git/
+.gitignore
+.env
+.env.*
+*.md
+tests/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Legacy/unused code
+legacy_code/
+
+# Large cached models (will be downloaded on first use)
+.cache/
+models/
+

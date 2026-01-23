@@ -1,5 +1,5 @@
 app = "xiquet-backend"
-primary_region = "mad"  # Madrid - closest to Catalonia
+primary_region = "cdg"  # Paris - closest available to Catalonia (Madrid deprecated)
 
 [build]
   dockerfile = "../docker/Dockerfile.backend"
@@ -17,5 +17,5 @@ primary_region = "mad"  # Madrid - closest to Catalonia
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 512
+  memory_mb = 512  # Lightweight - no local ML models, uses OpenAI API
 
