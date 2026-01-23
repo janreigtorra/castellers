@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import ChatInterface from './components/ChatInterface';
 import Header from './components/Header';
 import SessionManager from './components/SessionManager';
 import WelcomePage from './components/WelcomePage';
-import PassaFaixaGame from './components/PassaFaixaGame/index';
+import JocDelMocador from './components/JocDelMocador/index';
 import ColorSelector from './components/ColorSelector';
+import ProfileModal from './components/ProfileModal';
+import AboutPage from './components/AboutPage';
+import ContactPage from './components/ContactPage';
+import PilarLoader from './components/PilarLoader';
 import { authHelpers } from './supabaseClient';
-import { getColorPreference, saveColorPreference, getCurrentTheme } from './colorTheme';
+import { getColorPreference, saveColorPreference, getCurrentTheme, getUserDefaultColor, getThemeForColor } from './colorTheme';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -17,8 +21,38 @@ function App() {
   const [theme, setTheme] = useState(getCurrentTheme());
   const [unsavedMessagesCount, setUnsavedMessagesCount] = useState(0);
   const [newConversationKey, setNewConversationKey] = useState(0); // Key to force new conversation
-  const [currentPage, setCurrentPage] = useState('chat'); // 'chat' or 'passafaixa'
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const saveChatRef = useRef(null);
+  
+  // Derive currentPage from URL
+  const getPageFromPath = useCallback(() => {
+    const path = window.location.pathname;
+    if (path === '/joc-del-mocador') return 'joc-del-mocador';
+    if (path === '/sobre-xiquet-ai') return 'about';
+    if (path === '/contacte') return 'contact';
+    return 'chat';
+  }, []);
+  
+  const [currentPage, setCurrentPageState] = useState(getPageFromPath);
+  
+  const setCurrentPage = useCallback((page) => {
+    let path = '/';
+    if (page === 'joc-del-mocador') path = '/joc-del-mocador';
+    else if (page === 'about') path = '/sobre-xiquet-ai';
+    else if (page === 'contact') path = '/contacte';
+    
+    window.history.pushState({}, '', path);
+    setCurrentPageState(page);
+  }, []);
+  
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPageState(getPageFromPath());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [getPageFromPath]);
 
   useEffect(() => {
     // Check if user is logged in with Supabase
@@ -31,6 +65,13 @@ function App() {
             username: user.user_metadata?.username || user.email?.split('@')[0],
             email: user.email
           });
+          
+          // Load user's colla color as their default
+          const userCollaColor = getUserDefaultColor(user.id);
+          if (userCollaColor) {
+            setSelectedColor(userCollaColor);
+            setTheme(getThemeForColor(userCollaColor));
+          }
         }
       } catch (error) {
         console.error('Auth check failed:', error);
@@ -49,8 +90,18 @@ function App() {
           username: session.user.user_metadata?.username || session.user.email?.split('@')[0],
           email: session.user.email
         });
+        
+        // Load user's colla color as their default
+        const userCollaColor = getUserDefaultColor(session.user.id);
+        if (userCollaColor) {
+          setSelectedColor(userCollaColor);
+          setTheme(getThemeForColor(userCollaColor));
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        // Reset to default white when user logs out
+        setSelectedColor('white');
+        setTheme(getThemeForColor('white'));
       }
     });
 
@@ -79,6 +130,13 @@ function App() {
 
   const handleColorChange = (color) => {
     setSelectedColor(color);
+  };
+
+  const handleProfileUpdate = (updatedUser) => {
+    setUser(prev => ({
+      ...prev,
+      ...updatedUser
+    }));
   };
 
   const handleLogin = (userData) => {
@@ -135,7 +193,7 @@ function App() {
   if (isLoading) {
     return (
       <div className="app">
-        <div className="loading">Carregant Xiquet...</div>
+        <PilarLoader />
       </div>
     );
   }
@@ -151,48 +209,67 @@ function App() {
             theme={theme}
             currentPage={currentPage}
             onPageChange={setCurrentPage}
+            onOpenProfile={() => setShowProfileModal(true)}
+            onOpenAbout={() => setCurrentPage('about')}
           />
           {currentPage === 'chat' ? (
-          <div className="app-with-sessions">
-            <SessionManager 
-              currentSessionId={currentSessionId}
-              onSessionChange={handleSessionChange}
-              onNewSession={handleNewSession}
-              theme={theme}
-              isUnsaved={!currentSessionId && unsavedMessagesCount > 0}
-              onSaveClick={() => {
-                if (saveChatRef.current) {
-                  saveChatRef.current();
-                }
-              }}
-            />
-            <main className="main-content-with-sessions">
-              <ChatInterface 
-                key={newConversationKey}
-                user={user} 
-                sessionId={currentSessionId} 
+            <div className="app-with-sessions">
+              <SessionManager 
+                currentSessionId={currentSessionId}
+                onSessionChange={handleSessionChange}
+                onNewSession={handleNewSession}
                 theme={theme}
-                onSessionSaved={handleSessionSaved}
-                onSaveClick={saveChatRef}
-                onMessagesChange={setUnsavedMessagesCount}
-                onCollaIdentified={handleColorChange}
+                isUnsaved={!currentSessionId && unsavedMessagesCount > 0}
+                onSaveClick={() => {
+                  if (saveChatRef.current) {
+                    saveChatRef.current();
+                  }
+                }}
               />
-            </main>
-          </div>
-          ) : (
+              <main className="main-content-with-sessions">
+                <ChatInterface 
+                  key={newConversationKey}
+                  user={user} 
+                  sessionId={currentSessionId} 
+                  theme={theme}
+                  onSessionSaved={handleSessionSaved}
+                  onSaveClick={saveChatRef}
+                  onMessagesChange={setUnsavedMessagesCount}
+                  onCollaIdentified={handleColorChange}
+                />
+              </main>
+            </div>
+          ) : currentPage === 'joc-del-mocador' ? (
             <main className="main-content-with-sessions">
-              <PassaFaixaGame 
+              <JocDelMocador 
                 theme={theme}
                 onBack={() => setCurrentPage('chat')}
                 onColorChange={handleColorChange}
                 selectedColor={selectedColor}
               />
             </main>
-          )}
+          ) : currentPage === 'about' ? (
+            <main className="main-content-with-sessions">
+              <AboutPage theme={theme} onBack={() => setCurrentPage('chat')} />
+            </main>
+          ) : currentPage === 'contact' ? (
+            <main className="main-content-with-sessions">
+              <ContactPage theme={theme} onBack={() => setCurrentPage('chat')} />
+            </main>
+          ) : null}
           <ColorSelector 
             selectedColor={selectedColor}
             onColorChange={handleColorChange}
           />
+          {showProfileModal && (
+            <ProfileModal
+              user={user}
+              onClose={() => setShowProfileModal(false)}
+              onProfileUpdate={handleProfileUpdate}
+              theme={theme}
+              onCollaChange={handleColorChange}
+            />
+          )}
         </>
       ) : (
         <WelcomePage 

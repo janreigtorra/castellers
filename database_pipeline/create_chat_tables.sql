@@ -27,8 +27,14 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
   response TEXT,
   route_used TEXT, -- direct, rag, sql, hybrid
   response_time_ms INTEGER,
+  table_data JSONB, -- Table data from SQL queries
+  identified_entities JSONB, -- Entities identified by the agent (colles, castells, anys, etc.)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Migration: Add new columns to existing table (run this if table already exists)
+-- ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS table_data JSONB;
+-- ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS identified_entities JSONB;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON public.chat_sessions(user_id);

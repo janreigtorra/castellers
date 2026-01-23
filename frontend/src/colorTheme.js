@@ -251,7 +251,30 @@ export const COLOR_THEMES = {
   }
 };
 
-// Get color preference from localStorage
+// Map color_code from colla to theme key
+const COLOR_CODE_TO_THEME = {
+  'darkgreen': 'darkgreen',
+  'skyblue': 'bluesky',
+  'turquese': 'turquese',
+  'lightgreen': 'lightgreen',
+  'yellow': 'yellow',
+  'darkblue': 'darkblue',
+  'lila': 'lila',
+  'granate': 'granate',
+  'blue': 'blue',
+  'red': 'red',
+  'green': 'green',
+  'brown': 'brown',
+  'gray': 'gray',
+  'rosat': 'rosat',
+  'malva': 'malva',
+  'orange': 'orange',
+  'white': 'white',
+  'darkturquesa': 'darkturquesa',
+  'ralles': 'ralles'
+};
+
+// Get color preference from localStorage (general preference, used when no user or no colla)
 export const getColorPreference = () => {
   const saved = localStorage.getItem('xiquet_color_preference');
   return saved && COLOR_THEMES[saved] ? saved : 'white';
@@ -262,9 +285,49 @@ export const saveColorPreference = (color) => {
   localStorage.setItem('xiquet_color_preference', color);
 };
 
+// Get user's colla-based color preference (returns the colla color as default for the user)
+export const getUserCollaColorPreference = (userId) => {
+  if (!userId) return null;
+  
+  try {
+    const savedProfile = localStorage.getItem(`user_profile_${userId}`);
+    if (savedProfile) {
+      const parsed = JSON.parse(savedProfile);
+      if (parsed.collaColorCode) {
+        const themeKey = COLOR_CODE_TO_THEME[parsed.collaColorCode];
+        if (themeKey && COLOR_THEMES[themeKey]) {
+          return themeKey;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading user colla color preference:', error);
+  }
+  
+  return null;
+};
+
+// Get the user's default color (colla color if they have one, white if not)
+// This is different from the temporary session color which can be changed via chat/game/color selector
+export const getUserDefaultColor = (userId) => {
+  // First check if user has a colla color set
+  const collaColor = getUserCollaColorPreference(userId);
+  if (collaColor) {
+    return collaColor;
+  }
+  
+  // Users without a colla default to white
+  return 'white';
+};
+
 // Get current theme
 export const getCurrentTheme = () => {
   const color = getColorPreference();
   return COLOR_THEMES[color];
+};
+
+// Get theme for a specific color key
+export const getThemeForColor = (colorKey) => {
+  return COLOR_THEMES[colorKey] || COLOR_THEMES['white'];
 };
 

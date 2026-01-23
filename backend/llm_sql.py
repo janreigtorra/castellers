@@ -13,6 +13,7 @@ import json
 import os
 from dotenv import load_dotenv
 from utility_functions import Castell, code_to_name
+from util_dics import GAMMA_CASTELLS
 
 # Limits for SQL queries and LLM context
 SQL_RESULT_LIMIT = 20      # Results shown in frontend table
@@ -196,6 +197,8 @@ class LLMSQLGenerator:
             question_type=QuestionType.BEST_CASTELL,
             sql_template="""
             SELECT 
+             
+                {gamma_select}
                 e.name AS event_name,
                 e.date,
                 e.place,
@@ -203,8 +206,11 @@ class LLMSQLGenerator:
                 co.name AS colla_name,
                 c.castell_name,
                 c.status,
-                COALESCE(p.punts_descarregat, 0) AS punts_descarregat,
-                COALESCE(p.punts_carregat, 0) AS punts_carregat
+                CASE 
+                    WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
+                    WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
+                    ELSE 0 
+                END AS punts
             FROM castells c
             JOIN event_colles ec ON c.event_colla_fk = ec.id
             JOIN events e ON ec.event_fk = e.id
@@ -220,29 +226,33 @@ class LLMSQLGenerator:
             {location_filter}
             {diada_filter}
             {status_filter}
+            {gamma_filter}
             ORDER BY 
                 CASE 
                     WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
                     WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
                     ELSE 0 
-                END DESC
+                END DESC,
+                e.date ASC
             LIMIT %(limit)s
             """,
             required_params=[],
-            optional_params=["colla", "year", "location", "status"],
-            description="Find the best castell (can be filtered by colla, year, location, status)",
+            optional_params=["colla", "year", "location", "status", "gamma"],
+            description="Find the best castell (can be filtered by colla, year, location, status, gamma)",
             default_limit=SQL_RESULT_LIMIT
         )
         
         # Template for castell historia (quants castells ha fet una colla)
+        # Dynamic: if colla filter exists, group by colla; otherwise aggregate all colles into a list
         templates[QuestionType.CASTELL_HISTORIA] = QueryTemplate(
             question_type=QuestionType.CASTELL_HISTORIA,
             sql_template="""
             SELECT 
+                {gamma_select}
                 c.castell_name,
                 c.status,
                 COUNT(*) AS count_occurrences,
-                co.name AS colla_name,
+                {colla_select}
                 MIN(e.date) AS first_date,
                 MAX(e.date) AS last_date,
                 STRING_AGG(DISTINCT e.city, ', ') AS cities
@@ -261,13 +271,14 @@ class LLMSQLGenerator:
             {year_filter}
             {location_filter}
             {status_filter}
-            GROUP BY c.castell_name, c.status, co.name, p.punts_descarregat, p.punts_carregat
+            {gamma_filter}
+            GROUP BY c.castell_name, c.status{colla_group_by}
             ORDER BY count_occurrences DESC, c.castell_name, c.status
             LIMIT %(limit)s
             """,
             required_params=[],
-            optional_params=["colla", "castell", "year", "location", "status"],
-            description="Count castell occurrences (can be filtered by colla, castell, year, location, status)",
+            optional_params=["colla", "castell", "year", "location", "status", "gamma"],
+            description="Count castell occurrences (can be filtered by colla, castell, year, location, status, gamma)",
             default_limit=SQL_RESULT_LIMIT
         )
         
@@ -312,6 +323,7 @@ class LLMSQLGenerator:
                 {colla_filter}
                 {year_filter}
                 {location_filter}
+                {gamma_filter}
             ),
             ranked AS (
                 SELECT
@@ -357,8 +369,8 @@ class LLMSQLGenerator:
             LIMIT %(limit)s
             """,
             required_params=[],
-            optional_params=["colla", "year", "location"],
-            description="Quin any o quin lloc s'ha fet la millor actuació (filtrable per colla i/o lloc)",
+            optional_params=["colla", "year", "location", "gamma"],
+            description="Quin any o quin lloc s'ha fet la millor actuació (filtrable per colla, lloc, gamma)",
             default_limit=SQL_RESULT_LIMIT
         )
         
@@ -367,6 +379,7 @@ class LLMSQLGenerator:
             question_type=QuestionType.YEAR_SUMMARY,
             sql_template="""
             SELECT 
+                {gamma_select}
                 co.name AS colla_name,
                 COUNT(DISTINCT e.id) AS num_actuacions,
                 COUNT(c.id) AS num_castells,
@@ -387,6 +400,7 @@ class LLMSQLGenerator:
             {year_filter}
             {location_filter}
             {colla_filter}
+            {gamma_filter}
             GROUP BY co.id, co.name
             ORDER BY SUM(CASE 
                 WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
@@ -396,8 +410,8 @@ class LLMSQLGenerator:
             LIMIT %(limit)s
             """,
             required_params=["year"],
-            optional_params=["location", "colla"],
-            description="Get summary for a specific year (filtrable per colla i/o lloc)",
+            optional_params=["location", "colla", "gamma"],
+            description="Get summary for a specific year (filtrable per colla, lloc, gamma)",
             default_limit=SQL_RESULT_LIMIT
         )
         
@@ -429,12 +443,13 @@ class LLMSQLGenerator:
             {location_filter}
             {diada_filter}
             {status_filter}
+            {gamma_filter}
             ORDER BY c.status, e.date ASC
             LIMIT 4
             """,
             required_params=["castell"],
-            optional_params=["colla", "year", "location", "diada", "status"],
-            description="Quin any s'ha fet el primer castell (castell requerit, colla, lloc, diada opcionals)",
+            optional_params=["colla", "year", "location", "diada", "status", "gamma"],
+            description="Quin any s'ha fet el primer castell (castell requerit, colla, lloc, diada, gamma opcionals)",
             default_limit=SQL_RESULT_LIMIT
         )
         
@@ -474,11 +489,12 @@ class LLMSQLGenerator:
             {year_filter}
             {location_filter}
             {diada_filter}
+            {gamma_filter}
             GROUP BY c.castell_name, p.punts_descarregat, p.punts_carregat
             """,
-            required_params=["castell"],
-            optional_params=["colla", "year", "location", "diada"],
-            description="Estadístiques completes d'un castell específic (castell requerit, filtrable per colla, any, plaça, etc.)",
+            required_params=[],
+            optional_params=["colla", "castell", "year", "location", "diada", "gamma"],
+            description="Estadístiques completes d'un castell específic o gamma (filtrable per colla, any, plaça, etc.)",
             default_limit=SQL_RESULT_LIMIT
         )
         
@@ -661,7 +677,12 @@ class LLMSQLGenerator:
         edition_filter = ""
         jornada_filter = ""
         position_filter = ""
+        gamma_filter = ""
+        gamma_castells_sample = ""  # Sample of up to 5 castells for display
         position_select = "cr.position AS position"
+        # Dynamic colla handling for CASTELL_HISTORIA
+        colla_select = "STRING_AGG(DISTINCT co.name, ', ') AS colles,"  # Default: aggregate all colles
+        colla_group_by = ""  # Default: no group by colla
         
         if extracted_entities.get("colla"):
             if len(extracted_entities["colla"]) == 1:
@@ -673,6 +694,9 @@ class LLMSQLGenerator:
                     colla_filter = "AND co.name = %(colla_param)s"
                 params["colla_param"] = colla
                 params["colla"] = colla
+                # When filtering by colla, show single colla name and group by it
+                colla_select = "co.name AS colla_name,"
+                colla_group_by = ", co.name"
             elif len(extracted_entities["colla"]) > 1:
                 # For concurs queries, use cr.colla_name; for other queries, use co.name
                 if question_type in [QuestionType.CONCURS_RANKING, QuestionType.CONCURS_HISTORY]:
@@ -681,6 +705,9 @@ class LLMSQLGenerator:
                     colla_filter = "AND co.name IN %(colla_param)s"
                 params["colla_param"] = tuple(extracted_entities["colla"])
                 params["colla"] = extracted_entities["colla"]
+                # When filtering by multiple colles, show single colla name and group by it
+                colla_select = "co.name AS colla_name,"
+                colla_group_by = ", co.name"
 
         # Handle castell filter for WHERE clause (different from castell_having_filter for BEST_DIADA)
         if extracted_entities.get("castells"):
@@ -861,6 +888,25 @@ class LLMSQLGenerator:
                     params["position_param"] = tuple(extracted_entities["positions"])
                     params["position"] = extracted_entities["positions"]
 
+        # Handle gamma de castells filter (uses castell_code from puntuacions table)
+        gamma_select = ""  # Column to show gamma name in results
+        if extracted_entities.get("gamma"):
+            gamma_name = extracted_entities["gamma"]
+            gamma_def = GAMMA_CASTELLS.get(gamma_name, {})
+            
+            if "specific" in gamma_def:
+                # Use specific castell_code list from puntuacions table
+                specific_castells = gamma_def["specific"]
+                gamma_filter = "AND p.castell_code IN %(gamma_param)s"
+                params["gamma_param"] = tuple(specific_castells)
+                params["gamma"] = gamma_name
+                gamma_castells_sample = ", ".join(specific_castells[:5])
+                if len(specific_castells) > 5:
+                    gamma_castells_sample += "..."
+                # Add gamma name as a column in the SELECT
+                escaped_gamma = escape_sql_string(gamma_name)
+                gamma_select = f"'{escaped_gamma}' AS gamma_filtrada,"
+
         # Handle castell and status filters for concurs queries (search in JSON data)
         if question_type == QuestionType.CONCURS_RANKING:
             if extracted_entities.get("castells"):
@@ -933,7 +979,11 @@ class LLMSQLGenerator:
             edition_filter=edition_filter,
             jornada_filter=jornada_filter,
             position_filter=position_filter,
-            position_select=position_select
+            position_select=position_select,
+            colla_select=colla_select,
+            colla_group_by=colla_group_by,
+            gamma_filter=gamma_filter,
+            gamma_select=gamma_select
         )
         
         # Clean up the query
@@ -1193,7 +1243,14 @@ FORMAT:
 - Respon de manera breu i directa"""
 
 
-def get_sql_summary_prompt(query_type: str, question: str, table_str: str) -> StructuredPrompt:
+def get_sql_summary_prompt(
+    query_type: str, 
+    question: str, 
+    table_str: str,
+    previous_question: str = None,
+    previous_response: str = None,
+    previous_context_max_chars: int = 200
+) -> StructuredPrompt:
     """
     Retorna un prompt estructurat amb system, developer i user components.
     
@@ -1201,6 +1258,9 @@ def get_sql_summary_prompt(query_type: str, question: str, table_str: str) -> St
         query_type: Tipus de consulta SQL
         question: Pregunta de l'usuari
         table_str: Resultats de la consulta en format string
+        previous_question: Pregunta anterior (opcional, per context de seguiment)
+        previous_response: Resposta anterior (opcional, per context de seguiment)
+        previous_context_max_chars: Màxim de caràcters a mostrar de la resposta anterior
     
     Returns:
         StructuredPrompt amb els tres components separats
@@ -1230,8 +1290,24 @@ def get_sql_summary_prompt(query_type: str, question: str, table_str: str) -> St
     # Get developer message for this query type, or use default
     developer_message = developer_instructions.get(query_type, SHARED_DEVELOPER_RULES)
     
+
+    # Build previous context section
+    previous_context_str = ""
+    if previous_question and previous_response:
+        truncated_resp = previous_response[:previous_context_max_chars]
+        if len(previous_response) > previous_context_max_chars:
+            truncated_resp += "..."
+        truncated_q = previous_question[:150]
+        if len(previous_question) > 150:
+            truncated_q += "..."
+        previous_context_str = f"""CONTEXT ANTERIOR de l'últim missatge de la conversa:
+- Pregunta: "{truncated_q}"
+- Resposta: "{truncated_resp}"
+
+"""
+    
     # User prompt with the actual question and data
-    user_prompt = f"""Pregunta:
+    user_prompt = f"""{previous_context_str}Pregunta actual:
 {question}
 
 Resultats:

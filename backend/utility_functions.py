@@ -40,6 +40,46 @@ def clear_cache():
     global _cache
     _cache = {}
 
+def warm_entity_cache():
+    """
+    Pre-warm the entity cache by fetching all entity options from the database.
+    Call this at app startup to avoid slow first queries.
+    
+    Returns:
+        dict: Statistics about what was cached
+    """
+    import time
+    start = time.time()
+    stats = {}
+    
+    try:
+        # Pre-fetch all entity types
+        colles = get_all_colla_options()
+        stats['colles'] = len(colles)
+        
+        castells = get_all_castell_options()
+        stats['castells'] = len(castells)
+        
+        anys = get_all_any_options()
+        stats['anys'] = len(anys)
+        
+        llocs = get_all_lloc_options()
+        stats['llocs'] = len(llocs)
+        
+        diades = get_all_diada_options()
+        stats['diades'] = len(diades)
+        
+        elapsed = (time.time() - start) * 1000
+        stats['time_ms'] = round(elapsed, 2)
+        
+        print(f"[CACHE] Entity cache warmed in {elapsed:.2f}ms")
+        print(f"[CACHE] Loaded: {stats['colles']} colles, {stats['castells']} castells, {stats['anys']} anys, {stats['llocs']} llocs, {stats['diades']} diades")
+        
+        return stats
+    except Exception as e:
+        print(f"[CACHE] Warning: Failed to warm entity cache: {e}")
+        return {'error': str(e)}
+
 # Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 

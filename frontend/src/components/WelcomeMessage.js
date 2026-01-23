@@ -84,15 +84,22 @@ const ScrollingBanner = ({ questions, direction, onQuestionClick }) => {
 const WelcomeMessage = ({ theme, onQuestionClick }) => {
   const questions = welcomeQuestions.questions;
   
-  // Split questions into two groups for top and bottom banners
-  const midPoint = Math.ceil(questions.length / 2);
-  const topQuestions = questions.slice(0, midPoint);
-  const bottomQuestions = questions.slice(midPoint);
+  // Split questions into 4 groups for the 4 banners
+  const quarterLength = Math.ceil(questions.length / 4);
+  const group1 = questions.slice(0, quarterLength);
+  const group2 = questions.slice(quarterLength, quarterLength * 2);
+  const group3 = questions.slice(quarterLength * 2, quarterLength * 3);
+  const group4 = questions.slice(quarterLength * 3);
   
   return (
     <div className="welcome-container">
       <ScrollingBanner 
-        questions={topQuestions} 
+        questions={group1} 
+        direction="right" 
+        onQuestionClick={onQuestionClick}
+      />
+      <ScrollingBanner 
+        questions={group2} 
         direction="left" 
         onQuestionClick={onQuestionClick}
       />
@@ -110,8 +117,13 @@ const WelcomeMessage = ({ theme, onQuestionClick }) => {
       </div>
       
       <ScrollingBanner 
-        questions={bottomQuestions} 
+        questions={group3} 
         direction="right" 
+        onQuestionClick={onQuestionClick}
+      />
+      <ScrollingBanner 
+        questions={group4} 
+        direction="left" 
         onQuestionClick={onQuestionClick}
       />
     </div>

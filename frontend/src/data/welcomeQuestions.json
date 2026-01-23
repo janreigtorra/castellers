@@ -13,11 +13,11 @@
       "colla": "Colla Joves Xiquets de Valls"
     },
     {
-      "question": "Quins castells han fet la Colla Vella dels Xiquets de Valls aquest any?",
+      "question": "Quin es el millor castell que ha fet la Colla Vella dels Xiquets de Valls l'any 2025?",
       "colla": "Colla Vella dels Xiquets de Valls"
     },
     {
-      "question": "Quina és la millor temporada dels Capgrossos de Mataró?",
+      "question": "Quants 3d9f han descarregat els Capgrossos de Mataró al llarg de la seva història?",
       "colla": "Capgrossos de Mataró"
     },
     {
@@ -33,10 +33,6 @@
       "colla": "Bordegassos de Vilanova"
     },
     {
-      "question": "A quin lloc van aconseguir el primer 4d8 els Marrecs de Salt?",
-      "colla": "Marrecs de Salt"
-    }, 
-    {
       "question": "Quina va ser la millor actuació dels Castellers de Barcelona al 2024?",
       "colla": "Castellers de Barcelona"
     },
@@ -47,6 +43,62 @@
     {
       "question": "Quants 7d8 han descarregat els Castellers de Sants?",
       "colla": "Castellers de Sants"
+    }, 
+    {
+      "question": "Quants 5d7 han descarregat els Castellers de Terrassa l'any 2024?",
+      "colla": "Castellers de Terrassa"
+    }, 
+    {
+      "question": "A quin any es van fundar els Castellers de Solsona?",
+      "colla": "Castellers de Solsona"
+    },
+    {
+        "question": "Quin és el millor castell que han descarregat els Marrecs de Salt al 2024?",
+        "colla": "Marrecs de Salt"
+    }, 
+    {
+        "question": "A quina ciutat han fet la millor actuació de la història els Castellers de Mollet?",
+        "colla": "Castellers de Mollet"
+    }, 
+    {
+        "question": "A quina plaça i ciutat han fet la millor actuació de la història els Xiquets de Reus el 2013?",
+        "colla": "Xiquets de Reus"
+    },
+    {   
+        "question": "Quin va ser el primer 3d7 dels Castellers de Cerdanyola?",
+        "colla": "Castellers de Cerdanyola"
+    },
+    {
+        "question": "Quan van descarregar per primera vegada el primer 3d10fm la colla Vella dels Xiquets de Valls?",
+        "colla": "Colla Vella dels Xiquets de Valls"
+    },
+    {
+        "question": "Dóna'm les estadístiques del 4d9af dels Castellers de Vilafranca?",
+        "colla": "Castellers de Vilafranca"
+    },
+    {
+        "question": "Dóna'm les estadístiques del 4d8 dels Castellers de Barcelona?",
+        "colla": "Castellers de Barcelona"
+    },
+    {
+        "question": "Com va anar la temporada 2025 per la Colla Castellers de Sant Pere i Sant Pau?",
+        "colla": "Colla Castellera Sant Pere i Sant Pau"
+    },
+    {
+        "question": "Com va anar la temporada 2024 pels Xiquets del Serrallo?",
+        "colla": "Xiquets del Serrallo"
+    }, 
+    {
+        "question": "Com va anar la temporada 2023 pels Nois de la Torre?",
+        "colla": "Nois de la Torre"
+    }, 
+    {
+        "question": "Quin any han fet la millor actuació els Margeners de Guissona?",
+        "colla": "Margeners de Guissona"
+    }, 
+    {
+        "question": "Quan van carregar el primer carro gros els Castellers de Castelldefels?",
+        "colla": "Castellers de Castelldefels"
     }
   ]
 }

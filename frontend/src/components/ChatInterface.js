@@ -4,6 +4,25 @@ import remarkGfm from 'remark-gfm';
 import { apiService } from '../apiService';
 import { COLOR_THEMES } from '../colorTheme';
 import WelcomeMessage from './WelcomeMessage';
+import CastellLoader from './CastellLoader';
+
+// Hook to detect mobile screen
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(() => {
+    return typeof window !== 'undefined' && window.innerWidth <= 768;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return isMobile;
+};
 
 // Mapping from colles_fundacio.json color_code to colorTheme.js keys
 const COLOR_CODE_TO_THEME = {
@@ -213,6 +232,15 @@ const DiadaIcon = ({ color = "currentColor" }) => (
   </svg>
 );
 
+// Gamma icon (layers/levels)
+const GammaIcon = ({ color = "currentColor" }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="4" rx="1" />
+    <rect x="5" y="9" width="14" height="4" rx="1" />
+    <rect x="7" y="15" width="10" height="4" rx="1" />
+  </svg>
+);
+
 // Helper to check if there are any entities to display
 const hasEntities = (entities) => {
   if (!entities) return false;
@@ -221,7 +249,8 @@ const hasEntities = (entities) => {
     (entities.castells && entities.castells.length > 0) ||
     (entities.anys && entities.anys.length > 0) ||
     (entities.llocs && entities.llocs.length > 0) ||
-    (entities.diades && entities.diades.length > 0)
+    (entities.diades && entities.diades.length > 0) ||
+    (entities.gamma)
   );
 };
 
@@ -241,6 +270,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const tableCounterRef = useRef(0); // Table counter for generating unique IDs
   const tableInstanceMapRef = useRef(new Map()); // Map to track table instances and their IDs
   const [thinkingDots, setThinkingDots] = useState('');
+  const isMobile = useIsMobile();
 
   // Helper functions for localStorage persistence
   const getUnsavedChatKey = useCallback(() => {
@@ -482,6 +512,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   }, [user, sessionId, clearUnsavedChatFromStorage, loadUnsavedChatFromStorage]);
 
   // Core function to send a message (used by both form submit and question chips)
+  // Uses the NEW polling-based approach for progressive updates
   const sendMessageContent = async (messageContent) => {
     if (!messageContent.trim() || isLoading) return;
     const tempId = `temp_${Date.now()}`;
@@ -504,12 +535,13 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     // Note: scroll will be handled by useEffect when messages.length changes
 
     try {
-      // Callback to handle entities as soon as they arrive (before full response)
+      // Callback to handle entities as soon as they arrive (FAST ~500-1000ms)
+      // This is called BEFORE the full response is ready
       const handleEntitiesReceived = (entities, routeUsed) => {
-        console.log('[ChatInterface] ENTITIES CALLBACK FIRED!', entities);
+        console.log('[ChatInterface] 🎯 ENTITIES RECEIVED (fast path)!', entities);
         console.log('[ChatInterface] Setting identifiedEntities state NOW');
         
-        // Force immediate state update
+        // Force immediate state update - chips will appear!
         setIdentifiedEntities(entities);
         
         // If a colla was identified, change the app color theme
@@ -527,17 +559,44 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         }
       };
 
-      // Use two-phase request - entities arrive FAST via /route, full response via /chat
-      // Both run in parallel, but route is much faster so entities appear first
-      const response = await apiService.sendMessageWithEntities(
+      // Build previous context from the last assistant message (for follow-up questions)
+      // This enables context without requiring session_id / database storage
+      let previousContext = null;
+      const assistantMessages = messages.filter(msg => !msg.isUser && msg.response);
+      if (assistantMessages.length > 0) {
+        const lastAssistant = assistantMessages[assistantMessages.length - 1];
+        const entities = lastAssistant.identified_entities || {};
+        previousContext = {
+          question: lastAssistant.content,
+          response: lastAssistant.response?.substring(0, 300), // Truncate response
+          route: lastAssistant.route_used || null,
+          sql_query_type: entities.sql_query_type || null,
+          entities: {
+            colles: entities.colles || [],
+            castells: (entities.castells || []).map(c => typeof c === 'string' ? c : c.castell_code),
+            anys: entities.anys || [],
+            llocs: entities.llocs || [],
+            diades: entities.diades || []
+          }
+        };
+        console.log('[ChatInterface] 📋 Sending previous context:', previousContext);
+      }
+
+      // Use NEW polling-based approach:
+      // 1. Backend starts processing, returns message_id immediately
+      // 2. Frontend polls /api/chat/status every 300ms
+      // 3. handleEntitiesReceived is called as soon as entities are ready (FAST)
+      // 4. Promise resolves when full response is ready (SLOW)
+      const response = await apiService.sendMessageWithPolling(
         messageContent, 
         sessionId, 
-        handleEntitiesReceived
+        handleEntitiesReceived,
+        previousContext
       );
 
+      console.log('[ChatInterface] ✅ Full response received');
+
       // Replace temporary user message and add assistant response
-      // The backend saves both user message and response in one row
-      // We need to create proper message objects matching the database structure
       const userMessageFromDb = {
         id: `${response.id}_user`,
         content: messageContent,
@@ -580,7 +639,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       // Note: scroll will be handled by useEffect when messages.length changes
 
     } catch (error) {
-      setError(error.response?.data?.detail || 'Error enviant el missatge');
+      setError(error.response?.data?.detail || error.message || 'Error enviant el missatge');
       console.error('Error sending message:', error);
       // Remove the user message if sending failed
       setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
@@ -677,8 +736,10 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     }
     
     const { title, columns, rows } = tableData;
-    const shouldCollapse = rows.length > 3;
-    const displayedRows = shouldCollapse && !isExpanded ? rows.slice(0, 3) : rows;
+    // On mobile, show only 1 row; on desktop show 3
+    const collapsedRowCount = isMobile ? 1 : 3;
+    const shouldCollapse = rows.length > collapsedRowCount;
+    const displayedRows = shouldCollapse && !isExpanded ? rows.slice(0, collapsedRowCount) : rows;
     
     // Determine button colors based on theme
     const isWhiteTheme = theme?.secondary && 
@@ -801,7 +862,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         }).length;
       }
       
-      const shouldCollapse = rowCount > 2;
+      // On mobile, show only 1 row; on desktop show 2
+      const collapsedRowCount = isMobile ? 1 : 2;
+      const shouldCollapse = rowCount > collapsedRowCount;
       
       const toggleExpanded = () => {
         const newExpanded = new Set(expandedTables);
@@ -860,13 +923,13 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         </tr>
       ) : null;
 
-      // Clone and modify children to show only first 2 rows in tbody + expand row
+      // Clone and modify children to show only first N rows in tbody + expand row
       const modifiedChildren = React.Children.map(children, (child) => {
         if (child && typeof child === 'object' && 'type' in child) {
           if (child.type === 'tbody' || (child.props && child.props.children && child.type !== 'thead')) {
             const tbodyRows = React.Children.toArray(child.props?.children || []);
             const visibleRows = shouldCollapse && !isExpanded 
-              ? tbodyRows.slice(0, 2) 
+              ? tbodyRows.slice(0, collapsedRowCount) 
               : tbodyRows;
             return React.cloneElement(child, {
               children: [...visibleRows, expandRow]
@@ -884,7 +947,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         </div>
       );
     };
-  }, [expandedTables, setExpandedTables, theme]);
+  }, [expandedTables, setExpandedTables, theme, isMobile]);
 
   // Markdown components configuration
   const markdownComponents = {
@@ -958,8 +1021,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
 
   return (
     <div className="chat-container" style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}>
-      {/* Fixed Xiquet icon at bottom left */}
-      {messages.length > 0 && (
+      {/* Fixed Xiquet icon at bottom left - only on desktop */}
+      {messages.length > 0 && !isMobile && (
         <div className="xiquet-fixed-icon">
           <img 
             src={getXiquetIcon()} 
@@ -967,8 +1030,11 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             className={isLoading ? 'thinking' : 'idle'}
           />
           {isLoading && (
+            // <div className="xiquet-thinking-bubble">
+            //   <span className="spinner"></span> Pensant{thinkingDots}
+            // </div>
             <div className="xiquet-thinking-bubble">
-              <span className="spinner"></span> Pensant{thinkingDots}
+              <CastellLoader isMobile={isMobile} />
             </div>
           )}
         </div>
@@ -997,6 +1063,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             ) : (
               <div className="assistant-response">
                   {/* Show chips - uses identifiedEntities for most recent to avoid reload */}
+                  {/* Don't show chips for RAG route since entities aren't used in RAG queries */}
                   {hasEntities(entitiesToShow) && (() => {
                     // Get theme color from first colla if available
                     const firstColla = entitiesToShow.colles?.[0];
@@ -1049,6 +1116,11 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                           <DiadaIcon color={themedIconColor} /> {diada}
                         </span>
                       ))}
+                      {entitiesToShow.gamma && (
+                        <span className="entity-chip entity-chip-gamma" style={themedChipStyle}>
+                          <GammaIcon color={themedIconColor} /> {entitiesToShow.gamma}
+                        </span>
+                      )}
                     </div>
                   );})()}
                 <div className="assistant-content">
@@ -1117,10 +1189,31 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                     <DiadaIcon color={themedIconColor} /> {diada}
                   </span>
                 ))}
+                {identifiedEntities.gamma && (
+                  <span className="entity-chip entity-chip-gamma" style={themedChipStyle}>
+                    <GammaIcon color={themedIconColor} /> {identifiedEntities.gamma}
+                  </span>
+                )}
               </div>
             </div>
           </div>
         );})()}
+        
+        {/* Mobile loading indicator - shows inline when loading */}
+        {isLoading && isMobile && (
+          <div className="message-wrapper assistant mobile-loading">
+            <div className="assistant-response">
+              <div className="mobile-thinking-indicator">
+                <img 
+                  src={`/xiquet_images/think_${thinkingFrame}.png`}
+                  alt="Pensant" 
+                  className="mobile-thinking-icon"
+                />
+                <CastellLoader isMobile={true} />
+              </div>
+            </div>
+          </div>
+        )}
         
         {error && (
           <div className="error">

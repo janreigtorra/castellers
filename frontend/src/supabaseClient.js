@@ -66,5 +66,25 @@ export const authHelpers = {
   // Listen to auth changes
   onAuthStateChange(callback) {
     return supabase.auth.onAuthStateChange(callback)
+  },
+
+  // Update user profile metadata
+  async updateUserProfile(profileData) {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          username: profileData.username,
+          colla: profileData.colla,
+          collaColorCode: profileData.collaColorCode,
+          phone: profileData.phone,
+          birthDate: profileData.birthDate
+        }
+      })
+      
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
   }
 }

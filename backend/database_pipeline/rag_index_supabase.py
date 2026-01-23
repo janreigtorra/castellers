@@ -89,7 +89,7 @@ def get_supabase_connection():
 def get_pooled_connection():
     """Get a connection from the shared pool (faster for repeated queries)"""
     try:
-        from passafaixa.db_pool import get_db_connection
+        from joc_del_mocador.db_pool import get_db_connection
         return get_db_connection()
     except ImportError:
         # Fallback to direct connection if pool not available
@@ -466,7 +466,7 @@ def search_query_supabase(query: str, k: int = 5, model_name: str = MODEL_NAME) 
     conn_start = datetime.now()
     use_pool = False
     try:
-        from passafaixa.db_pool import get_db_connection
+        from joc_del_mocador.db_pool import get_db_connection
         use_pool = True
     except ImportError:
         pass

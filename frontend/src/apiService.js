@@ -77,6 +77,7 @@ export const apiService = {
   },
 
   // Single request approach - only call /api/chat which returns entities in response
+  // DEPRECATED: Use sendMessageWithPolling for progressive updates
   async sendMessageWithEntities(content, sessionId = null, onEntities = null) {
     const startTime = Date.now()
     console.log(`[API] === START at ${startTime} ===`)
@@ -111,6 +112,198 @@ export const apiService = {
     }
     
     return chatData
+  },
+
+  // ============================================================
+  // PROGRESSIVE RESPONSE PATTERN - Polling-based approach
+  // ============================================================
+
+  /**
+   * Start a chat message processing in the background.
+   * Returns immediately with a message_id for polling.
+   * 
+   * @param {string} content - The user's question
+   * @param {string|null} sessionId - Optional session ID for saved chats
+   * @param {object|null} previousContext - Context from previous message for follow-ups
+   *   {question, response, route, sql_query_type, entities}
+   */
+  async startChat(content, sessionId = null, previousContext = null) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    const body = { 
+      content, 
+      session_id: sessionId,
+      previous_context: previousContext
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/api/chat/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(body)
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+    
+    return response.json()
+  },
+
+  /**
+   * Poll for message status during processing.
+   */
+  async getMessageStatus(messageId) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    const response = await fetch(`${API_BASE_URL}/api/chat/status/${messageId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+    
+    return response.json()
+  },
+
+  /**
+   * Delete a pending message (optional cleanup).
+   */
+  async deletePendingMessage(messageId) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    const response = await fetch(`${API_BASE_URL}/api/chat/pending/${messageId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    })
+    
+    if (!response.ok) {
+      console.warn(`Failed to delete pending message: ${response.status}`)
+    }
+  },
+
+  /**
+   * Send a message with progressive updates using polling.
+   * 
+   * This is the NEW recommended approach:
+   * 1. Calls /api/chat/start to begin processing
+   * 2. Polls /api/chat/status/{id} every 300ms
+   * 3. Calls onEntities as soon as entities are ready (FAST ~500-1000ms)
+   * 4. Returns full response when complete (SLOW ~2-5s)
+   * 
+   * @param {string} content - The user's question
+   * @param {string|null} sessionId - Optional session ID for saved chats
+   * @param {function} onEntities - Callback when entities are ready (fast)
+   * @param {object|null} previousContext - Context from previous message for follow-ups
+   * @returns {Promise<object>} - Full response when complete
+   */
+  async sendMessageWithPolling(content, sessionId = null, onEntities = null, previousContext = null) {
+    const startTime = Date.now()
+    console.log(`[API-POLL] === START at ${startTime} ===`)
+    console.log(`[API-POLL] Has previous context: ${previousContext !== null}`)
+    
+    // Step 1: Start processing (returns immediately)
+    const { message_id } = await this.startChat(content, sessionId, previousContext)
+    console.log(`[API-POLL] Started, message_id: ${message_id} at ${Date.now() - startTime}ms`)
+    
+    // Step 2: Poll for status
+    const POLL_INTERVAL = 300 // ms
+    const MAX_POLL_TIME = 60000 // 60 seconds timeout
+    let entitiesReceived = false
+    
+    return new Promise((resolve, reject) => {
+      const pollStartTime = Date.now()
+      
+      const poll = async () => {
+        try {
+          // Check timeout
+          if (Date.now() - pollStartTime > MAX_POLL_TIME) {
+            reject(new Error('Request timeout - processing took too long'))
+            return
+          }
+          
+          const status = await this.getMessageStatus(message_id)
+          console.log(`[API-POLL] Status: ${status.status} at ${Date.now() - startTime}ms`)
+          
+          // Handle entities_ready - call callback immediately
+          if (!entitiesReceived && status.identified_entities && 
+              (status.status === 'entities_ready' || status.status === 'complete')) {
+            entitiesReceived = true
+            console.log(`[API-POLL] 🎯 Entities ready at ${Date.now() - startTime}ms`)
+            if (onEntities) {
+              onEntities(status.identified_entities, status.route_used)
+            }
+          }
+          
+          // Handle complete - resolve with full response
+          if (status.status === 'complete') {
+            console.log(`[API-POLL] ✅ Complete at ${Date.now() - startTime}ms`)
+            
+            // Clean up pending message (fire and forget)
+            this.deletePendingMessage(message_id).catch(() => {})
+            
+            // Transform to match expected ChatResponse format
+            resolve({
+              id: message_id,
+              content: content,
+              response: status.response,
+              route_used: status.route_used || 'unknown',
+              timestamp: new Date().toISOString(),
+              response_time_ms: status.response_time_ms || 0,
+              session_id: sessionId,
+              table_data: status.table_data,
+              identified_entities: status.identified_entities
+            })
+            return
+          }
+          
+          // Handle error
+          if (status.status === 'error') {
+            console.log(`[API-POLL] ❌ Error at ${Date.now() - startTime}ms: ${status.error_message}`)
+            
+            // Clean up pending message
+            this.deletePendingMessage(message_id).catch(() => {})
+            
+            // Return error as a valid response (not throwing)
+            resolve({
+              id: message_id,
+              content: content,
+              response: status.error_message || 'Hi ha hagut un error processant la teva pregunta.',
+              route_used: 'error',
+              timestamp: new Date().toISOString(),
+              response_time_ms: 0,
+              session_id: sessionId
+            })
+            return
+          }
+          
+          // Continue polling
+          setTimeout(poll, POLL_INTERVAL)
+          
+        } catch (error) {
+          console.error(`[API-POLL] Poll error:`, error)
+          reject(error)
+        }
+      }
+      
+      // Start polling
+      poll()
+    })
   },
 
   async getChatHistory(sessionId = null, limit = 50) {
@@ -181,7 +374,7 @@ export const apiService = {
     return response.data
   },
 
-  // PassaFaixa game endpoints
+  // El Joc del Mocador game endpoints
   async getGameQuestions(numQuestions = 10, colles = [], years = []) {
     const params = { num_questions: numQuestions }
     
@@ -195,7 +388,13 @@ export const apiService = {
       params.years = years.join(',')
     }
     
-    const response = await api.get('/api/passafaixa/questions', { params })
+    const response = await api.get('/api/joc-del-mocador/questions', { params })
+    return response.data
+  },
+
+  // Contact form endpoint
+  async sendContactMessage({ name, email, message }) {
+    const response = await api.post('/api/contact', { name, email, message })
     return response.data
   }
 }

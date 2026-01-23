@@ -9,6 +9,7 @@ import unicodedata
 from typing import Dict, Any, List, Optional
 from langdetect import detect
 from database_pipeline.rag_index_supabase import search_query_supabase
+from database_pipeline.load_castellers_info_chunks import search_castellers_info
 from dotenv import load_dotenv
 from utility_functions import (
     language_names,
@@ -29,9 +30,39 @@ from utility_functions import (
 )
 from llm_sql import LLMSQLGenerator, get_sql_summary_prompt, StructuredPrompt, NoResultsFoundError, NO_RESULTS_MESSAGE, SQL_RESULT_LIMIT, LLM_CONTEXT_LIMIT
 from llm_function import llm_call, list_available_providers, list_provider_models, is_guardrail_violation
-from util_dics import SQL_QUERY_PATTERNS, IS_SQL_QUERY_PATTERNS, COLUMN_MAPPINGS, TITLE_MAPPINGS
+from util_dics import SQL_QUERY_PATTERNS, IS_SQL_QUERY_PATTERNS, COLUMN_MAPPINGS, TITLE_MAPPINGS, GAMMA_CASTELLS, GAMMA_KEYWORDS, MAP_QUERY_CHANGE
 from difflib import SequenceMatcher
+from rapidfuzz import fuzz, process
 import re
+
+
+def normalize_query_synonyms(query: str) -> str:
+    """
+    Normalize castell synonyms in the query using MAP_QUERY_CHANGE.
+    Replaces phrases like "4d9 amb folre i pilar" with "4d9af" so the LLM
+    can understand standardized castell codes.
+    
+    Args:
+        query: The user's original query
+        
+    Returns:
+        Query with synonyms replaced by standardized codes
+    """
+    normalized = query
+    
+    # Sort by length (longest first) to avoid partial replacements
+    # e.g., "3d9 amb folre i pilar" should match before "3d9"
+    sorted_mappings = sorted(MAP_QUERY_CHANGE.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for synonym, standard_code in sorted_mappings:
+        # Case-insensitive replacement
+        pattern = re.compile(re.escape(synonym), re.IGNORECASE)
+        normalized = pattern.sub(standard_code, normalized)
+    
+    if normalized != query:
+        print(f"[NORMALIZE] Query transformed: '{query}' -> '{normalized}'")
+    
+    return normalized
 
 
 def sanitize_llm_response(response: str) -> str:
@@ -50,12 +81,10 @@ def sanitize_llm_response(response: str) -> str:
         
         if pipe_count >= 2:
             # This is likely a table row - skip it
-            print(f"[DEBUG] Removing table line: {line[:80]}...")
             continue
         
         # Also detect markdown table separator lines (e.g., "|---|---|")
         if re.match(r'^[\s|:-]+$', line) and '|' in line:
-            print(f"[DEBUG] Removing table separator: {line}")
             continue
         
         clean_lines.append(line)
@@ -103,9 +132,19 @@ DEBUG = True
 
 
 
+# ---- Configuration for context ----
+PREVIOUS_CONTEXT_MAX_CHARS = 100  # Max characters to show from previous response
+
 # ---- Xiquet Class ----
 class Xiquet:
-    def __init__(self):
+    def __init__(
+        self, 
+        previous_question: str = None, 
+        previous_response: str = None,
+        previous_route: str = None,
+        previous_sql_query_type: str = None,
+        previous_entities: dict = None
+    ):
         self.question = ""
         self.response = None
         self.colles_castelleres = []
@@ -116,9 +155,227 @@ class Xiquet:
         self.editions = []
         self.jornades = []
         self.positions = []
+        self.gamma = None  # Gamma de castells (e.g., "castells de 6", "gamma extra")
         # Table data to be sent to frontend (avoids LLM generating tables)
         self.table_data = None
         self.sql_generator = LLMSQLGenerator()
+        # Previous message context (for follow-up questions)
+        self.previous_question = previous_question
+        self.previous_response = previous_response
+        self.previous_route = previous_route
+        self.previous_sql_query_type = previous_sql_query_type
+        self.previous_entities = previous_entities or {}
+    
+    def _get_previous_context_section(self) -> str:
+        """
+        Returns formatted previous context section for prompts.
+        Returns empty string if no previous context exists.
+        """
+        if not self.previous_question or not self.previous_response:
+            return ""
+        
+        # Truncate response to max chars
+        truncated_response = self.previous_response[:PREVIOUS_CONTEXT_MAX_CHARS]
+        if len(self.previous_response) > PREVIOUS_CONTEXT_MAX_CHARS:
+            truncated_response += "..."
+        
+        # Truncate question too (but shorter limit)
+        truncated_question = self.previous_question[:150]
+        if len(self.previous_question) > 150:
+            truncated_question += "..."
+        
+        # Build entities string from previous entities
+        entities_parts = []
+        if self.previous_entities.get("colles"):
+            entities_parts.append(f"colles={self.previous_entities['colles']}")
+        if self.previous_entities.get("castells"):
+            entities_parts.append(f"castells={self.previous_entities['castells']}")
+        if self.previous_entities.get("anys"):
+            entities_parts.append(f"anys={self.previous_entities['anys']}")
+        if self.previous_entities.get("llocs"):
+            entities_parts.append(f"llocs={self.previous_entities['llocs']}")
+        if self.previous_entities.get("diades"):
+            entities_parts.append(f"diades={self.previous_entities['diades']}")
+        if self.previous_entities.get("edicions"):
+            entities_parts.append(f"edicions={self.previous_entities['edicions']}")
+        if self.previous_entities.get("jornades"):
+            entities_parts.append(f"jornades={self.previous_entities['jornades']}")
+        if self.previous_entities.get("posicions"):
+            entities_parts.append(f"posicions={self.previous_entities['posicions']}")
+        if self.previous_entities.get("gamma"):
+            entities_parts.append(f"gamma={self.previous_entities['gamma']}")
+        entities_str = ", ".join(entities_parts) if entities_parts else "cap"
+        
+        # Build route info
+        route_info = ""
+        if self.previous_route:
+            route_info = f"- **Ruta:** {self.previous_route}"
+            if self.previous_sql_query_type and self.previous_route == "sql":
+                route_info += f" | **Tipus consulta:** {self.previous_sql_query_type}"
+        
+        return f"""
+        ### CONTEXT DEL MISSATGE ANTERIOR:
+        - **Pregunta anterior:** "{truncated_question}"
+        {route_info}
+        - **Entitats anteriors:** {entities_str}
+        - **Resposta anterior:** "{truncated_response}"
+        
+        Tingues en compte aquest context per entendre millor la pregunta actual NOMES en cas de que sigui rellevant per extreure entitats i decidir la ruta.
+        """
+    
+    def _handle_follow_up_detection(self, question: str, response: FirstCallResponseFormat) -> bool:
+        """
+        Detects if the current question is a follow-up to a previous SQL query.
+        If so, forces SQL route, inherits sql_query_type, and inherits missing entities.
+        
+        Args:
+            question: The current user question
+            response: The LLM response object (modified in place)
+            
+        Returns:
+            True if follow-up detected (skip further SQL type determination), False otherwise
+        """
+        if not (self.previous_route == "sql" and self.previous_sql_query_type):
+            return False
+        
+        question_lower = question.lower().strip()
+        
+        # Detect follow-up patterns: short question + starts with "I els...", "I de...", etc.
+        follow_up_patterns = ["i els ", "i de ", "i dels ", "i la ", "i les ", "i el ", "i al ", "i a "]
+        is_short_question = len(question) < 50
+        one_entity_at_least = response.colla or response.castells or response.anys or response.llocs or response.diades
+        has_follow_up_start = any(question_lower.startswith(p) for p in follow_up_patterns)
+        
+        if not (is_short_question and has_follow_up_start and one_entity_at_least):
+            return False
+        
+        # Follow-up detected! Force SQL route and inherit
+        print(f"[FOLLOW-UP DETECTED] Previous was SQL ({self.previous_sql_query_type}), forcing SQL route")
+        response.tools = "sql"
+        response.sql_query_type = self.previous_sql_query_type
+        
+        # Inherit entities from previous context that weren't identified in current question
+        if self.previous_entities:
+            inherited = []
+            
+            # Inherit colles if current has none
+            if not response.colla and self.previous_entities.get("colles"):
+                response.colla = self.previous_entities["colles"]
+                inherited.append(f"colles={response.colla}")
+            
+            # Inherit castells if current has none
+            if not response.castells and self.previous_entities.get("castells"):
+                prev_castells = self.previous_entities["castells"]
+                inherited_castells = []
+                for c in prev_castells:
+                    if isinstance(c, str):
+                        inherited_castells.append(Castell(castell_code=c, status=None))
+                    elif isinstance(c, dict):
+                        inherited_castells.append(Castell(castell_code=c.get("castell_code", c.get("code", str(c))), status=c.get("status")))
+                if inherited_castells:
+                    response.castells = inherited_castells
+                    inherited.append(f"castells={[c.castell_code for c in inherited_castells]}")
+            
+            # Inherit anys if current has none (convert to strings for validation)
+            if not response.anys and self.previous_entities.get("anys"):
+                response.anys = [str(a) for a in self.previous_entities["anys"]]
+                inherited.append(f"anys={response.anys}")
+            
+            # Inherit llocs if current has none
+            if not response.llocs and self.previous_entities.get("llocs"):
+                response.llocs = self.previous_entities["llocs"]
+                inherited.append(f"llocs={response.llocs}")
+            
+            # Inherit diades if current has none
+            if not response.diades and self.previous_entities.get("diades"):
+                response.diades = self.previous_entities["diades"]
+                inherited.append(f"diades={response.diades}")
+            
+            if inherited:
+                print(f"[FOLLOW-UP INHERIT] Inherited from previous: {', '.join(inherited)}")
+        
+        return True
+    
+    def _enrich_entities_from_previous_context(self) -> None:
+        """
+        Enriches the current entity lists with entities from previous context.
+        This ensures the LLM sees previous entities as options in the prompt,
+        enabling better understanding of follow-up questions.
+        
+        Note: colles, anys, llocs, diades are comma-separated strings, not lists!
+        Only castells is a List[Castell].
+        
+        Example:
+        - Question 1: "Quants 3d10fm han descarregat els Minyons?" → castells=['3d10fm']
+        - Question 2: "I els Castellers de Santpedor?" → castells=[] (no castell in question)
+        - After enrichment: castells=['3d10fm'] (from previous context)
+        - Now LLM can understand the follow-up refers to 3d10fm!
+        """
+        if not self.previous_entities:
+            return
+        
+        # Helper to convert comma-separated string to list
+        def str_to_list(s: str) -> list:
+            if not s:
+                return []
+            return [x.strip() for x in s.split(",") if x.strip()]
+        
+        # Helper to convert list back to comma-separated string
+        def list_to_str(lst: list) -> str:
+            return ", ".join(lst)
+        
+        # Enrich colles (string, comma-separated)
+        if self.previous_entities.get("colles"):
+            current_colles = str_to_list(self.colles_castelleres)
+            for colla in self.previous_entities["colles"]:
+                if colla and colla not in current_colles:
+                    current_colles.append(colla)
+            self.colles_castelleres = list_to_str(current_colles)
+        
+        # Enrich castells (List[Castell] - the only real list!)
+        if self.previous_entities.get("castells"):
+            current_castell_codes = {c.castell_code if hasattr(c, 'castell_code') else str(c) for c in self.castells}
+            for c in self.previous_entities["castells"]:
+                castell_code = c.get("castell_code") if isinstance(c, dict) else (c.castell_code if hasattr(c, 'castell_code') else str(c))
+                if castell_code and castell_code not in current_castell_codes:
+                    self.castells.append(Castell(castell_code=castell_code, status=None))
+        
+        # Enrich anys (string, comma-separated)
+        if self.previous_entities.get("anys"):
+            current_anys = str_to_list(self.anys)
+            for a in self.previous_entities["anys"]:
+                any_str = str(a)
+                if any_str and any_str not in current_anys:
+                    current_anys.append(any_str)
+            self.anys = list_to_str(current_anys)
+        
+        # Enrich llocs (string, comma-separated)
+        if self.previous_entities.get("llocs"):
+            current_llocs = str_to_list(self.llocs)
+            for lloc in self.previous_entities["llocs"]:
+                if lloc and lloc not in current_llocs:
+                    current_llocs.append(lloc)
+            self.llocs = list_to_str(current_llocs)
+        
+        # Enrich diades (string, comma-separated)
+        if self.previous_entities.get("diades"):
+            current_diades = str_to_list(self.diades)
+            for diada in self.previous_entities["diades"]:
+                if diada and diada not in current_diades:
+                    current_diades.append(diada)
+            self.diades = list_to_str(current_diades)
+    
+    def _detect_gamma(self, question: str) -> Optional[str]:
+        """
+        Detect gamma de castells from the question using keywords.
+        Returns the gamma name or None if not detected.
+        """
+        question_lower = question.lower()
+        for gamma_name, keywords in GAMMA_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in question_lower:
+                    return gamma_name
+        return None
     
     def abans_de_res(self, question: str) -> Optional[FirstCallResponseFormat]:
         """
@@ -182,6 +439,8 @@ class Xiquet:
         """
         from datetime import datetime
         
+        # Normalize query synonyms (e.g., "4d9 amb folre i pilar" -> "4d9af")
+        question = normalize_query_synonyms(question)
         self.question = question
         
         # Primer analitza si cal donar una resposta directa
@@ -201,6 +460,11 @@ class Xiquet:
         self.anys = get_anys_subset(question)
         self.llocs = get_llocs_subset(question)
         self.diades = get_diades_subset(question)
+        self.gamma = self._detect_gamma(question)
+        
+        # Enrich entity lists with previous context entities (so LLM can see them as options)
+        self._enrich_entities_from_previous_context()
+        
         entity_time = (datetime.now() - entity_start).total_seconds() * 1000
         print(f"[TIMING] Entity extraction: {entity_time:.2f}ms")
 
@@ -237,6 +501,15 @@ class Xiquet:
         Possibles opcions: {self.diades}
         \n"""
 
+        if self.gamma:
+            gamma_info = GAMMA_CASTELLS.get(self.gamma, {})
+            gamma_castells = gamma_info.get("specific", [])[:5]  # Show up to 5 examples
+            entities_section += f"""
+        - **Gamma de castells:** {self.gamma}
+        {gamma_info.get("description", "")}
+        Exemples de gamma: {', '.join(gamma_castells) if gamma_castells else 'Tots els que coincideixin amb el patró'}
+        \n"""
+
         # Add concurs-related entities if the question mentions concurs
         if "concurs" in question.lower() or "concursos" in question.lower():
             entities_section += f""" Si la pregunta és sobre un concurs de castells, afegeix les següents entitats si apareixen:
@@ -247,11 +520,15 @@ class Xiquet:
 
         # Demana al LLM classificar
         llm_start = datetime.now()
+        
+        # Get previous context if available
+        previous_context = self._get_previous_context_section()
+        
         route_prompt = f"""
         Ets **el Xiquet**, un assistent expert en el món casteller. 
         La teva tasca és **analitzar la següent pregunta** sobre castells:  
         > "{question}"
-
+        {previous_context}
         Per respondre correctament, has de seguir aquests passos de forma estricta:
 
         ### 1. Identificació d'entitats
@@ -259,10 +536,6 @@ class Xiquet:
         L'objectiu és detectar referències i mapar-les exactament a l'element correcte dins la seva llista corresponent.  
 
         Elements a extreure:{entities_section}
-
-        IMPORTANT: No confonguis el nom de les colles amb el fet de que estigui parlant de una localitat o diada. 
-        Per exemple, si la pregunta parla dels "castellers de Sabadell", no has d'extreure "Sabadell" com a lloc ni "Diada dels castellers de Sabadell" com a diada a nose que la pregunta faci referència a aquella especifica diada. 
-
 
         ### 2. Elecció de l'eina adequada
         Decideix quina eina utilitzar per respondre la pregunta: sql, rag o direct.
@@ -284,6 +557,11 @@ class Xiquet:
         - El camp `"tools"` ha de ser exactament un d'aquests valors: `"direct"`, `"rag"`, `"sql"`.
         - Si `"tools"` és `"direct"`, **afegeix també una resposta breu i clara** al camp `"direct_response"`.
         - Assegura't que **totes les llistes** (`colla`, `castells`, `anys`, `llocs`, `diades`, `edicions`, `jornades`, `posicions`) contenen només elements exactes o són buides.
+
+
+        IMPORTANT: No confonguis el nom de les colles amb el fet de que estigui parlant de una localitat o diada. 
+        Per exemple, si la pregunta parla dels "castellers de Sabadell", no has d'extreure "Sabadell" com a lloc ni "Diada dels castellers de Sabadell" com a diada a nose que la pregunta faci referència a aquella especifica diada. 
+
 
         Ara analitza la pregunta i genera la sortida amb el format indicat.
         """
@@ -313,7 +591,10 @@ class Xiquet:
         self.response = response
         
         sql_type_start = datetime.now()
-        skip_sql_check = False
+        
+        # Handle follow-up detection (forces SQL route and inherits entities if applicable)
+        skip_sql_check = self._handle_follow_up_detection(question, response)
+        
         if response.tools == "rag" or response.tools == "direct":
             if response.tools == "direct":
                 threshold = 0.85
@@ -334,6 +615,16 @@ class Xiquet:
             
             # Option 2: LLM-based classification (uncomment to use)
             # response.sql_query_type = self._determine_sql_query_type_llm_call(question, response)
+            
+            # INHERIT SQL QUERY TYPE FROM PREVIOUS MESSAGE IF CURRENT IS "custom"
+            # This handles follow-up questions like "I els Minyons?" after asking about Vilafranca
+            if response.sql_query_type == "custom" and self.previous_sql_query_type:
+                valid_types = ["millor_diada", "millor_castell", "castell_historia", "location_actuations", 
+                              "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history"]
+                if self.previous_sql_query_type in valid_types:
+                    print(f"[SQL TYPE INHERIT] Inheriting '{self.previous_sql_query_type}' from previous question (current was 'custom')")
+                    response.sql_query_type = self.previous_sql_query_type
+        
         sql_type_time = (datetime.now() - sql_type_start).total_seconds() * 1000
         print(f"[TIMING] SQL query type determination: {sql_type_time:.2f}ms")
 
@@ -376,8 +667,20 @@ class Xiquet:
                         print(f"[Accent Match] Colla '{colla}' -> '{matched}'")
                         response.colla[i] = matched
                     else:
-                        print(f"Error: Colla {colla} no és vàlida")
-                        response.colla[i] = None
+                        # Try fuzzy matching as last resort
+                        fuzzy_matches = process.extractOne(
+                            colla,
+                            valid_colles,
+                            scorer=fuzz.token_set_ratio,  # Handles word order and missing/extra words
+                            score_cutoff=75
+                        )
+                        if fuzzy_matches:
+                            matched = fuzzy_matches[0]
+                            print(f"[Fuzzy Match] Colla '{colla}' -> '{matched}' (score: {fuzzy_matches[1]})")
+                            response.colla[i] = matched
+                        else:
+                            print(f"Error: Colla {colla} no és vàlida")
+                            response.colla[i] = None
             # Remove None values
             response.colla = [c for c in response.colla if c is not None] 
         
@@ -404,10 +707,10 @@ class Xiquet:
         # Validate any (only if not empty)
         if response.anys:
             valid_anys = get_all_any_options()
-            for any in response.anys:
-                if any not in valid_anys:
-                    print(f"Error: Any {any} no és vàlid")
-                    response.anys.remove(any)
+            for yr in response.anys:
+                if yr not in valid_anys:
+                    print(f"Error: Any {yr} no és vàlid")
+                    response.anys.remove(yr)
 
         # Validate lloc (only if not empty)
         if response.llocs:
@@ -427,6 +730,12 @@ class Xiquet:
         validation_time = (datetime.now() - validation_start).total_seconds() * 1000
         print(f"[TIMING] Entity validation: {validation_time:.2f}ms")
 
+        # When gamma is detected, clear individual castells to avoid redundant chips
+        # The gamma filter will handle the castell filtering in SQL
+        if self.gamma:
+            response.castells = []
+            print(f"[Gamma] Clearing individual castells - gamma filter will handle: {self.gamma}")
+
         if DEBUG:
             print(f"castells: {response.castells}")
             print(f"anys: {response.anys}")
@@ -436,6 +745,7 @@ class Xiquet:
             print(f"editions: {response.editions}")
             print(f"jornades: {response.jornades}")
             print(f"positions: {response.positions}")
+            print(f"gamma: {self.gamma}")
             print(f"tools: {response.tools}")
             print(f"sql_query_type: {response.sql_query_type}")
 
@@ -557,7 +867,8 @@ class Xiquet:
             "diades": self.diades,
             "editions": self.editions,
             "jornades": self.jornades,
-            "positions": self.positions
+            "positions": self.positions,
+            "gamma": self.gamma
         }
         
         # Get sql_query_type from response
@@ -577,89 +888,260 @@ class Xiquet:
         """
         return self.sql_generator.execute_sql_query(sql_query, params)
 
-    def _rerank_results(self, question: str, results: list, top_k: int = 5) -> list:
+    def _expand_decade_to_years(self, question: str) -> List[int]:
         """
-        Re-rank RAG results. 
-        Cross-encoder disabled by default as it adds 17+ seconds for minimal benefit with few results.
-        The vector similarity from pgvector is usually sufficient.
+        Expand decade references (anys 80, dècada dels 90) to actual years.
+        Returns list of years if decade found, empty list otherwise.
+        """
+        import re
+        
+        decade_patterns = {
+            r'\bany[s]?\s*80\b|\bdècada.*80\b|anys\s*vuitanta': range(1980, 1990),
+            r'\bany[s]?\s*70\b|\bdècada.*70\b|anys\s*setanta': range(1970, 1980),
+            r'\bany[s]?\s*90\b|\bdècada.*90\b|anys\s*noranta': range(1990, 2000),
+            r'\bany[s]?\s*60\b|\bdècada.*60\b|anys\s*seixanta': range(1960, 1970),
+            r'\bany[s]?\s*50\b|\bdècada.*50\b|anys\s*cinquanta': range(1950, 1960),
+            r'\bsegle\s*XVIII\b|segle\s*18': range(1700, 1800),
+            r'\bsegle\s*XIX\b|segle\s*19': range(1800, 1900),
+            r'\bsegle\s*XX\b|segle\s*20': range(1900, 2000),
+        }
+        
+        years = []
+        for pattern, year_range in decade_patterns.items():
+            if re.search(pattern, question, re.IGNORECASE):
+                years.extend(list(year_range))
+        
+        return years
+
+    def _rerank_rag_results(self, results: list, entities: dict, question: str) -> list:
+        """
+        Custom reranker for RAG results using metadata from castellers_info_chunks.
+        
+        Reranking strategy:
+        1. Boost chunks that mention detected colles
+        2. Boost chunks with matching years/year_ranges
+        3. Fuzzy match keywords from query against chunk keywords
+        4. Boost by category relevance
         """
         if not results:
             return results
         
-        # Simply return top_k results sorted by original similarity score
-        # This is already done by pgvector, but ensure we limit to top_k
-        return results[:top_k]
+        question_lower = question.lower()
+        detected_colles = entities.get("colla", []) or []
+        detected_anys = entities.get("anys", []) or []
+        
+        # Expand decade references to years
+        expanded_years = self._expand_decade_to_years(question)
+        all_years = set(detected_anys + expanded_years)
+        
+        # Extract query words for keyword matching (remove common words)
+        stop_words = {'el', 'la', 'els', 'les', 'un', 'una', 'de', 'del', 'a', 'amb', 'per', 'que', 'és', 'i', 'o'}
+        query_words = [w.lower() for w in re.findall(r'\b\w+\b', question) if w.lower() not in stop_words and len(w) > 2]
+        
+        reranked = []
+        colla_matches = []  # Separate list for colla-matched chunks
+        
+
+        for doc_info, base_score in results:
+            meta = doc_info.get("meta", {})
+            boost = 0.0
+            boost_reasons = []
+            is_colla_match = False
+            
+            # Debug: Check if title contains any detected colla name (to find potential matches)
+            title = meta.get("title", "")
+            for colla in detected_colles:
+                if colla.lower() in title.lower():
+                    chunk_colles_debug = meta.get("colles") or []
+
+            
+            # 1. Colla boost (highest priority)
+            chunk_colles = [c.lower() for c in (meta.get("colles") or [])]
+            for colla in detected_colles:
+                colla_lower = colla.lower()
+                # Check if colla name (or significant part) appears in chunk colles
+                for chunk_colla in chunk_colles:
+                    if colla_lower in chunk_colla or chunk_colla in colla_lower:
+                        boost += 0.35
+                        boost_reasons.append(f"colla:{colla}")
+                        is_colla_match = True
+                        break
+            
+            # 2. Year boost
+            chunk_years = set(meta.get("years") or [])
+            chunk_year_ranges = [yr.lower() for yr in (meta.get("year_ranges") or [])]
+            
+            # Check direct year matches
+            year_matches = chunk_years & all_years
+            if year_matches:
+                boost += 0.2 * min(len(year_matches), 3)  # Cap at 0.6
+                boost_reasons.append(f"years:{list(year_matches)[:3]}")
+            
+            # Check year range matches (e.g., "1980-1990", "segle XIX")
+            for yr in chunk_year_ranges:
+                if any(str(y) in yr for y in all_years):
+                    boost += 0.1
+                    boost_reasons.append(f"year_range:{yr}")
+                    break
+            
+            # 3. Keyword fuzzy matching
+            chunk_keywords = [kw.lower() for kw in (meta.get("keywords") or [])]
+            keyword_matches = 0
+            for query_word in query_words:
+                for chunk_kw in chunk_keywords:
+                    # Fuzzy match: check if query word is similar to chunk keyword
+                    similarity = SequenceMatcher(None, query_word, chunk_kw).ratio()
+                    if similarity > 0.7 or query_word in chunk_kw or chunk_kw in query_word:
+                        keyword_matches += 1
+                        break
+            
+            if keyword_matches > 0:
+                # Progressive boost: 1kw=0.1, 2kw=0.25, 3kw=0.4, 4+=0.5
+                kw_boost = 0.15 + (min(keyword_matches, 4) - 1) * 0.15 if keyword_matches > 1 else 0.1
+                boost += kw_boost
+                boost_reasons.append(f"keywords:{keyword_matches}")
+            
+            # 4. Category relevance boost
+            category = meta.get("category", "")
+            if "història" in question_lower or "origen" in question_lower:
+                if category == "history":
+                    boost += 0.15
+                    boost_reasons.append("cat:history")
+            elif "tècnic" in question_lower or "estructura" in question_lower:
+                if category == "technique":
+                    boost += 0.15
+                    boost_reasons.append("cat:technique")
+            elif "concurs" in question_lower:
+                if category == "concurs":
+                    boost += 0.15
+                    boost_reasons.append("cat:concurs")
+            
+            # 5. Place matching
+            chunk_places = [p.lower() for p in (meta.get("places") or [])]
+            detected_llocs = entities.get("llocs", []) or []
+            for lloc in detected_llocs:
+                if lloc.lower() in chunk_places:
+                    boost += 0.15
+                    boost_reasons.append(f"place:{lloc}")
+                    break
+            
+            # 6. Penalize colla-category chunks when no colla is detected
+            if not detected_colles and category == "colles":
+                boost -= 0.2
+                boost_reasons.append("no_colla_penalty")
+            
+            # Calculate final score
+            final_score = min(base_score + boost, 1.0)
+            
+
+            if is_colla_match:
+                colla_matches.append((doc_info, final_score))
+            else:
+                reranked.append((doc_info, final_score))
+        
+        # Sort both lists by score
+        colla_matches.sort(key=lambda x: x[1], reverse=True)
+        reranked.sort(key=lambda x: x[1], reverse=True)
+        
+        # Prioritize colla matches at the top
+        return colla_matches + reranked
 
     def handle_rag(self) -> str:
         """
-        Use RAG to answer the question by searching through embeddings.
-        Includes: relevance filtering, cross-encoder re-ranking, and smart prompting.
+        Use RAG to answer the question using castellers_info_chunks table.
         """
         from datetime import datetime
+        import sys
+        
+        print(f"[RAG] === Starting handle_rag() ===", flush=True)
+        print(f"[RAG] Question: {self.question[:50]}...", flush=True)
         
         # Configuration
-        MIN_SIMILARITY_THRESHOLD = 0.25  # Minimum similarity score to consider
-        INITIAL_RETRIEVAL_K = 15  # Retrieve more candidates for re-ranking
-        FINAL_TOP_K = 5  # Final number of results after re-ranking
+        INITIAL_K = 350          # Get top K from vector search
+        FINAL_TOP_K = 2         # Pass top K to LLM
+        MIN_SIMILARITY = 0.005   # Minimum similarity threshold
         
         try:
-            # Step 1: Initial retrieval (retrieve more candidates for re-ranking)
+            # Step 1: Semantic search on castellers_info_chunks
+            print(f"[RAG] Step 1: Calling search_castellers_info(k={INITIAL_K})...", flush=True)
             rag_search_start = datetime.now()
-            results = search_query_supabase(self.question, k=INITIAL_RETRIEVAL_K)
+            results = search_castellers_info(self.question, k=INITIAL_K)
             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
-            print(f"[TIMING] RAG search_query_supabase(): {rag_search_time:.2f}ms (retrieved {len(results)} candidates)")
+            print(f"[TIMING] RAG search: {rag_search_time:.2f}ms ({len(results)} results)", flush=True)
             
             if not results:
                 return "No he trobat informació rellevant per respondre la teva pregunta."
             
-            # Step 2: Relevance score filtering (remove low-quality results)
-            filtered_results = [(doc, score) for doc, score in results if score >= MIN_SIMILARITY_THRESHOLD]
-            print(f"[RAG] Filtered from {len(results)} to {len(filtered_results)} results (threshold: {MIN_SIMILARITY_THRESHOLD})")
+            # Step 2: Rerank FIRST (boost colles, keywords, etc.) BEFORE filtering
+            # This ensures documents mentioning the exact colla get boosted before threshold check
+            entities = {
+                "colla": self.colles_castelleres,
+                "anys": self.anys,
+                "llocs": self.llocs,
+                "castells": self.castells,
+                "diades": self.diades
+            }
             
-            if not filtered_results:
-                return "No he trobat informació prou rellevant per respondre la teva pregunta. Prova a reformular la pregunta."
+            rerank_start = datetime.now()
+            reranked = self._rerank_rag_results(results, entities, self.question)
+            rerank_time = (datetime.now() - rerank_start).total_seconds() * 1000
+            print(f"[TIMING] Reranking: {rerank_time:.2f}ms")
             
-            # Step 3: Re-rank with cross-encoder for better semantic matching
-            reranked_results = self._rerank_results(self.question, filtered_results, top_k=FINAL_TOP_K)
-            print(f"[RAG] Re-ranked to top {len(reranked_results)} results")
+            # Step 3: Filter by minimum similarity AFTER boosting
+            # Documents with low embedding score but high entity match can now pass
+            filtered = [(doc, score) for doc, score in reranked if score >= MIN_SIMILARITY]
+            print(f"[RAG] Filtered after boost: {len(reranked)} -> {len(filtered)} (threshold: {MIN_SIMILARITY})")
             
-            # Step 4: Build context from re-ranked results (simple text concatenation)
+            if not filtered:
+                return "No he trobat informació prou rellevant per respondre la teva pregunta."
+            
+            # Step 4: Take top K results
+            top_results = reranked[:FINAL_TOP_K]
+            print(f"[RAG] Final top {len(top_results)} results:")
+            for i, (doc, score) in enumerate(top_results):
+                print(f"  {i+1}. [{score:.3f}] {doc['meta'].get('title', 'No title')}")
+            
+            # Step 5: Build context for LLM
             context_parts = []
-            for i, (doc_info, score) in enumerate(reranked_results, 1):
+            for i, (doc_info, score) in enumerate(top_results, 1):
+                title = doc_info["meta"].get("title", "")
                 text = doc_info.get("text", "")
-                context_parts.append(f"[Document {i}]\n{text}")
+                context_parts.append(f"[Document {i}: {title}]\n{text}")
             
             context = "\n\n".join(context_parts)
             
-            # Step 5: Generate answer with improved prompt
+            # Step 6: Generate answer with LLM
             rag_system = """Ets un expert casteller amb criteri tècnic i rigor històric.
-Sempre respons exclusivament en català.
-Segueixes estrictament les instruccions de format i sortida."""
+Sempre respons exclusivament en català."""
             
-            rag_developer = """INSTRUCCIONS ESTRICTES (OBLIGATÒRIES):
+            rag_developer = """INSTRUCCIONS:
+- Text narratiu en paràgrafs (1-3 paràgrafs màxim)
+- Usa **negreta** per destacar fets clau
+- NO inventes informació que no apareix als documents
+- Si els documents NO contenen informació rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema." 
+- NO mencions ni facis referència a documents que no siguin rellevants per la pregunta 
+- Només utilitza informació que respongui directament a la pregunta de l'usuari"""
 
-PROHIBIT:
-- Afegir taules
-- Afegir llistes amb guions o punts
-- Donar opinions o valoracions personals
+            # Build previous context section for user prompt
+            previous_context_str = ""
+            if self.previous_question and self.previous_response:
+                truncated_resp = self.previous_response[:PREVIOUS_CONTEXT_MAX_CHARS]
+                if len(self.previous_response) > PREVIOUS_CONTEXT_MAX_CHARS:
+                    truncated_resp += "..."
+                previous_context_str = f"""
+CONTEXT ANTERIOR DEL MISSATGE ANTERIOR:
+- Pregunta: "{self.previous_question[:150]}"
+- Resposta: "{truncated_resp}"
 
-FORMAT DE SORTIDA:
-- Markdown, text narratiu (paràgrafs) (NO TAULES)
-- Únic ús de **negreta** per destacar fets rellevants (màxim 3-4 elements)
+"""
 
-SOBRE LA INFORMACIÓ PROPORCIONADA:
-- Utilitza la informació proporcionada si és rellevant; si no, respon amb el teu propi coneixement casteller.
-- Si no tens informació suficient, digues-ho honestament i no inventis dades específiques.
-
-Respon en 1-3 paràgrafs segons la complexitat de la pregunta."""
-
-            rag_user = f"""Pregunta:
+            rag_user = f"""{previous_context_str}Pregunta actual:
 {self.question}
 
-Informació trobada als documents:
+Documents:
 {context}
 
-Respon la pregunta de forma breu i directa. Si la informació dels documents no és rellevant, utilitza el teu coneixement casteller."""
+Respon basant-te en els documents."""
             
             rag_llm_start = datetime.now()
             answer = llm_call(
@@ -671,11 +1153,66 @@ Respon la pregunta de forma breu i directa. Si la informació dels documents no 
             rag_llm_time = (datetime.now() - rag_llm_start).total_seconds() * 1000
             print(f"[TIMING] handle_rag() LLM call: {rag_llm_time:.2f}ms")
             
-            # Sanitize response to remove any tables
+            answer = sanitize_llm_response(answer)
+            
+            # Don't add source footer if no relevant info was found
+            if "No tinc informació sobre aquest tema" in answer:
+                return answer
+            return f"{answer}\n\n*Font: Cerca semàntica en documents castellers*"
+            
+        except Exception as e:
+            print(f"[RAG] Error: {e}")
+            return f"Error en la cerca semàntica: {e}"
+
+    def _handle_rag_fallback(self) -> str:
+        """
+        Fallback RAG using the old embeddings table (search_query_supabase).
+        Used when castellers_info_chunks table is not available.
+        """
+        from datetime import datetime
+        
+        try:
+            rag_search_start = datetime.now()
+            results = search_query_supabase(self.question, k=10)
+            rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
+            print(f"[TIMING] RAG fallback search_query_supabase(): {rag_search_time:.2f}ms ({len(results)} results)")
+            
+            if not results:
+                return "No he trobat informació rellevant per respondre la teva pregunta."
+            
+            # Filter by similarity
+            filtered = [(doc, score) for doc, score in results if score >= 0.20]
+            if not filtered:
+                return "No he trobat informació prou rellevant per respondre la teva pregunta."
+            
+            # Build context
+            context_parts = []
+            for i, (doc_info, score) in enumerate(filtered[:5], 1):
+                text = doc_info.get("text", "")
+                context_parts.append(f"[Document {i}]\n{text}")
+            
+            context = "\n\n".join(context_parts)
+            
+            # Generate answer
+            rag_system = """Ets un expert casteller. Respons en català."""
+            rag_user = f"""Pregunta: {self.question}
+
+Documents:
+{context}
+
+Respon basant-te en els documents."""
+            
+            answer = llm_call(
+                prompt=rag_user,
+                model=MODEL_NAME_RESPONSE,
+                system_message=rag_system
+            )
+            
             answer = sanitize_llm_response(answer)
             return f"{answer}\n\n*Font: Cerca semàntica en documents castellers*"
             
         except Exception as e:
+            print(f"[RAG Fallback] Error: {e}")
             return f"Error en la cerca semàntica: {e}"
 
     def _format_table_for_frontend(self, rows: list, query_type: str) -> dict:
@@ -694,14 +1231,14 @@ Respon la pregunta de forma breu i directa. Si la informació dels documents no 
         # ============================================================
         columns_per_query_type = {
             'millor_diada': ['ranking', 'event_name', 'event_date', 'colla_name', 'event_city', 'castells_fets'],
-            'millor_castell': ['castell_name', 'event_name', 'event_date', 'colla_name', 'event_city', 'status'],
-            'castell_historia': ['castell_name', 'status', 'count_occurrences', 'colla_name', 'first_date', 'last_date', 'cities'],
+            'millor_castell': ['gamma_filtrada', 'castell_name', 'event_name', 'date', 'colla_name', 'city', 'status'],
+            'castell_historia': ['gamma_filtrada', 'castell_name', 'status', 'count_occurrences', 'colla_name', 'colles', 'first_date', 'last_date', 'cities', ],
             'location_actuations': ['event_name', 'date', 'city', 'colla_name', 'castells_fets'],
             'first_castell': ['castell_name', 'status','event_name', 'date', 'colla_name', 'city'],
             'castell_statistics': ['castell_name', 'cops_descarregat', 'cops_carregat', 'cops_intent_desmuntat', 'cops_intent', 'primera_data_descarregat', 'primera_data_carregat', 'colles_descarregat', 'colles_carregat', 'colles_intentat',  'primeres_colles_descarregat', 'primeres_colles_carregat', 'primeres_colles_intentat',],
             'concurs_ranking': ['colla_name', 'position', 'total_points', 'jornada', 'primera_ronda', 'segona_ronda', 'tercera_ronda', 'quarta_ronda', ' cinquena_ronda'],
             'concurs_history': ['any', 'jornada', 'colles_participants', 'colla_guanyadora', 'punts_guanyador', 'castells_r1_descarregats', 'castells_r2_descarregats', 'castells_r3_descarregats', 'castells_r4_descarregats', 'castells_r5_descarregats'],
-            'year_summary': ['colla_name', 'num_actuacions', 'num_castells', 'castells_descarregats', 'castells_carregats', 'castells_intent_desmuntat', 'castells_intent'],
+            'year_summary': ['gamma_filtrada', 'colla_name', 'num_actuacions', 'num_castells', 'castells_descarregats', 'castells_carregats', 'castells_intent_desmuntat', 'castells_intent'],
         }
         # ============================================================
         
@@ -719,10 +1256,30 @@ Respon la pregunta de forma breu i directa. Si la informació dels documents no 
         # Map headers to nice display names
         nice_headers = [COLUMN_MAPPINGS.get(col, col.replace('_', ' ').title()) for col in selected_columns]
         
+        # Helper to truncate comma-separated lists (for cities, colles columns)
+        def truncate_list(value: str, max_items: int = 10) -> str:
+            if not value or value == '-':
+                return value
+            items = [item.strip() for item in value.split(',')]
+            if len(items) > max_items:
+                return ', '.join(items[:max_items]) + '...'
+            return value
+        
+        # Columns that should be truncated if they have too many items
+        truncate_columns = {'cities', 'colles'}
+        
         # Format rows with only selected columns
         formatted_rows = []
         for row in rows:
-            formatted_row = [str(row.get(col, '-')) if row.get(col) is not None else '-' for col in selected_columns]
+            formatted_row = []
+            for col in selected_columns:
+                value = row.get(col)
+                if value is None:
+                    formatted_row.append('-')
+                elif col in truncate_columns:
+                    formatted_row.append(truncate_list(str(value)))
+                else:
+                    formatted_row.append(str(value))
             formatted_rows.append(formatted_row)
         
         return {
@@ -768,8 +1325,15 @@ Respon la pregunta de forma breu i directa. Si la informació dels documents no 
             # Create a nice table structure with proper column titles
             self.table_data = self._format_table_for_frontend(rows[:SQL_RESULT_LIMIT], sql_query_type)
             
-            # Use structured prompt with system/developer/user separation
-            structured_prompt = get_sql_summary_prompt(sql_query_type, self.question, table_str)
+            # Use structured prompt with system/developer/user separation (including previous context)
+            structured_prompt = get_sql_summary_prompt(
+                sql_query_type, 
+                self.question, 
+                table_str,
+                previous_question=self.previous_question,
+                previous_response=self.previous_response,
+                previous_context_max_chars=PREVIOUS_CONTEXT_MAX_CHARS
+            )
 
             try:
                 sql_llm_start = datetime.now()
@@ -884,9 +1448,22 @@ CONTEXT ESPECÍFIC:
 - Combina la informació de les dues fonts (SQL i RAG)
 - Prioritza dades SQL per informació específica (dates, estadístiques)
 - Utilitza RAG per context històric o explicacions
-- Respon en 1-2 paràgrafs màxim"""
+- Respon en 1-2 paràgrafs màxim
+- Si hi ha context anterior, tingues-lo en compte per entendre preguntes de seguiment"""
 
-            hybrid_user = f"""Pregunta:
+            # Build previous context section for user prompt
+            previous_context_str = ""
+            if self.previous_question and self.previous_response:
+                truncated_resp = self.previous_response[:PREVIOUS_CONTEXT_MAX_CHARS]
+                if len(self.previous_response) > PREVIOUS_CONTEXT_MAX_CHARS:
+                    truncated_resp += "..."
+                previous_context_str = f"""CONTEXT ANTERIOR:
+- Pregunta: "{self.previous_question[:150]}"
+- Resposta: "{truncated_resp}"
+
+"""
+
+            hybrid_user = f"""{previous_context_str}Pregunta actual:
 {self.question}
 
 {sql_context}
@@ -957,12 +1534,33 @@ Respon de forma breu i directa combinant ambdues fonts."""
         return result
 
 # ---- Agent principal ----
-def xiquet_agent(question: str) -> str:
+def xiquet_agent(
+    question: str, 
+    previous_question: str = None, 
+    previous_response: str = None,
+    previous_route: str = None,
+    previous_sql_query_type: str = None,
+    previous_entities: dict = None
+) -> str:
     """
     Legacy function for backward compatibility.
     Creates a new Xiquet instance and processes the question.
+    
+    Args:
+        question: La pregunta actual de l'usuari
+        previous_question: Pregunta anterior (opcional, per context de seguiment)
+        previous_response: Resposta anterior (opcional, per context de seguiment)
+        previous_route: Ruta anterior (sql, rag, direct, hybrid)
+        previous_sql_query_type: Tipus de consulta SQL anterior (millor_castell, etc.)
+        previous_entities: Entitats anteriors (colles, castells, anys, etc.)
     """
-    xiquet = Xiquet()
+    xiquet = Xiquet(
+        previous_question=previous_question,
+        previous_response=previous_response,
+        previous_route=previous_route,
+        previous_sql_query_type=previous_sql_query_type,
+        previous_entities=previous_entities
+    )
     return xiquet.process_question(question)
 
 # ---- Exemple d'ús ----

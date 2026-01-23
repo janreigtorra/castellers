@@ -32,6 +32,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/__pycache__
+      - huggingface_cache:/root/.cache/huggingface  # Cache ML models between restarts
     env_file:
       - .env
     environment:
@@ -68,3 +69,6 @@ services:
       - REACT_APP_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
       - REACT_APP_API_URL=http://localhost:8000
     command: npm start
+
+volumes:
+  huggingface_cache:  # Persists ML models between container restarts

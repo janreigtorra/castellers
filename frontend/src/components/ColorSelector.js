@@ -1,7 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import './ColorSelector.css';
 
 const ColorSelector = ({ selectedColor, onColorChange }) => {
+  const [showAllColors, setShowAllColors] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    return typeof window !== 'undefined' && window.innerWidth <= 768;
+  });
+
+  // Listen for window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const colors = [
     { key: 'white', color: '#ffffff' },
     { key: 'rosat', color: '#E76253' },
@@ -24,12 +39,18 @@ const ColorSelector = ({ selectedColor, onColorChange }) => {
     { key: 'lightgreen', color: '#93BB7B' }
   ];
 
+  // On mobile, show first 6 colors unless expanded
+  const visibleColors = isMobile && !showAllColors ? colors.slice(0, 6) : colors;
+  const hasMoreColors = isMobile && !showAllColors && colors.length > 6;
+
   return (
-    <div className="color-selector">
+    <div className={`color-selector ${showAllColors ? 'expanded' : ''}`}>
       <div className="color-selector-content">
-        <span className="color-selector-label">De quin color és la teva camisa?</span>
+        <span className="color-selector-label">
+          {isMobile ? 'Camisa?' : 'De quin color és la teva camisa?'}
+        </span>
         <div className="color-selector-options">
-          {colors.map(({ key, color }) => (
+          {visibleColors.map(({ key, color }) => (
             <button
               key={key}
               className={`color-chip ${selectedColor === key ? 'selected' : ''}`}
@@ -38,6 +59,24 @@ const ColorSelector = ({ selectedColor, onColorChange }) => {
               title={key}
             />
           ))}
+          {hasMoreColors && (
+            <button
+              className="color-chip color-chip-more"
+              onClick={() => setShowAllColors(true)}
+              title="Més colors"
+            >
+              <span>+{colors.length - 6}</span>
+            </button>
+          )}
+          {isMobile && showAllColors && (
+            <button
+              className="color-chip color-chip-less"
+              onClick={() => setShowAllColors(false)}
+              title="Menys colors"
+            >
+              <span>−</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

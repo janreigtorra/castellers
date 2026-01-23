@@ -1,0 +1,420 @@
+.castell-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px;
+  min-height: 100px;
+}
+
+.person {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--theme-accent, #e74c3c);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+/* Pinya - la base, 7 persones */
+.pinya {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.pinya-person {
+  animation: pinya-cycle 12s ease-in-out infinite;
+}
+
+/* Tronc - 5 pisos de 3 persones */
+.tronc-pis {
+  display: flex;
+  gap: 3px;
+}
+
+/* Cada pis té la seva animació */
+.tronc-pis-1 .person {
+  animation: tronc1-cycle 12s ease-in-out infinite;
+}
+.tronc-pis-2 .person {
+  animation: tronc2-cycle 12s ease-in-out infinite;
+}
+.tronc-pis-3 .person {
+  animation: tronc3-cycle 12s ease-in-out infinite;
+}
+.tronc-pis-4 .person {
+  animation: tronc4-cycle 12s ease-in-out infinite;
+}
+.tronc-pis-5 .person {
+  animation: tronc5-cycle 12s ease-in-out infinite;
+}
+
+/* Pom - l'enxaneta */
+.pom {
+  margin-bottom: 2px;
+  min-height: 10px;
+}
+
+.enxaneta {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--theme-accent, #e74c3c);
+  border-radius: 50%;
+  opacity: 0;
+  animation: enxaneta-cycle 12s ease-in-out infinite;
+}
+
+/*
+  TIMING (12 segons total):
+  
+  PUJAR (0-5s):
+  - 0.0s: Pinya apareix
+  - 0.8s: Pis 1 (baix del tronc)
+  - 1.6s: Pis 2
+  - 2.4s: Pis 3
+  - 3.2s: Pis 4
+  - 4.0s: Pis 5 (dalt del tronc)
+  - 4.8s: Enxaneta puja!
+  
+  AGUANTAR (5-7s):
+  - Tot el castell visible
+  
+  BAIXAR (7-12s):
+  - 7.0s: Enxaneta baixa
+  - 7.8s: Pis 5 baixa
+  - 8.6s: Pis 4 baixa
+  - 9.4s: Pis 3 baixa
+  - 10.2s: Pis 2 baixa
+  - 11.0s: Pis 1 baixa
+  - 11.8s: Pinya baixa
+*/
+
+/* PINYA: apareix primer (0%), desapareix últim (98-100%) */
+@keyframes pinya-cycle {
+  0%, 2% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  7% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  93% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  98%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 1: apareix 7%, desapareix 87-92% */
+@keyframes tronc1-cycle {
+  0%, 7% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  87% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  92%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 2: apareix 13%, desapareix 80-85% */
+@keyframes tronc2-cycle {
+  0%, 13% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  85%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 3: apareix 20%, desapareix 73-78% */
+@keyframes tronc3-cycle {
+  0%, 20% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  73% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  78%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 4: apareix 27%, desapareix 66-71% */
+@keyframes tronc4-cycle {
+  0%, 27% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  32% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  66% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  71%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 5: apareix 33%, desapareix 59-65% */
+@keyframes tronc5-cycle {
+  0%, 33% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+  38% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  59% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  65%, 100% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.5);
+  }
+}
+
+/* ENXANETA: apareix últim (40%), desapareix primer (53-58%) */
+@keyframes enxaneta-cycle {
+  0%, 40% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.3);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.1);
+  }
+  48% {
+    transform: translateY(0) scale(1);
+  }
+  /* Aleta! */
+  50% {
+    transform: translateY(-2px) scale(1.15);
+  }
+  52% {
+    transform: translateY(0) scale(1);
+  }
+  53% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  58%, 100% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.3);
+  }
+}
+
+/* ============================================
+   VERSIÓ MÒBIL - 3 pisos, 8 segons
+   ============================================ */
+
+.castell-loader-mobile {
+  min-height: 60px;
+  gap: 1px;
+  padding: 4px;
+}
+
+.castell-loader-mobile .person {
+  width: 6px;
+  height: 6px;
+}
+
+.castell-loader-mobile .pinya {
+  gap: 1px;
+  margin-top: 2px;
+}
+
+/* Pinya mòbil - 5 persones */
+.pinya-person-mobile {
+  animation: pinya-mobile-cycle 8s ease-in-out infinite;
+}
+
+/* Tronc mòbil - 3 pisos */
+.tronc-pis-1-mobile .person {
+  animation: tronc1-mobile-cycle 8s ease-in-out infinite;
+}
+.tronc-pis-2-mobile .person {
+  animation: tronc2-mobile-cycle 8s ease-in-out infinite;
+}
+.tronc-pis-3-mobile .person {
+  animation: tronc3-mobile-cycle 8s ease-in-out infinite;
+}
+
+/* Enxaneta mòbil */
+.enxaneta-mobile {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--theme-accent, #e74c3c);
+  border-radius: 50%;
+  opacity: 0;
+  animation: enxaneta-mobile-cycle 8s ease-in-out infinite;
+}
+
+/*
+  TIMING MÒBIL (8 segons total):
+  
+  PUJAR (0-3s):
+  - 0.0s: Pinya apareix
+  - 0.8s: Pis 1
+  - 1.6s: Pis 2
+  - 2.4s: Pis 3
+  - 3.0s: Enxaneta puja!
+  
+  AGUANTAR (3-5s):
+  - Tot el castell visible
+  
+  BAIXAR (5-8s):
+  - 5.0s: Enxaneta baixa
+  - 5.8s: Pis 3 baixa
+  - 6.6s: Pis 2 baixa
+  - 7.4s: Pis 1 baixa
+  - 7.8s: Pinya baixa
+*/
+
+/* PINYA MÒBIL: apareix primer (0%), desapareix últim (95-100%) */
+@keyframes pinya-mobile-cycle {
+  0%, 3% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  90% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 1 MÒBIL: apareix 10%, desapareix 83-90% */
+@keyframes tronc1-mobile-cycle {
+  0%, 10% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  83% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  90%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 2 MÒBIL: apareix 20%, desapareix 75-82% */
+@keyframes tronc2-mobile-cycle {
+  0%, 20% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  28% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  82%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 3 MÒBIL: apareix 30%, desapareix 67-74% */
+@keyframes tronc3-mobile-cycle {
+  0%, 30% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  38% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  67% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  74%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* ENXANETA MÒBIL: apareix últim (38%), desapareix primer (58-65%) */
+@keyframes enxaneta-mobile-cycle {
+  0%, 38% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.3);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.1);
+  }
+  48% {
+    transform: translateY(0) scale(1);
+  }
+  /* Aleta! */
+  50% {
+    transform: translateY(-2px) scale(1.15);
+  }
+  52% {
+    transform: translateY(0) scale(1);
+  }
+  58% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  65%, 100% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.3);
+  }
+}

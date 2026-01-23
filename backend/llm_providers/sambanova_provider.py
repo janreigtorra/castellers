@@ -3,6 +3,7 @@ SambaNova provider implementation
 """
 from typing import Dict, Any, List
 import json
+import time
 import openai
 from .base import LLMProvider, LLMConfig
 
@@ -13,12 +14,49 @@ class SambaNovaProvider(LLMProvider):
     # Store last usage for token counting
     last_usage = None
     
-    def generate(self, messages: List[Dict[str, str]], config: LLMConfig, response_format=None) -> str:
-        try:
-            client = openai.OpenAI(
-                api_key=config.api_key,
+    # Reusable client (avoid creating new connections each time)
+    _client = None
+    _client_api_key = None
+    
+    # Retry configuration
+    MAX_RETRIES = 3
+    BASE_DELAY = 2  # seconds
+    
+    @classmethod
+    def _get_client(cls, api_key: str):
+        """Get or create a reusable client"""
+        if cls._client is None or cls._client_api_key != api_key:
+            cls._client = openai.OpenAI(
+                api_key=api_key,
                 base_url="https://api.sambanova.ai/v1"
             )
+            cls._client_api_key = api_key
+        return cls._client
+    
+    def _call_with_retry(self, client, kwargs):
+        """Execute API call with exponential backoff retry for rate limits"""
+        last_error = None
+        
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = client.chat.completions.create(**kwargs)
+                return response
+            except openai.RateLimitError as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    delay = self.BASE_DELAY * (2 ** attempt)  # 2s, 4s, 8s
+                    print(f"[SambaNova] Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{self.MAX_RETRIES})...")
+                    time.sleep(delay)
+                else:
+                    raise
+            except Exception as e:
+                raise
+        
+        raise last_error
+    
+    def generate(self, messages: List[Dict[str, str]], config: LLMConfig, response_format=None) -> str:
+        try:
+            client = self._get_client(config.api_key)
             
             kwargs = {
                 "model": config.model,
@@ -30,7 +68,7 @@ class SambaNovaProvider(LLMProvider):
             if config.max_tokens:
                 kwargs["max_tokens"] = config.max_tokens
             
-            response = client.chat.completions.create(**kwargs)
+            response = self._call_with_retry(client, kwargs)
             
             # Store token usage
             if hasattr(response, 'usage') and response.usage:
@@ -48,10 +86,7 @@ class SambaNovaProvider(LLMProvider):
     
     def parse(self, messages: List[Dict[str, str]], config: LLMConfig, response_format) -> Any:
         try:
-            client = openai.OpenAI(
-                api_key=config.api_key,
-                base_url="https://api.sambanova.ai/v1"
-            )
+            client = self._get_client(config.api_key)
             
             # Generate JSON schema from Pydantic model and inject into prompt
             # SambaNova doesn't support native structured outputs, so we need to guide the LLM
@@ -81,7 +116,7 @@ class SambaNovaProvider(LLMProvider):
             if config.max_tokens:
                 kwargs["max_tokens"] = config.max_tokens
             
-            response = client.chat.completions.create(**kwargs)
+            response = self._call_with_retry(client, kwargs)
             
             # Store token usage
             if hasattr(response, 'usage') and response.usage:

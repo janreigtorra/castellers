@@ -1,6 +1,43 @@
 
 # ---- Guardrails: paraules NO relacionades amb castells ----
 
+# ---- Gamma de Castells (ranges/tiers) ----
+# Uses castell_code from puntuacions table
+GAMMA_CASTELLS = {
+    "castells de 6": {
+        "specific": ["3d6", "4d6", "5d6", "2d6", "3d6a", "4d6a", "5d6a", 
+                     "7d6", "9d6", "3d6s"],
+        "description": "Castells de 6 pisos"
+    },
+    "castells de 7": {
+        "specific": ["3d7", "4d7", "5d7", "2d7", "3d7a", "4d7a", "5d7a",
+                     "7d7", "9d7", "3d7s"],
+        "description": "Castells de 7 pisos"
+    },
+    "castells de 8": {
+        "specific": ["3d8", "4d8", "5d8", "2d8f", "3d8s", "4d8a", "5d8a",
+                     "7d8", "9d8", "3d8a"],
+        "description": "Castells de 8 pisos"
+    },
+    "castells de 9": {
+        "specific": ["4d9f", "3d9f", "5d9f", "2d9fm", "4d9af", "3d9af", "7d9f", "3d9", "4d9", "5d9"],
+        "description": "Castells de 9 pisos principals"
+    },
+    "gamma extra": {
+        "specific": ["2d9fm", "4d9af", "3d9af", "5d9f", "9d8", "9d9f", "3d10fm", "4d10fm", 
+                     "pd8fm", "pd9fmp", "4d9", "7d9f", "2d9f", "3d9"],
+        "description": "Castells de gamma extra (màxima dificultat)"
+    }
+}
+
+# Keywords to detect gamma questions
+GAMMA_KEYWORDS = {
+    "castells de 6": ["castells de 6", "sis pisos", "gamma de 6"],
+    "castells de 7": ["castells de 7", "set pisos", "gamma de 7"],
+    "castells de 8": ["castells de 8", "vuit pisos", "gamma de 8"],
+    "castells de 9": ["castells de 9", "nou pisos", "gamma de 9"],
+    "gamma extra": ["castells de gamma extra", "gamma extra", "extra", "màxima dificultat", "maxima dificultat"]
+}
 
 # # Define query types with their characteristic keywords
 # SQL_QUERY_PATTERNS = {
@@ -53,7 +90,13 @@ IS_SQL_QUERY_PATTERNS = {
       "quan van fer el primer", "quan es va fer per primer cop",
         "quan van descarregar per primer cop", "quan van aconseguir per primera vegada", 
         "quan van intentar per primera vegada", "quan van intentar per primer cop",
-        "quan van descarregar per primera vegada", "quan van carregar per primer cop"
+        "quan van descarregar per primera vegada", "quan van carregar per primer cop", 
+        "quin any s'ha fet el primer", "quin any s'ha descarregat el primer", "quin any s'ha carregat el primer",
+         "quin any s'ha intentat el primer", "quin any s'ha intentat desmuntar el primer", 
+         "on es va fer el primer",# add more
+         "A quin lloc van fer el primer", "quan es va carregar", "quan es va intentar", "quan es va fer el primer", 
+         "quan es va descarregar",  "quan es va descarregar", "quan van carregar el", "quan van descarregar el", 
+         "quan van carregar el primer", "quan van descarregar el primer", 
     ],
     
     # Castell statistics - retorna: estadístiques completes (descarregats, carregats, colles, dates)
@@ -74,7 +117,8 @@ IS_SQL_QUERY_PATTERNS = {
         "com va ser la temporada", "com va ser l'any", "com va ser l any",
         "com va anar la temporada", "com va anar l'any", "com va anar l any",
         "què van fer a la temporada", "que van fer a la temporada",
-        "què van fer l'any", "que van fer l any", "resultats de la temporada"
+        "què van fer l'any", "que van fer l any", "resultats de la temporada", "quants castells van fer", 
+        "quants castells van fer", "quants castells van descarregar", "quants castells van carregar"
     ],
     
     # Concurs ranking - retorna: classificació, posicions, punts, rondes d'un concurs
@@ -170,6 +214,7 @@ NON_CASTELLER_DOMAINS = [
 # Column name mappings for nicer display (db_column -> display_name)
 COLUMN_MAPPINGS = {
     'ranking': '#',
+    'gamma_filtrada': 'Gamma',
     'event_name': 'Diada',
     'event_date': 'Data',
     'event_place': 'Lloc',
@@ -229,6 +274,103 @@ TITLE_MAPPINGS = {
     'year_summary': 'Resum Anual',
     'custom': 'Resultats',
 }
+
+
+MAP_QUERY_CHANGE = {
+"3d9fp":"3d9af", 
+"3d9 amb folre i pilar":"3d9af",
+"3d9 amb folre i agulla":"3d9af",
+"4d9fp":"4d9af",
+"4d9 amb folre i pilar":"4d9af",
+"4d9 amb folre i agulla":"4d9af",
+"3d9pf":"3d9af", 
+"4d9pf":"4d9af",  
+"3d9fa":"3d9af", 
+"4d9fa":"4d9af", 
+"3d9sf":"3d9",
+"4d9sf":"4d9",
+"2d8sf":"2d8",
+"2d8 net":"2d8",
+"2d8 sense folre":"2d8",
+"4d9 net":"4d9",
+"4d9 sense folre":"4d9",
+"Pd9":"Pd9fmp",
+"3d10":"3d10fm",
+"Pd7sf":"Pd7",
+"Pilar de 7 sense folre":"Pd7",
+"2d9sm":"2d9f",
+"2d9 sense manilles":"2d9f",
+"3de9fp":"3d9af", 
+"4de9fp":"4d9af", 
+"3de9pf":"3d9af", 
+"4de9pf":"4d9af",  
+"3de9fa":"3d9af", 
+"4de9fa":"4d9af", 
+"3de9df":"3d9",
+"4de9df":"4d9",
+"2de8f":"2d8",
+"2de8 net":"2d8",
+"4de9 net":"4d9",
+"Pde9":"Pd9fmp",
+"3de10":"3d10fm",
+"Pde7sf":"Pd7",
+"2de9sm":"2d9f",
+"4d8p":"4d8a",
+"3d8p":"3d8a",
+"5d8p":"5d8a",
+"7d8p":"7d8a",
+"4de8p":"4d8a",
+"4d8 amb agulla":"4d8a",
+"4d8 amb pilar":"4d8a",
+"3de8p":"3d8a",
+"3d8 amb agulla":"3d8a",
+"3d8 amb pilar":"3d8a",
+"5de8p":"5d8a",
+"7de8p":"7d8a",
+"4d7p":"4d7a",
+"3d7p":"3d7a",
+"5d7p":"5d7a",
+"7d7p":"7d7a",
+"4de7p":"4d7a",
+"4d7 amb agulla":"4d7a",
+"4d7 amb pilar":"4d7a",
+"3de7p":"3d7a",
+"3d7 amb agulla":"3d7a",
+"3d7 amb pilar":"3d7a",
+"5de7p":"5d7a",
+"7de7p":"7d7a",
+"4d6p":"4d6a",
+"3d6p":"3d6a",
+"5d6p":"5d6a",
+"7d6p":"7d6a",
+"4de6p":"4d6a",
+"4d6 amb agulla":"4d6a",
+"4d6 amb pilar":"4d6a",
+"3de6p":"3d6a",
+"3d6 amb agulla":"3d6a",
+"3d6 amb pilar":"3d6a",
+"5de6p":"5d6a",
+"7de6p":"7d6a",
+"5d8p":"5d8a",
+"5d8 amb agulla":"5d8a",
+"5d8 amb pilar":"5d8a",
+"7d8p":"7d8a",
+"3d6ps":"3d6s",
+"3d7ps":"3d7s",
+"3d8ps":"3d8s",
+"3de6ps":"3d6s",
+"3de7ps":"3d7s",
+"3de8ps":"3d8s",
+"pd4ps":"Pd4s",
+"Pd5ps":"Pde5s",
+"Pd6ps":"Pde6s",
+"carro gros": "4d8", 
+"super caterdal": "5d9f", 
+# "colla vella": "Colla Vella dels Xiquets de Valls",
+# "colla joves": "Colla Joves Xiquets de Valls",
+# "els verds": "castellers de Vilafranca", 
+}
+
 
 AVAILABLE_PROVIDERS = {
     "groq": {
@@ -299,9 +441,12 @@ AVAILABLE_PROVIDERS = {
     "sambanova": {
         "description": "SambaNova AI models",
         "models": [
+            "gpt-oss-120b",
+            "Meta-Llama-3.3-70B-Instruct",
             "Meta-Llama-3.1-8B-Instruct",
             "Meta-Llama-3.1-70B-Instruct",
-            "Meta-Llama-3.1-405B-Instruct"
+            "Meta-Llama-3.1-405B-Instruct",
+            "Qwen3-235B"
         ]
     }
 }

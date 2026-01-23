@@ -1,0 +1,280 @@
+.pilar-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px;
+  min-height: 80px;
+}
+
+.pilar-person {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--theme-accent, #e74c3c);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+/* Pinya - la base, 8 persones */
+.pilar-pinya {
+  display: flex;
+  gap: 2px;
+}
+
+.pilar-pinya-person {
+  animation: pilar-pinya-cycle 14s ease-in-out infinite;
+}
+
+/* Folre - 5 persones */
+.pilar-folre {
+  display: flex;
+  gap: 2px;
+}
+
+.pilar-folre-person {
+  animation: pilar-folre-cycle 14s ease-in-out infinite;
+}
+
+/* Manilles - 3 persones */
+.pilar-manilles {
+  display: flex;
+  gap: 2px;
+}
+
+.pilar-manilles-person {
+  animation: pilar-manilles-cycle 14s ease-in-out infinite;
+}
+
+/* Tronc - 4 pisos de 1 persona */
+.pilar-tronc {
+  display: flex;
+  justify-content: center;
+}
+
+.pilar-tronc-1 .pilar-person {
+  animation: pilar-tronc1-cycle 14s ease-in-out infinite;
+}
+.pilar-tronc-2 .pilar-person {
+  animation: pilar-tronc2-cycle 14s ease-in-out infinite;
+}
+.pilar-tronc-3 .pilar-person {
+  animation: pilar-tronc3-cycle 14s ease-in-out infinite;
+}
+.pilar-tronc-4 .pilar-person {
+  animation: pilar-tronc4-cycle 14s ease-in-out infinite;
+}
+
+/* Pom - l'enxaneta */
+.pilar-pom {
+  margin-bottom: 2px;
+  min-height: 9px;
+}
+
+.pilar-enxaneta {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  background: var(--theme-accent, #e74c3c);
+  border-radius: 50%;
+  opacity: 0;
+  animation: pilar-enxaneta-cycle 14s ease-in-out infinite;
+}
+
+/*
+  TIMING PILAR (14 segons total - més lent):
+  
+  PUJAR (0-6s):
+  - 0.0s: Pinya apareix (8 persones)
+  - 0.8s: Folre (5 persones)
+  - 1.6s: Manilles (3 persones)
+  - 2.4s: Tronc pis 1
+  - 3.2s: Tronc pis 2
+  - 4.0s: Tronc pis 3
+  - 4.8s: Tronc pis 4
+  - 5.6s: Enxaneta puja!
+  
+  AGUANTAR (6-8s):
+  - Tot el pilar visible
+  
+  BAIXAR (8-14s):
+  - 8.0s: Enxaneta baixa
+  - 8.8s: Tronc pis 4 baixa
+  - 9.6s: Tronc pis 3 baixa
+  - 10.4s: Tronc pis 2 baixa
+  - 11.2s: Tronc pis 1 baixa
+  - 12.0s: Manilles baixa
+  - 12.8s: Folre baixa
+  - 13.6s: Pinya baixa
+*/
+
+/* PINYA: apareix primer (0%), desapareix últim (97-100%) */
+@keyframes pilar-pinya-cycle {
+  0%, 1% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  5% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  93% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  97%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* FOLRE: apareix 6%, desapareix 88-92% */
+@keyframes pilar-folre-cycle {
+  0%, 6% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  88% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  92%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* MANILLES: apareix 11%, desapareix 82-86% */
+@keyframes pilar-manilles-cycle {
+  0%, 11% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  86%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 1: apareix 17%, desapareix 76-80% */
+@keyframes pilar-tronc1-cycle {
+  0%, 17% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  21% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  76% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  80%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 2: apareix 23%, desapareix 70-74% */
+@keyframes pilar-tronc2-cycle {
+  0%, 23% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  27% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  74%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 3: apareix 29%, desapareix 64-68% */
+@keyframes pilar-tronc3-cycle {
+  0%, 29% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  33% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  64% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  68%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* TRONC PIS 4: apareix 34%, desapareix 59-63% */
+@keyframes pilar-tronc4-cycle {
+  0%, 34% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  38% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  59% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  63%, 100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+}
+
+/* ENXANETA: apareix últim (40%), desapareix primer (53-57%) */
+@keyframes pilar-enxaneta-cycle {
+  0%, 40% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.3);
+  }
+  44% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.1);
+  }
+  46% {
+    transform: translateY(0) scale(1);
+  }
+  /* Aleta! */
+  48% {
+    transform: translateY(-2px) scale(1.15);
+  }
+  50% {
+    transform: translateY(0) scale(1);
+  }
+  53% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  57%, 100% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.3);
+  }
+}
+

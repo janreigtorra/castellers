@@ -1,0 +1,143 @@
+.about-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  overflow-y: auto;
+}
+
+.about-page-content {
+  max-width: 700px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 2rem 3rem;
+}
+
+/* Back Link */
+.about-back-link {
+  display: inline-block;
+  color: #666;
+  text-decoration: none;
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+  transition: color 0.2s ease;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.about-back-link:hover {
+  color: #000;
+}
+
+/* Sections */
+.about-section {
+  margin-bottom: 0;
+}
+
+.about-section h1 {
+  margin: 0 0 1.5rem 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #000;
+}
+
+.about-section h2 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #000;
+}
+
+.about-section h3 {
+  margin: 1.5rem 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #000;
+}
+
+.about-section p {
+  margin: 0 0 1rem 0;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #333;
+  text-align: justify;
+}
+
+.about-section p:last-child {
+  margin-bottom: 0;
+}
+
+.about-section strong {
+  color: #000;
+  font-weight: 600;
+}
+
+.about-location {
+  color: #666 !important;
+  font-size: 0.95rem !important;
+  margin-bottom: 1.25rem !important;
+}
+
+/* Images - Side by Side */
+.about-images {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.about-images img {
+  flex: 1;
+  width: 50%;
+  height: 280px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+/* Divider */
+.about-divider {
+  border: none;
+  border-top: 1px solid #e5e5e5;
+  margin: 2rem 0;
+}
+
+/* Footer */
+.about-footer {
+  text-align: center;
+}
+
+.about-footer p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #999;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .about-page-content {
+    padding: 1.5rem 1rem 2rem;
+  }
+
+  .about-section h1 {
+    font-size: 1.6rem;
+  }
+
+  .about-section h2 {
+    font-size: 1.3rem;
+  }
+
+  .about-section p {
+    font-size: 1rem;
+  }
+
+  .about-images {
+    flex-direction: column;
+  }
+
+  .about-images img {
+    width: 100%;
+    height: 240px;
+  }
+}

@@ -22,6 +22,7 @@
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .color-chip {
@@ -30,7 +31,7 @@
   border: 2px solid #e0e0e0;
   border-radius: 50%;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, transform 0.2s ease;
   padding: 0;
 }
 
@@ -51,13 +52,69 @@
   border-width: 3px;
 }
 
+/* More/Less colors button */
+.color-chip-more,
+.color-chip-less {
+  background: #f0f0f0;
+  border: 2px dashed #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #666;
+}
+
+.color-chip-more:hover,
+.color-chip-less:hover {
+  border-color: #666;
+  background: #e8e8e8;
+}
+
+.color-chip-less {
+  font-size: 1.2rem;
+}
+
 @media (max-width: 768px) {
   .color-selector {
-    padding: 1rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .color-selector-content {
+    gap: 0.4rem;
+  }
+
+  .color-selector-label {
+    font-size: 0.75rem;
+  }
+
+  .color-selector-options {
+    gap: 0.35rem;
   }
 
   .color-chip {
-    width: 35px;
-    height: 35px;
+    width: 26px;
+    height: 26px;
+  }
+
+  .color-chip.selected {
+    border-width: 2px;
+  }
+
+  .color-chip-more,
+  .color-chip-less {
+    font-size: 0.6rem;
+    width: 26px;
+    height: 26px;
+  }
+
+  .color-chip-less {
+    font-size: 0.85rem;
+  }
+
+  /* Expanded state on mobile - wrap colors */
+  .color-selector.expanded .color-selector-options {
+    max-width: 240px;
+    justify-content: center;
   }
 }

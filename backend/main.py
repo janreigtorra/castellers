@@ -4,25 +4,28 @@ FastAPI backend for Xiquet Casteller Agent
 Wraps the existing agent.py functionality with REST API endpoints
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import asyncio
 import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 # Import our existing agent and Supabase auth
 from agent import Xiquet
 from auth_service import supabase_auth
 from database_service import chat_db
-from passafaixa.main import generate_question
-from passafaixa.db_pool import init_connection_pool, close_connection_pool
+from joc_del_mocador.main import generate_question
+from joc_del_mocador.db_pool import init_connection_pool, close_connection_pool
 
 # Load environment variables
 load_dotenv()
@@ -57,13 +60,29 @@ async def startup_event():
         print(f"Warning: Failed to initialize connection pool: {e}")
         print("Question generation will use direct connections (slower)")
     
-    # Pre-load RAG model to avoid delay on first request
+    # Pre-warm entity cache to avoid slow first queries
+    # This loads colles, castells, anys, llocs, diades from DB
+    try:
+        from utility_functions import warm_entity_cache
+        await asyncio.to_thread(warm_entity_cache)
+    except Exception as e:
+        print(f"Warning: Failed to warm entity cache: {e}")
+        print("Entity cache will be populated on first query (slower)")
+    
+    # Pre-load RAG models to avoid delay on first request
     try:
         from database_pipeline.rag_index_supabase import preload_rag_model
         preload_rag_model()
     except Exception as e:
         print(f"Warning: Failed to preload RAG model: {e}")
-        print("RAG model will be loaded on first request (slower)")
+    
+    # Pre-load multilingual model for castellers_info_chunks
+    try:
+        from database_pipeline.load_castellers_info_chunks import preload_multilingual_model
+        preload_multilingual_model()
+    except Exception as e:
+        print(f"Warning: Failed to preload multilingual model: {e}")
+        print("Multilingual model will be loaded on first RAG request")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -74,9 +93,18 @@ async def shutdown_event():
         print(f"Warning: Error closing connection pool: {e}")
 
 # Pydantic models for API requests and responses
+class PreviousContext(BaseModel):
+    """Context from the previous message for follow-up questions"""
+    question: Optional[str] = None
+    response: Optional[str] = None
+    route: Optional[str] = None
+    sql_query_type: Optional[str] = None
+    entities: Optional[dict] = None  # {colles: [], castells: [], anys: [], llocs: [], diades: []}
+
 class ChatMessage(BaseModel):
     content: str
     session_id: Optional[str] = None
+    previous_context: Optional[PreviousContext] = None  # Context from frontend for follow-up questions
 
 class TableData(BaseModel):
     title: str
@@ -93,6 +121,8 @@ class IdentifiedEntities(BaseModel):
     anys: List[int] = []
     llocs: List[str] = []
     diades: List[str] = []
+    gamma: Optional[str] = None  # Gamma de castells (e.g., "castells de 6", "gamma extra")
+    sql_query_type: Optional[str] = None  # Tipus de consulta SQL (millor_castell, etc.)
 
 class ChatResponse(BaseModel):
     id: str
@@ -213,9 +243,50 @@ async def chat_with_xiquet(
         print(f"[TIMING] Question: {message.content[:100]}...")
         print(f"{'='*60}\n")
         
-        # Initialize Xiquet agent
+        # Get previous message context if session_id is provided
+        previous_question = None
+        previous_response = None
+        previous_route = None
+        previous_sql_query_type = None
+        previous_entities = None
+        if message.session_id:
+            try:
+                session_messages = chat_db.get_session_messages(
+                    message.session_id, 
+                    current_user["id"],
+                    limit=10  # Get last 10 messages
+                )
+                # Get the last message (most recent) as context
+                if session_messages and len(session_messages) > 0:
+                    last_msg = session_messages[-1]  # Most recent message
+                    previous_question = last_msg.get("content")
+                    previous_response = last_msg.get("response")
+                    previous_route = last_msg.get("route_used")
+                    
+                    # Extract sql_query_type and entities from identified_entities
+                    prev_entities = last_msg.get("identified_entities") or {}
+                    previous_sql_query_type = prev_entities.get("sql_query_type")
+                    previous_entities = {
+                        "colles": prev_entities.get("colles", []),
+                        "castells": prev_entities.get("castells", []),
+                        "anys": prev_entities.get("anys", []),
+                        "llocs": prev_entities.get("llocs", []),
+                        "diades": prev_entities.get("diades", []),
+                    }
+                    
+                    print(f"[CONTEXT] Previous: q='{previous_question[:50] if previous_question else 'None'}...', route={previous_route}, sql_type={previous_sql_query_type}")
+            except Exception as e:
+                print(f"[WARNING] Could not get previous context: {e}")
+        
+        # Initialize Xiquet agent with previous context
         init_start = datetime.now()
-        xiquet = Xiquet()
+        xiquet = Xiquet(
+            previous_question=previous_question,
+            previous_response=previous_response,
+            previous_route=previous_route,
+            previous_sql_query_type=previous_sql_query_type,
+            previous_entities=previous_entities
+        )
         init_time = (datetime.now() - init_start).total_seconds() * 1000
         print(f"[TIMING] Agent initialization: {init_time:.2f}ms")
         
@@ -248,21 +319,6 @@ async def chat_with_xiquet(
         session_id = message.session_id
         message_id = None
         
-        if session_id:
-            # Store message in database only if session exists
-            message_id = chat_db.create_message(
-                session_id=session_id,
-                user_id=current_user["id"],
-                content=message.content,
-                response=response_text,
-                route_used=route_used,
-                response_time_ms=response_time
-            )
-        
-        # Create response - use a temporary ID if no session_id
-        if not message_id:
-            message_id = f"temp_{uuid.uuid4()}"
-        
         # Get table data if available (for SQL queries)
         table_data = None
         if hasattr(xiquet, 'table_data') and xiquet.table_data:
@@ -274,26 +330,66 @@ async def chat_with_xiquet(
             castells_list = []
             if xiquet.castells:
                 for c in xiquet.castells:
-                    if hasattr(c, 'castell_code'):
+                    if isinstance(c, str):
+                        castells_list.append(CastellEntity(castell_code=c))
+                    elif isinstance(c, dict) and 'castell_code' in c:
+                        castells_list.append(CastellEntity(**c))
+                    elif hasattr(c, 'castell_code'):
                         castells_list.append(CastellEntity(
                             castell_code=c.castell_code,
-                            status=c.status if hasattr(c, 'status') else None
+                            status=getattr(c, 'status', None)
                         ))
             
+            colles_list = []
+            if xiquet.colles_castelleres:
+                for col in xiquet.colles_castelleres:
+                    if isinstance(col, str):
+                        colles_list.append(col)
+                    elif isinstance(col, dict) and 'name' in col:
+                        colles_list.append(col['name'])
+                    else:
+                        colles_list.append(str(col))
+            
+            # Get sql_query_type from response
+            sql_query_type = getattr(xiquet.response, 'sql_query_type', None)
+            
             identified_entities = IdentifiedEntities(
-                colles=xiquet.colles_castelleres or [],
                 castells=castells_list,
-                anys=xiquet.anys or [],
-                llocs=xiquet.llocs or [],
-                diades=xiquet.diades or []
+                colles=colles_list,
+                anys=xiquet.anys if xiquet.anys else [],
+                llocs=xiquet.llocs if xiquet.llocs else [],
+                diades=xiquet.diades if xiquet.diades else [],
+                gamma=xiquet.gamma,
+                sql_query_type=sql_query_type
             )
+        
+        if session_id:
+            # Store message in database only if session exists
+            # Convert table_data and identified_entities to dicts for JSON storage
+            table_data_dict = table_data.dict() if table_data else None
+            identified_entities_dict = identified_entities.dict() if identified_entities else None
+            
+            message_id = chat_db.create_message(
+                session_id=session_id,
+                user_id=current_user["id"],
+                content=message.content,
+                response=response_text,
+                route_used=route_used,
+                response_time_ms=response_time,
+                table_data=table_data_dict,
+                identified_entities=identified_entities_dict
+            )
+        
+        # Create response - use a temporary ID if no session_id
+        if not message_id:
+            message_id = f"temp_{uuid.uuid4()}"
         
         chat_response = ChatResponse(
             id=message_id,
             content=message.content,
             response=response_text,
             route_used=route_used,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             response_time_ms=response_time,
             session_id=session_id,
             table_data=table_data,
@@ -327,7 +423,7 @@ async def chat_with_xiquet(
             content=content,
             response=friendly_message,
             route_used='error',
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             response_time_ms=0,
             session_id=session_id
         )
@@ -353,8 +449,48 @@ async def get_chat_route(
         
         print(f"\n[ROUTE] Getting route for: {message.content[:100]}...")
         
-        # Initialize Xiquet agent and run decide_route
-        xiquet = Xiquet()
+        # Get previous message context if session_id is provided
+        previous_question = None
+        previous_response = None
+        previous_route = None
+        previous_sql_query_type = None
+        previous_entities = None
+        if message.session_id:
+            try:
+                session_messages = chat_db.get_session_messages(
+                    message.session_id, 
+                    current_user["id"],
+                    limit=10
+                )
+                if session_messages and len(session_messages) > 0:
+                    last_msg = session_messages[-1]
+                    previous_question = last_msg.get("content")
+                    previous_response = last_msg.get("response")
+                    previous_route = last_msg.get("route_used")
+                    
+                    # Extract sql_query_type and entities from identified_entities
+                    prev_entities = last_msg.get("identified_entities") or {}
+                    previous_sql_query_type = prev_entities.get("sql_query_type")
+                    previous_entities = {
+                        "colles": prev_entities.get("colles", []),
+                        "castells": prev_entities.get("castells", []),
+                        "anys": prev_entities.get("anys", []),
+                        "llocs": prev_entities.get("llocs", []),
+                        "diades": prev_entities.get("diades", []),
+                    }
+                    
+                    print(f"[ROUTE CONTEXT] Previous: q='{previous_question[:50] if previous_question else 'None'}...', route={previous_route}, sql_type={previous_sql_query_type}")
+            except Exception as e:
+                print(f"[WARNING] Could not get previous context for route: {e}")
+        
+        # Initialize Xiquet agent with previous context and run decide_route
+        xiquet = Xiquet(
+            previous_question=previous_question,
+            previous_response=previous_response,
+            previous_route=previous_route,
+            previous_sql_query_type=previous_sql_query_type,
+            previous_entities=previous_entities
+        )
         route_response = await asyncio.to_thread(xiquet.decide_route, message.content)
         
         route_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -375,7 +511,8 @@ async def get_chat_route(
             castells=castells_list,
             anys=xiquet.anys or [],
             llocs=xiquet.llocs or [],
-            diades=xiquet.diades or []
+            diades=xiquet.diades or [],
+            gamma=xiquet.gamma
         )
         
         route_used = route_response.tools if route_response else 'unknown'
@@ -389,6 +526,350 @@ async def get_chat_route(
         import traceback
         print(f"ERROR in route endpoint: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# PROGRESSIVE RESPONSE PATTERN - Two-phase chat with polling
+# ============================================================
+
+class StartChatResponse(BaseModel):
+    message_id: str
+    status: str
+
+class MessageStatusResponse(BaseModel):
+    message_id: str
+    status: str  # pending, entities_ready, complete, error
+    route_used: Optional[str] = None
+    identified_entities: Optional[IdentifiedEntities] = None
+    response: Optional[str] = None
+    table_data: Optional[TableData] = None
+    response_time_ms: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+def _process_message_background(
+    message_id: str, 
+    question: str, 
+    user_id: str, 
+    session_id: Optional[str],
+    frontend_context: Optional[dict] = None  # Context passed from frontend
+):
+    """
+    Background task to process a message in two phases:
+    1. Run decide_route() -> save entities to DB (fast, ~500-1000ms)
+    2. Run handle_sql/rag() -> save response to DB (slow, ~2-5s)
+    
+    This runs in a separate thread via BackgroundTasks.
+    
+    Args:
+        frontend_context: Optional dict with previous message context from frontend:
+            {question, response, route, sql_query_type, entities}
+    """
+    import traceback
+    from datetime import datetime
+    
+    start_time = datetime.now()
+    xiquet = None
+    
+    try:
+        print(f"\n[BACKGROUND] Starting processing for message_id: {message_id}")
+        print(f"[BACKGROUND] Question: {question[:100]}...")
+        
+        # Get previous message context - prefer frontend_context, fallback to DB
+        previous_question = None
+        previous_response = None
+        previous_route = None
+        previous_sql_query_type = None
+        previous_entities = None
+        
+        # OPTION 1: Use context passed from frontend (for unsaved chats)
+        if frontend_context:
+            previous_question = frontend_context.get("question")
+            previous_response = frontend_context.get("response")
+            previous_route = frontend_context.get("route")
+            previous_sql_query_type = frontend_context.get("sql_query_type")
+            previous_entities = frontend_context.get("entities") or {}
+            print(f"[BACKGROUND CONTEXT] From frontend: q='{previous_question[:50] if previous_question else 'None'}...', route={previous_route}, sql_type={previous_sql_query_type}")
+        
+        # OPTION 2: Get from database (for saved sessions)
+        elif session_id:
+            try:
+                session_messages = chat_db.get_session_messages(
+                    session_id, 
+                    user_id,
+                    limit=10
+                )
+                if session_messages and len(session_messages) > 0:
+                    last_msg = session_messages[-1]
+                    previous_question = last_msg.get("content")
+                    previous_response = last_msg.get("response")
+                    previous_route = last_msg.get("route_used")
+                    
+                    # Extract sql_query_type and entities from identified_entities
+                    prev_entities = last_msg.get("identified_entities") or {}
+                    previous_sql_query_type = prev_entities.get("sql_query_type")
+                    previous_entities = {
+                        "colles": prev_entities.get("colles", []),
+                        "castells": prev_entities.get("castells", []),
+                        "anys": prev_entities.get("anys", []),
+                        "llocs": prev_entities.get("llocs", []),
+                        "diades": prev_entities.get("diades", []),
+                    }
+                    
+                    print(f"[BACKGROUND CONTEXT] From DB: q='{previous_question[:50] if previous_question else 'None'}...', route={previous_route}, sql_type={previous_sql_query_type}")
+                else:
+                    print(f"[BACKGROUND CONTEXT] No previous messages found in session {session_id}")
+            except Exception as e:
+                print(f"[WARNING] Could not get previous context from DB: {e}")
+        else:
+            print(f"[BACKGROUND CONTEXT] No context available (no frontend_context and no session_id)")
+        
+        # Initialize Xiquet agent with previous context
+        xiquet = Xiquet(
+            previous_question=previous_question,
+            previous_response=previous_response,
+            previous_route=previous_route,
+            previous_sql_query_type=previous_sql_query_type,
+            previous_entities=previous_entities
+        )
+        
+        # ============================================================
+        # PHASE 1: Route decision (FAST) - Save entities immediately
+        # ============================================================
+        route_start = datetime.now()
+        route_response = xiquet.decide_route(question)
+        route_time = (datetime.now() - route_start).total_seconds() * 1000
+        print(f"[BACKGROUND] Phase 1 - decide_route(): {route_time:.2f}ms")
+        
+        # Build entities dict
+        castells_list = []
+        if xiquet.castells:
+            for c in xiquet.castells:
+                if hasattr(c, 'castell_code'):
+                    castells_list.append({
+                        "castell_code": c.castell_code,
+                        "status": c.status if hasattr(c, 'status') else None
+                    })
+        
+        # Get sql_query_type from route_response
+        sql_query_type = getattr(route_response, 'sql_query_type', None) if route_response else None
+        
+        entities_dict = {
+            "colles": xiquet.colles_castelleres or [],
+            "castells": castells_list,
+            "anys": xiquet.anys or [],
+            "llocs": xiquet.llocs or [],
+            "diades": xiquet.diades or [],
+            "gamma": xiquet.gamma,
+            "sql_query_type": sql_query_type
+        }
+        
+        route_used = route_response.tools if route_response else 'unknown'
+        
+        # SAVE ENTITIES TO DATABASE - Frontend can now poll and see chips!
+        chat_db.update_pending_entities(message_id, route_used, entities_dict)
+        print(f"[BACKGROUND] Entities saved to DB - status='entities_ready'")
+        
+        # ============================================================
+        # PHASE 2: Generate response (SLOW) - Save when complete
+        # ============================================================
+        response_start = datetime.now()
+        
+        if route_response.tools == "direct":
+            response_text = xiquet.handle_direct()
+        elif route_response.tools == "rag":
+            response_text = xiquet.handle_rag()
+        elif route_response.tools == "sql":
+            response_text = xiquet.handle_sql()
+        elif route_response.tools == "hybrid":
+            response_text = xiquet.handle_hybrid()
+        else:
+            response_text = "No estic segur de com respondre això, però ho estic intentant!"
+        
+        response_time = (datetime.now() - response_start).total_seconds() * 1000
+        total_time = int((datetime.now() - start_time).total_seconds() * 1000)
+        print(f"[BACKGROUND] Phase 2 - handle_{route_response.tools}(): {response_time:.2f}ms")
+        print(f"[BACKGROUND] Total time: {total_time}ms")
+        
+        # Get table data if available
+        table_data_dict = None
+        if hasattr(xiquet, 'table_data') and xiquet.table_data:
+            table_data_dict = xiquet.table_data
+        
+        # SAVE RESPONSE TO DATABASE - Frontend can now poll and see full response!
+        chat_db.update_pending_complete(message_id, response_text, table_data_dict, total_time)
+        print(f"[BACKGROUND] Response saved to DB - status='complete'")
+        
+        # If session_id is provided, also save to permanent chat_messages table
+        print(f"[BACKGROUND] Session ID for history: {session_id or 'NONE'}")
+        if session_id:
+            saved_id = chat_db.move_pending_to_chat_messages(message_id, user_id)
+            if saved_id:
+                print(f"[BACKGROUND] Message moved to chat_messages: {saved_id}")
+            else:
+                print(f"[BACKGROUND] WARNING: Failed to move message to chat_messages!")
+        else:
+            print(f"[BACKGROUND] No session_id - message will NOT be saved to chat history")
+        
+    except Exception as e:
+        error_msg = _get_friendly_error_message(e)
+        print(f"[BACKGROUND] ERROR: {str(e)}")
+        print(f"[BACKGROUND] Traceback: {traceback.format_exc()}")
+        
+        # Save error status to database
+        try:
+            chat_db.update_pending_error(message_id, error_msg)
+        except Exception as db_error:
+            print(f"[BACKGROUND] Failed to save error to DB: {db_error}")
+
+
+@app.post("/api/chat/start", response_model=StartChatResponse)
+async def start_chat(
+    message: ChatMessage,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Start processing a chat message in the background.
+    Returns immediately with a message_id for polling.
+    
+    Frontend should:
+    1. Call this endpoint to start processing
+    2. Poll /api/chat/status/{message_id} every 300-500ms
+    3. Show entity chips when status='entities_ready'
+    4. Show response when status='complete'
+    """
+    try:
+        # Create pending message record in database
+        message_id = chat_db.create_pending_message(
+            user_id=current_user["id"],
+            content=message.content,
+            session_id=message.session_id
+        )
+        
+        print(f"\n[START] Created pending message: {message_id}")
+        print(f"[START] Question: {message.content[:100]}...")
+        print(f"[START] Session ID: {message.session_id or 'NONE'}")
+        print(f"[START] Has frontend context: {message.previous_context is not None}")
+        
+        # Convert PreviousContext to dict for background task
+        frontend_context = None
+        if message.previous_context:
+            frontend_context = {
+                "question": message.previous_context.question,
+                "response": message.previous_context.response,
+                "route": message.previous_context.route,
+                "sql_query_type": message.previous_context.sql_query_type,
+                "entities": message.previous_context.entities
+            }
+        
+        # Start background processing
+        background_tasks.add_task(
+            _process_message_background,
+            message_id,
+            message.content,
+            current_user["id"],
+            message.session_id,
+            frontend_context
+        )
+        
+        # Return immediately with message_id
+        return StartChatResponse(
+            message_id=message_id,
+            status="pending"
+        )
+        
+    except Exception as e:
+        import traceback
+        print(f"ERROR in start_chat: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chat/status/{message_id}", response_model=MessageStatusResponse)
+async def get_message_status(
+    message_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Poll for message status during processing.
+    
+    Returns:
+    - status='pending': Still waiting for decide_route to complete
+    - status='entities_ready': Entities available, response still processing
+    - status='complete': Full response available
+    - status='error': Processing failed
+    """
+    try:
+        # Get pending message from database
+        pending = chat_db.get_pending_message(message_id, current_user["id"])
+        
+        if not pending:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Build response
+        identified_entities = None
+        if pending.get("identified_entities"):
+            entities = pending["identified_entities"]
+            castells_list = []
+            if entities.get("castells"):
+                for c in entities["castells"]:
+                    if isinstance(c, dict) and "castell_code" in c:
+                        castells_list.append(CastellEntity(**c))
+            
+            identified_entities = IdentifiedEntities(
+                colles=entities.get("colles", []),
+                castells=castells_list,
+                anys=entities.get("anys", []),
+                llocs=entities.get("llocs", []),
+                diades=entities.get("diades", []),
+                gamma=entities.get("gamma"),
+                sql_query_type=entities.get("sql_query_type")  # Include sql_query_type!
+            )
+        
+        table_data = None
+        if pending.get("table_data"):
+            table_data = TableData(**pending["table_data"])
+        
+        return MessageStatusResponse(
+            message_id=message_id,
+            status=pending["status"],
+            route_used=pending.get("route_used"),
+            identified_entities=identified_entities,
+            response=pending.get("response"),
+            table_data=table_data,
+            response_time_ms=pending.get("response_time_ms"),
+            error_message=pending.get("error_message")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"ERROR in get_message_status: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/chat/pending/{message_id}")
+async def delete_pending_message(
+    message_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a pending message (cleanup after frontend receives complete response).
+    Optional - pending messages auto-cleanup after 5 minutes.
+    """
+    try:
+        success = chat_db.delete_pending_message(message_id, current_user["id"])
+        if success:
+            return {"message": "Pending message deleted"}
+        else:
+            raise HTTPException(status_code=404, detail="Message not found")
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chat/history")
@@ -427,7 +908,7 @@ async def create_chat_session(
     """
     try:
         session_id = chat_db.create_session(current_user["id"], title)
-        return {"id": session_id, "title": title, "created_at": datetime.now().isoformat()}
+        return {"id": session_id, "title": title, "created_at": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
 
@@ -455,6 +936,8 @@ async def save_chat_session(
             response = msg.get("response", "")  # Assistant's response
             route_used = msg.get("route_used", "") or "unknown"
             response_time_ms = msg.get("response_time_ms", 0)
+            table_data = msg.get("table_data")  # Table data from SQL queries
+            identified_entities = msg.get("identified_entities")  # Entities identified by the agent
             
             # Only save if we have both content and response (complete message pair)
             if content and response:
@@ -464,10 +947,12 @@ async def save_chat_session(
                     content=content,
                     response=response,
                     route_used=route_used,
-                    response_time_ms=response_time_ms
+                    response_time_ms=response_time_ms,
+                    table_data=table_data,
+                    identified_entities=identified_entities
                 )
         
-        return {"id": session_id, "title": request.title, "created_at": datetime.now().isoformat()}
+        return {"id": session_id, "title": request.title, "created_at": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
@@ -544,7 +1029,7 @@ async def get_user_profile(
                 id=current_user["id"],
                 username=current_user.get("username"),
                 email=current_user.get("email"),
-                created_at=datetime.now()
+                created_at=datetime.now(timezone.utc)
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting user profile: {str(e)}")
@@ -621,7 +1106,69 @@ async def logout(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         return {"message": f"Logout completed with warning: {str(e)}"}
 
-# PassaFaixa game endpoints
+# Contact form endpoint
+class ContactMessage(BaseModel):
+    name: str
+    email: str
+    message: str
+
+@app.post("/api/contact")
+async def send_contact_message(
+    contact: ContactMessage,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Send a contact form message via email.
+    """
+    try:
+        # Email configuration
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        sender_email = os.getenv("SMTP_EMAIL", "xiquet.cat.ai@gmail.com")
+        sender_password = os.getenv("SMTP_PASSWORD")
+        recipient_email = "xiquet.cat.ai@gmail.com"
+        
+        if not sender_password:
+            # If no SMTP password configured, just log the message
+            print(f"[Contact Form] From: {contact.name} <{contact.email}>")
+            print(f"[Contact Form] Message: {contact.message}")
+            return {"message": "Missatge rebut correctament (mode desenvolupament)"}
+        
+        # Create email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = f"[Xiquet AI Contact] Missatge de {contact.name}"
+        
+        # Email body
+        body = f"""
+Nou missatge del formulari de contacte de Xiquet AI:
+
+Nom: {contact.name}
+Correu: {contact.email}
+Usuari connectat: {current_user.get('username', 'Desconegut')} ({current_user.get('email', 'N/A')})
+
+Missatge:
+{contact.message}
+
+---
+Enviat des de xiquet.cat.ai
+        """
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        
+        # Send email
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        
+        return {"message": "Missatge enviat correctament"}
+        
+    except Exception as e:
+        print(f"Error sending contact email: {e}")
+        raise HTTPException(status_code=500, detail="Error enviant el missatge. Si us plau, torna-ho a intentar.")
+
+# El Joc del Mocador game endpoints
 async def generate_single_question_with_retry(selected_colles: List[str] = None, selected_years: List[int] = None, max_retries: int = 10):
     """
     Generate a single question with retry logic.
@@ -644,7 +1191,7 @@ async def generate_single_question_with_retry(selected_colles: List[str] = None,
                 return None
     return None
 
-@app.get("/api/passafaixa/questions")
+@app.get("/api/joc-del-mocador/questions")
 async def get_game_questions(
     num_questions: int = 10,
     colles: Optional[str] = None,
@@ -652,7 +1199,7 @@ async def get_game_questions(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Generate questions for the PassaFaixa trivia game in parallel.
+    Generate questions for El Joc del Mocador trivia game in parallel.
     Returns a list of questions with shuffled answers.
     
     Uses parallel generation with batching to optimize performance while
