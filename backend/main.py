@@ -40,7 +40,12 @@ app = FastAPI(
 # Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # React dev server
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://xiquet.vercel.app",         # Vercel production
+        "https://xiquet-frontend.vercel.app", # Vercel alternative
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
