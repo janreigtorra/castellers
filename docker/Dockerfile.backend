@@ -1,29 +1,22 @@
-# Backend Dockerfile
+# Backend Dockerfile - Lightweight (no ML models, uses OpenAI API for embeddings)
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-# RUN apt-get update && apt-get install -y \
-#     gcc \
-#     g++ \
-#     && rm -rf /var/lib/apt/lists/*
-# Install system dependencies + network debugging tools
+# Install system dependencies (minimal for production)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    iputils-ping \
-    dnsutils \
-    net-tools \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
+# Note: No PyTorch/sentence-transformers needed - we use OpenAI embeddings API
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
+# Copy backend code (respects .dockerignore)
 COPY . .
 
 # Expose port

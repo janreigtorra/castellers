@@ -2,7 +2,9 @@
 import axios from 'axios'
 import { supabase } from './supabaseClient'
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'
+// Ensure API_BASE_URL doesn't have trailing slash to avoid double slashes in URLs
+const rawApiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000'
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl
 
 // Create axios instance
 const api = axios.create({
@@ -131,10 +133,15 @@ export const apiService = {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token
     
+    // Build request body, omitting null/undefined values
     const body = { 
-      content, 
-      session_id: sessionId,
-      previous_context: previousContext
+      content
+    }
+    if (sessionId) {
+      body.session_id = sessionId
+    }
+    if (previousContext) {
+      body.previous_context = previousContext
     }
     
     const response = await fetch(`${API_BASE_URL}/api/chat/start`, {

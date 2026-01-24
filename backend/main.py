@@ -37,15 +37,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# CORS origins - configurable via environment variable
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+DEFAULT_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "https://xiquet.vercel.app",
+    "https://xiquet-frontend.vercel.app",
+    "https://castellers.vercel.app",
+    "https://castellers-t9nc.vercel.app",  # Production Vercel deployment
+]
+# Merge default + custom origins
+ALL_ORIGINS = list(set(DEFAULT_ORIGINS + [o.strip() for o in CORS_ORIGINS if o.strip()]))
+
 # Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://xiquet.vercel.app",         # Vercel production
-        "https://xiquet-frontend.vercel.app", # Vercel alternative
-    ],
+    allow_origins=ALL_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -198,6 +208,20 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now(),
         "agent_status": "ready"
+    }
+
+@app.get("/api/chat/routes")
+async def list_chat_routes():
+    """Debug endpoint to verify chat routes are registered"""
+    return {
+        "routes": [
+            "POST /api/chat",
+            "POST /api/chat/route",
+            "POST /api/chat/start",
+            "GET /api/chat/status/{message_id}",
+            "GET /api/chat/history",
+            "DELETE /api/chat/pending/{message_id}"
+        ]
     }
 
 def _get_friendly_error_message(error: Exception) -> str:
