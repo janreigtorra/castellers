@@ -22,6 +22,7 @@ function App() {
   const [unsavedMessagesCount, setUnsavedMessagesCount] = useState(0);
   const [newConversationKey, setNewConversationKey] = useState(0); // Key to force new conversation
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false); // Track if chat input is focused (for mobile keyboard)
   const saveChatRef = useRef(null);
   
   // Derive currentPage from URL
@@ -236,6 +237,7 @@ function App() {
                   onSaveClick={saveChatRef}
                   onMessagesChange={setUnsavedMessagesCount}
                   onCollaIdentified={handleColorChange}
+                  onInputFocusChange={setIsInputFocused}
                 />
               </main>
             </div>
@@ -260,6 +262,7 @@ function App() {
           <ColorSelector 
             selectedColor={selectedColor}
             onColorChange={handleColorChange}
+            hideOnMobile={isInputFocused}
           />
           {showProfileModal && (
             <ProfileModal

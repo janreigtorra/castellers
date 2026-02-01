@@ -2646,7 +2646,7 @@
   }
 
   .chat-messages {
-    padding: 0.75rem;
+    padding: 0.75rem 1rem;
     padding-bottom: 0.75rem;
   }
 
@@ -2960,7 +2960,7 @@
   }
 
   .chat-messages {
-    padding: 0.5rem;
+    padding: 0.5rem 0.75rem;
   }
 
   .message {
@@ -2970,7 +2970,7 @@
   }
 
   .chat-input {
-    padding: 0.5rem;
+    padding: 0.5rem 1rem;
   }
 
   .input-group input {

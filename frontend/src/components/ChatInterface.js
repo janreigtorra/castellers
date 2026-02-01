@@ -255,7 +255,7 @@ const hasEntities = (entities) => {
   );
 };
 
-const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified }) => {
+const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified, onInputFocusChange }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -272,6 +272,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const tableInstanceMapRef = useRef(new Map()); // Map to track table instances and their IDs
   const [thinkingDots, setThinkingDots] = useState('');
   const isMobile = useIsMobile();
+  const inputRef = useRef(null);
 
   // Helper functions for localStorage persistence
   const getUnsavedChatKey = useCallback(() => {
@@ -1229,9 +1230,20 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       <div className="chat-input">
         <form onSubmit={sendMessage} className="input-group">
           <input
+            ref={inputRef}
             type="text"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
+            onFocus={() => {
+              if (onInputFocusChange && isMobile) {
+                onInputFocusChange(true);
+              }
+            }}
+            onBlur={() => {
+              if (onInputFocusChange && isMobile) {
+                onInputFocusChange(false);
+              }
+            }}
             placeholder="Fes una pregunta sobre castells..."
             disabled={isLoading}
           />

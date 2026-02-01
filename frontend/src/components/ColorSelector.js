@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ColorSelector.css';
 
-const ColorSelector = ({ selectedColor, onColorChange }) => {
+const ColorSelector = ({ selectedColor, onColorChange, hideOnMobile = false }) => {
   const [showAllColors, setShowAllColors] = useState(false);
   const [isMobile, setIsMobile] = useState(() => {
     return typeof window !== 'undefined' && window.innerWidth <= 768;
@@ -42,6 +42,11 @@ const ColorSelector = ({ selectedColor, onColorChange }) => {
   // On mobile, show first 6 colors unless expanded
   const visibleColors = isMobile && !showAllColors ? colors.slice(0, 6) : colors;
   const hasMoreColors = isMobile && !showAllColors && colors.length > 6;
+
+  // Hide on mobile when keyboard is open
+  if (isMobile && hideOnMobile) {
+    return null;
+  }
 
   return (
     <div className={`color-selector ${showAllColors ? 'expanded' : ''}`}>
