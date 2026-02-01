@@ -5,6 +5,7 @@ import { apiService } from '../apiService';
 import { COLOR_THEMES } from '../colorTheme';
 import WelcomeMessage from './WelcomeMessage';
 import CastellLoader from './CastellLoader';
+import PilarLoader from './PilarLoader';
 
 // Hook to detect mobile screen
 const useIsMobile = () => {
@@ -757,7 +758,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             <thead>
               <tr>
                 {columns.map((col, idx) => (
-                  <th key={idx}>{col}</th>
+                  <th key={idx} title={col}>{col}</th>
                 ))}
               </tr>
             </thead>
@@ -952,6 +953,14 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   // Markdown components configuration
   const markdownComponents = {
     table: CollapsibleTable,
+    th: ({ children, ...props }) => {
+      // Add title attribute for hover tooltip on mobile
+      const textContent = typeof children === 'string' ? children : 
+        (React.Children.toArray(children).map(child => 
+          typeof child === 'string' ? child : child?.props?.children || ''
+        ).join(''));
+      return <th {...props} title={textContent} data-title={textContent}>{children}</th>;
+    },
   };
   useEffect(() => {
     if (!isLoading) {
@@ -1203,14 +1212,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         {isLoading && isMobile && (
           <div className="message-wrapper assistant mobile-loading">
             <div className="assistant-response">
-              <div className="mobile-thinking-indicator">
-                <img 
-                  src={`/xiquet_images/think_${thinkingFrame}.png`}
-                  alt="Pensant" 
-                  className="mobile-thinking-icon"
-                />
-                <CastellLoader isMobile={true} />
-              </div>
+              <PilarLoader />
             </div>
           </div>
         )}

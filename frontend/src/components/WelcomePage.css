@@ -159,25 +159,23 @@
   }
 }
 
-/* Mobile styles */
+/* Hide scrolling banners on mobile - they're barely visible */
 @media (max-width: 768px) {
   .welcome-page > .scrolling-banner {
-    padding: 0.5rem 0;
+    display: none;
   }
 
   .welcome-content {
-    padding: 1rem 1rem;
-    flex: 0;
+    padding: 1.5rem 1rem;
   }
 
   .welcome-xiquet-icon {
-    width: 200px;
-    height: 200px;
+    width: 150px;
+    height: 150px;
   }
 
   .welcome-text-content {
-    padding: 1rem;
-    text-align: center;
+    padding: 1.5rem;
   }
 
   .welcome-title {
@@ -195,10 +193,6 @@
 
   .welcome-cta {
     font-size: 1rem;
-  }
-
-  .welcome-btn-container {
-    justify-content: center;
   }
 
   .welcome-login-btn {

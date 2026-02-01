@@ -241,7 +241,7 @@ class Xiquet:
         question_lower = question.lower().strip()
         
         # Detect follow-up patterns: short question + starts with "I els...", "I de...", etc.
-        follow_up_patterns = ["i els ", "i de ", "i dels ", "i la ", "i les ", "i el ", "i al ", "i a "]
+        follow_up_patterns = ["i els ", "i de ", "i dels ", "i la ", "i les ", "i el ", "i al ", "i a ","i l'"]
         is_short_question = len(question) < 50
         one_entity_at_least = response.colla or response.castells or response.anys or response.llocs or response.diades
         has_follow_up_start = any(question_lower.startswith(p) for p in follow_up_patterns)

@@ -1300,7 +1300,7 @@ def get_sql_summary_prompt(
         truncated_q = previous_question[:150]
         if len(previous_question) > 150:
             truncated_q += "..."
-        previous_context_str = f"""CONTEXT ANTERIOR de l'últim missatge de la conversa:
+        previous_context_str = f"""CONTEXT ANTERIOR de l'últim missatge de la conversa (pot ser rellevant a l'hora d'entendre la pregunta actual):
 - Pregunta: "{truncated_q}"
 - Resposta: "{truncated_resp}"
 

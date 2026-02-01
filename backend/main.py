@@ -671,6 +671,9 @@ def _process_message_background(
         route_time = (datetime.now() - route_start).total_seconds() * 1000
         print(f"[BACKGROUND] Phase 1 - decide_route(): {route_time:.2f}ms")
         
+        # Store route_response in xiquet so handle methods can access it
+        xiquet.response = route_response
+        
         # Build entities dict
         castells_list = []
         if xiquet.castells:

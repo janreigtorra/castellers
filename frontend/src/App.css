@@ -32,7 +32,10 @@
 .header {
   background: var(--theme-primary);
   color: white;
-  padding: 1rem 2rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-bottom: 1rem;
+  padding-left: calc(2rem + env(safe-area-inset-left));
+  padding-right: calc(2rem + env(safe-area-inset-right));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2094,7 +2097,7 @@
   color: white;
   border: none;
   padding: 0.5rem;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
   font-size: 1.2rem;
   font-weight: 600;
@@ -2134,7 +2137,7 @@
   color: white;
   border: none;
   padding: 0.5rem;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
   width: 32px;
   height: 32px;
@@ -2365,7 +2368,10 @@
 @media (max-width: 768px) {
   /* Header mobile styles */
   .header {
-    padding: 0.75rem 1rem;
+    padding-top: calc(0.75rem + env(safe-area-inset-top));
+    padding-bottom: 0.75rem;
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
     flex-wrap: nowrap;
   }
 
@@ -2738,10 +2744,61 @@
     font-size: 0.62rem;
   }
 
+  /* Truncate table headers on mobile to prevent overlap */
+  .data-table th {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    position: relative;
+  }
+
   .assistant-content th,
   .assistant-content td {
     padding: 0.5rem 0.35rem;
     font-size: 0.75rem;
+  }
+
+  /* Truncate markdown table headers on mobile to prevent overlap */
+  .assistant-content th {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    position: relative;
+    cursor: help;
+  }
+
+  /* Tooltip for truncated headers on mobile */
+  .assistant-content th:hover::after {
+    content: attr(data-title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    z-index: 1000;
+    margin-bottom: 5px;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .assistant-content th:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #333;
+    z-index: 1000;
+    margin-bottom: -5px;
+    pointer-events: none;
   }
 
   /* Entity chips mobile */
@@ -2842,7 +2899,10 @@
 /* Extra small screens (phones) */
 @media (max-width: 480px) {
   .header {
-    padding: 0.5rem;
+    padding-top: calc(0.5rem + env(safe-area-inset-top));
+    padding-bottom: 0.5rem;
+    padding-left: calc(0.5rem + env(safe-area-inset-left));
+    padding-right: calc(0.5rem + env(safe-area-inset-right));
   }
 
   .header-logo img {
@@ -2915,10 +2975,20 @@
     min-width: 30px;
   }
 
+  /* Even more aggressive truncation on extra small screens */
+  .data-table th {
+    max-width: 60px;
+  }
+
   .assistant-content th,
   .assistant-content td {
     padding: 0.35rem 0.25rem;
     font-size: 0.65rem;
+  }
+
+  /* Even more aggressive truncation for markdown tables on extra small screens */
+  .assistant-content th {
+    max-width: 70px;
   }
 
   /* Profile components extra small */
