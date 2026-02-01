@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import LoginForm from './LoginForm';
 import ColorSelector from './ColorSelector';
-import { getCurrentTheme, COLOR_THEMES } from '../colorTheme';
+import { getCurrentTheme, COLOR_THEMES, getThemeForColor } from '../colorTheme';
 import welcomeQuestions from '../data/welcomeQuestions.json';
 import collesData from '../data/colles_fundacio.json';
 import './WelcomePage.css';
@@ -85,7 +85,50 @@ const ScrollingBanner = ({ questions, direction, onQuestionClick }) => {
 
 const WelcomePage = ({ selectedColor, onColorChange, onLogin }) => {
   const [showLogin, setShowLogin] = React.useState(false);
-  const theme = getCurrentTheme();
+  const [isUserSelectedColor, setIsUserSelectedColor] = useState(false);
+  const [userSelectedColor, setUserSelectedColor] = useState(null);
+  const [animatedColorIndex, setAnimatedColorIndex] = useState(0);
+  const animationIntervalRef = useRef(null);
+  
+  // Get all available color keys (excluding white from animation)
+  const availableColors = Object.keys(COLOR_THEMES).filter(key => key !== 'white');
+  
+  // Determine which color to use: user-selected or animated
+  const currentColor = isUserSelectedColor && userSelectedColor 
+    ? userSelectedColor 
+    : availableColors[animatedColorIndex % availableColors.length];
+  const theme = getThemeForColor(currentColor);
+
+  // Auto-cycling color animation (only if user hasn't manually selected)
+  useEffect(() => {
+    if (isUserSelectedColor) {
+      // Stop animation if user has selected a color
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current);
+        animationIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start animation: cycle through colors every 2 seconds
+    animationIntervalRef.current = setInterval(() => {
+      setAnimatedColorIndex(prev => (prev + 1) % availableColors.length);
+    }, 2000);
+
+    return () => {
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current);
+        animationIntervalRef.current = null;
+      }
+    };
+  }, [isUserSelectedColor, availableColors.length]);
+
+  // Handle color change from ColorSelector
+  const handleColorChange = (colorKey) => {
+    setIsUserSelectedColor(true);
+    setUserSelectedColor(colorKey);
+    onColorChange(colorKey);
+  };
 
   const questions = welcomeQuestions.questions;
   const midPoint = Math.ceil(questions.length / 2);
@@ -162,8 +205,8 @@ const WelcomePage = ({ selectedColor, onColorChange, onLogin }) => {
       )}
 
       <ColorSelector 
-        selectedColor={selectedColor}
-        onColorChange={onColorChange}
+        selectedColor={currentColor}
+        onColorChange={handleColorChange}
       />
     </div>
   );

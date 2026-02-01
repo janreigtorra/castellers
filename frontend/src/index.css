@@ -2,7 +2,8 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100vh;
-  overflow: hidden; /* Prevent page scrolling */
+  height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  overflow: hidden; /* Prevent page scrolling on desktop */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
@@ -10,11 +11,30 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Allow scrolling on mobile */
+@media (max-width: 768px) {
+  html, body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 #root {
   height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile browsers */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Allow scrolling on mobile */
+@media (max-width: 768px) {
+  #root {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
 }
 
 code {

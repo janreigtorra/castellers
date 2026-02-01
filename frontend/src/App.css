@@ -17,6 +17,17 @@
   flex-direction: column;
   background: var(--theme-background);
   overflow: hidden;
+  position: relative;
+}
+
+/* Allow scrolling on mobile */
+@media (max-width: 768px) {
+  .app {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  }
 }
 
 .loading {
@@ -2368,11 +2379,18 @@
 @media (max-width: 768px) {
   /* Header mobile styles */
   .header {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
     padding-top: calc(0.75rem + env(safe-area-inset-top));
     padding-bottom: 0.75rem;
     padding-left: calc(1rem + env(safe-area-inset-left));
     padding-right: calc(1rem + env(safe-area-inset-right));
     flex-wrap: nowrap;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Add shadow to make header more visible when scrolling */
   }
 
   /* Remove the black/colored split background on mobile */
@@ -2522,8 +2540,11 @@
   }
 
   .header-border-bottom {
+    position: sticky;
+    top: 0;
     height: 8px;
     background: var(--theme-secondary, #d0282c);
+    z-index: 998;
   }
 
   .header-border-bottom::before {
@@ -2609,11 +2630,14 @@
   /* Main content adjusts when sidebar is collapsed on mobile */
   .app-with-sessions {
     position: relative;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .main-content-with-sessions {
     margin-left: 0;
     width: 100%;
+    min-height: 0;
   }
 
   /* Chat container mobile */
@@ -2899,10 +2923,16 @@
 /* Extra small screens (phones) */
 @media (max-width: 480px) {
   .header {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
     padding-top: calc(0.5rem + env(safe-area-inset-top));
     padding-bottom: 0.5rem;
     padding-left: calc(0.5rem + env(safe-area-inset-left));
     padding-right: calc(0.5rem + env(safe-area-inset-right));
+    z-index: 1000;
   }
 
   .header-logo img {

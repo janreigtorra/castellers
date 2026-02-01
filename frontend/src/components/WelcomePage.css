@@ -170,8 +170,8 @@
   }
 
   .welcome-xiquet-icon {
-    width: 150px;
-    height: 150px;
+    width: 280px;
+    height: 280px;
   }
 
   .welcome-text-content {
@@ -193,6 +193,10 @@
 
   .welcome-cta {
     font-size: 1rem;
+  }
+
+  .welcome-btn-container {
+    justify-content: center;
   }
 
   .welcome-login-btn {
