@@ -1911,6 +1911,8 @@
   max-width: 400px;
   margin: 0;
   border: 1px solid var(--theme-border);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .login-form h2 {
@@ -1931,6 +1933,7 @@
   margin-bottom: 0.5rem;
   color: var(--theme-text);
   font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .login-form input {
@@ -1964,6 +1967,21 @@
   opacity: 0.9;
 }
 
+.login-form button[type="button"] {
+  background: transparent;
+  color: #3498db;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.login-form button[type="button"]:hover {
+  opacity: 0.8;
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* Error messages */
 .error {
   color: var(--theme-accent);
@@ -1973,6 +1991,18 @@
   margin-bottom: 1rem;
   border: 1px solid #fecaca;
   font-weight: 500;
+}
+
+/* Success messages */
+.success-message {
+  color: #059669;
+  background-color: #d1fae5;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  border: 1px solid #a7f3d0;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 /* Loading spinner */
@@ -2890,6 +2920,41 @@
   .collapsible-table-wrapper {
     margin: 1rem 0;
   }
+
+  /* Login form mobile */
+  .login-form {
+    padding: 1.75rem;
+    max-width: 100%;
+  }
+
+  .login-form h2 {
+    font-size: 1.6rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .login-form .form-group {
+    margin-bottom: 1.1rem;
+  }
+
+  .login-form label {
+    font-size: 0.92rem;
+  }
+
+  .login-form input {
+    padding: 0.8rem;
+    font-size: 0.98rem;
+  }
+
+  .login-form button {
+    padding: 0.9rem;
+    font-size: 0.98rem;
+  }
+
+  .error,
+  .success-message {
+    padding: 0.9rem;
+    font-size: 0.92rem;
+  }
 }
 
 /* Mobile thinking indicator */
@@ -3058,5 +3123,48 @@
 
   .profile-btn {
     width: 100%;
+  }
+
+  /* Login form mobile */
+  .login-form {
+    padding: 1.5rem;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .login-form h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .login-form .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .login-form label {
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .login-form input {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .login-form button {
+    padding: 0.875rem;
+    font-size: 0.95rem;
+  }
+
+  .login-form button[type="button"] {
+    font-size: 0.85rem;
+    padding: 0.4rem;
+  }
+
+  .error,
+  .success-message {
+    padding: 0.875rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
   }
 }

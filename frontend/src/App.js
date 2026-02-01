@@ -10,6 +10,7 @@ import ProfileModal from './components/ProfileModal';
 import AboutPage from './components/AboutPage';
 import ContactPage from './components/ContactPage';
 import PilarLoader from './components/PilarLoader';
+import AuthCallback from './components/AuthCallback';
 import { authHelpers } from './supabaseClient';
 import { getColorPreference, saveColorPreference, getCurrentTheme, getUserDefaultColor, getThemeForColor } from './colorTheme';
 
@@ -28,6 +29,7 @@ function App() {
   // Derive currentPage from URL
   const getPageFromPath = useCallback(() => {
     const path = window.location.pathname;
+    if (path === '/auth/callback') return 'auth-callback';
     if (path === '/joc-del-mocador') return 'joc-del-mocador';
     if (path === '/sobre-xiquet-ai') return 'about';
     if (path === '/contacte') return 'contact';
@@ -197,6 +199,11 @@ function App() {
         <PilarLoader />
       </div>
     );
+  }
+
+  // Handle auth callback route separately (before checking user)
+  if (currentPage === 'auth-callback') {
+    return <AuthCallback onAuthSuccess={handleLogin} />;
   }
 
   return (

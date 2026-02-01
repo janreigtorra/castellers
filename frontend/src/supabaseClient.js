@@ -6,16 +6,28 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'YOUR_SUPABAS
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// Get the production URL for email redirects
+const getRedirectUrl = () => {
+  // In production, use the actual domain
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return `${window.location.origin}/auth/callback`
+  }
+  // For development, you can set this in .env or use production URL
+  return process.env.REACT_APP_AUTH_REDIRECT_URL || `${window.location.origin}/auth/callback`
+}
+
 // Auth helper functions
 export const authHelpers = {
   // Sign up with email and password
   async signUp(email, password, username = null) {
     try {
+      const redirectUrl = getRedirectUrl()
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: username ? { username } : {}
+          data: username ? { username } : {},
+          emailRedirectTo: redirectUrl
         }
       })
       
@@ -78,6 +90,59 @@ export const authHelpers = {
           collaColorCode: profileData.collaColorCode,
           phone: profileData.phone,
           birthDate: profileData.birthDate
+        }
+      })
+      
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  // Social authentication methods
+  async signInWithGoogle() {
+    try {
+      const redirectUrl = getRedirectUrl()
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl
+        }
+      })
+      
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async signInWithMicrosoft() {
+    try {
+      const redirectUrl = getRedirectUrl()
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: redirectUrl,
+          scopes: 'email'
+        }
+      })
+      
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async signInWithGitHub() {
+    try {
+      const redirectUrl = getRedirectUrl()
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: redirectUrl
         }
       })
       

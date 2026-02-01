@@ -203,6 +203,21 @@
     padding: 0.875rem 1.5rem;
     font-size: 1rem;
   }
+
+  /* Login modal mobile */
+  .login-modal-overlay {
+    padding: 1rem;
+    align-items: flex-start;
+    padding-top: 2rem;
+  }
+
+  .login-modal {
+    width: 95%;
+    max-width: 100%;
+    padding: 1.5rem;
+    max-height: calc(100vh - 4rem);
+    margin: 0;
+  }
 }
 
 /* Login Modal Overlay */
@@ -235,6 +250,8 @@
   padding: 2rem;
   max-width: 400px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
   animation: modalSlideIn 0.3s ease-out;
 }

@@ -1,0 +1,21 @@
+{
+  "short_name": "Xiquet CAT",
+  "name": "Xiquet CAT - Assistent expert en el món casteller",
+  "icons": [
+    {
+      "src": "xiquet_images/xiquet_logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "xiquet_images/xiquet_logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#d0282c",
+  "background_color": "#ffffff"
+}
+
