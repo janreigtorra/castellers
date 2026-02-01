@@ -2,18 +2,25 @@
 <html lang="ca">
   <head>
     <meta charset="utf-8" />
-    <!-- Favicon for all browsers -->
-    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
-    <link rel="shortcut icon" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
-    <!-- Apple Touch Icon for iOS -->
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
+    <!-- PNG favicons for all browsers - using red logo for better visibility -->
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <link rel="shortcut icon" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <!-- Safari specific - mask-icon for pinned tabs (monochrome) -->
+    <link rel="mask-icon" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" color="#d0282c" />
+    <!-- Apple Touch Icon for iOS - with background for visibility -->
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
     <!-- Android Chrome -->
-    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/xiquet_images/xiquet_logo.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Theme colors for different contexts -->
     <meta name="theme-color" content="#d0282c" />
+    <meta name="msapplication-TileColor" content="#d0282c" />
+    <meta name="msapplication-TileImage" content="%PUBLIC_URL%/xiquet_images/xiquet_logo_red.png" />
+    <!-- Safari pinned tab color -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="description"
       content="Xiquet - Assistent expert en el món casteller"
