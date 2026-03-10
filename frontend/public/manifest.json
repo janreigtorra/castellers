@@ -3,12 +3,12 @@
   "name": "Xiquet CAT - Assistent expert en el món casteller",
   "icons": [
     {
-      "src": "xiquet_images/xiquet_logo_red.png",
+      "src": "xiquet_images/xiquet_logo_black.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "xiquet_images/xiquet_logo_red.png",
+      "src": "xiquet_images/xiquet_logo_black.png",
       "sizes": "512x512",
       "type": "image/png"
     }

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 import uuid
 from datetime import datetime, timezone
 import os
@@ -21,7 +21,7 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 # Import our existing agent and Supabase auth
-from agent import Xiquet
+from xiquet.agent import Xiquet
 from auth_service import supabase_auth
 from database_service import chat_db
 from joc_del_mocador.main import generate_question
@@ -78,7 +78,7 @@ async def startup_event():
     # Pre-warm entity cache to avoid slow first queries
     # This loads colles, castells, anys, llocs, diades from DB
     try:
-        from utility_functions import warm_entity_cache
+        from xiquet.utility_functions import warm_entity_cache
         await asyncio.to_thread(warm_entity_cache)
     except Exception as e:
         print(f"Warning: Failed to warm entity cache: {e}")
@@ -147,7 +147,7 @@ class ChatResponse(BaseModel):
     timestamp: datetime
     response_time_ms: int
     session_id: Optional[str] = None
-    table_data: Optional[TableData] = None
+    table_data: Optional[Union[TableData, List[TableData]]] = None  # Can be single table or list of tables (for custom queries)
     identified_entities: Optional[IdentifiedEntities] = None
 
 class SaveChatRequest(BaseModel):
@@ -351,7 +351,14 @@ async def chat_with_xiquet(
         # Get table data if available (for SQL queries)
         table_data = None
         if hasattr(xiquet, 'table_data') and xiquet.table_data:
-            table_data = TableData(**xiquet.table_data)
+            # For custom queries, table_data is a list of tables
+            # For other queries, it's a single table dict
+            if isinstance(xiquet.table_data, list):
+                # List of tables (custom queries)
+                table_data = [TableData(**table) for table in xiquet.table_data]
+            else:
+                # Single table (other queries)
+                table_data = TableData(**xiquet.table_data)
         
         # Get identified entities from the agent
         identified_entities = None
@@ -572,7 +579,7 @@ class MessageStatusResponse(BaseModel):
     route_used: Optional[str] = None
     identified_entities: Optional[IdentifiedEntities] = None
     response: Optional[str] = None
-    table_data: Optional[TableData] = None
+    table_data: Optional[Union[TableData, List[TableData]]] = None  # Can be single table or list of tables (for custom queries)
     response_time_ms: Optional[int] = None
     error_message: Optional[str] = None
 
@@ -862,7 +869,15 @@ async def get_message_status(
         
         table_data = None
         if pending.get("table_data"):
-            table_data = TableData(**pending["table_data"])
+            # For custom queries, table_data is a list of tables
+            # For other queries, it's a single table dict
+            pending_table = pending["table_data"]
+            if isinstance(pending_table, list):
+                # List of tables (custom queries)
+                table_data = [TableData(**table) for table in pending_table]
+            else:
+                # Single table (other queries)
+                table_data = TableData(**pending_table)
         
         return MessageStatusResponse(
             message_id=message_id,

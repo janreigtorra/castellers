@@ -10,7 +10,10 @@ BASE_URL = "https://castellscat.cat/ca/base-de-dades"
 # Configuration
 MAX_PAGES = 1000  # Set to 10 for testing, 1000+ for production
 OUTPUT_FORMAT = "json"  # "json" or "txt"
-OUTPUT_FILE = "../backend/data_basic/castellers_data.json"  # Path to output file
+# Get the script's directory and build path relative to it
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_FILE = os.path.join(SCRIPT_DIR, "..", "backend", "data_basic", "castellers_data.json")
+OUTPUT_FILE = os.path.normpath(OUTPUT_FILE)  # Normalize the path
 
 session = requests.Session()
 session.headers.update({
@@ -159,8 +162,8 @@ print("Got CSRF token:", token)
 # Step 2: Build POST data
 payload = {
     "_token": token,
-    "date_start": "01/09/2025",  # Scrape from September 2025
-    "date_end": datetime.now().strftime("%d/%m/%Y"), # New date range: TODAY
+    "date_start": "01/01/2026",  # Scrape from January 1950
+    "date_end": "17/02/2026",  # Scrape until December 1995
     "diada": "",
     "colla[]": "",        
     "castell": "",

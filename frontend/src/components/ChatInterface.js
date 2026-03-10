@@ -730,7 +730,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const hasCompleteConversations = messages.some(msg => !msg.isUser && msg.response && msg.response.trim().length > 0);
 
   // DataTable component for displaying SQL query results
-  const DataTable = ({ tableData }) => {
+  const DataTable = ({ tableData, isCustomQuery = false }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     
     if (!tableData || !tableData.rows || tableData.rows.length === 0) {
@@ -738,8 +738,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     }
     
     const { title, columns, rows } = tableData;
-    // On mobile, show only 1 row; on desktop show 3
-    const collapsedRowCount = isMobile ? 1 : 3;
+    // For custom queries with multiple tables, show only 1 row by default
+    // Otherwise: On mobile, show only 1 row; on desktop show 3
+    const collapsedRowCount = isCustomQuery ? 1 : (isMobile ? 1 : 3);
     const shouldCollapse = rows.length > collapsedRowCount;
     const displayedRows = shouldCollapse && !isExpanded ? rows.slice(0, collapsedRowCount) : rows;
     
@@ -753,7 +754,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     
     return (
       <div className="data-table-container">
-        {/* {title && <div className="data-table-title">Referencia a la base de dades: {title}</div>} */}
+        {title && <div className="data-table-title">{title}</div>}
         <div className="data-table-wrapper">
           <table className="data-table">
             <thead>
@@ -1136,7 +1137,19 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                 <div className="assistant-content">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.response}</ReactMarkdown>
                   {/* Display table data from SQL queries */}
-                  {message.table_data && <DataTable tableData={message.table_data} />}
+                  {message.table_data && (
+                    Array.isArray(message.table_data) ? (
+                      // Multiple tables (custom queries)
+                      <div className="multiple-tables-container">
+                        {message.table_data.map((table, idx) => (
+                          <DataTable key={idx} tableData={table} isCustomQuery={true} />
+                        ))}
+                      </div>
+                    ) : (
+                      // Single table (other queries)
+                      <DataTable tableData={message.table_data} isCustomQuery={false} />
+                    )
+                  )}
                 </div>
               </div>
             )}

@@ -7,7 +7,9 @@ Simple test script to verify a specific LLM provider and model works with Xiquet
 import os
 import sys
 from dotenv import load_dotenv
-from llm_function import llm_call, list_available_providers, list_provider_models
+# Add backend to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+from xiquet.llm_function import llm_call, list_available_providers, list_provider_models
 
 # Load environment variables
 load_dotenv()
@@ -31,13 +33,13 @@ def test_provider_model(provider, model):
     # Test Xiquet agent integration
     try:
         print("2. Testing Xiquet agent integration...")
-        from agent import Xiquet
+        from xiquet.agent import Xiquet, MODEL_NAME
         
         xiquet = Xiquet()
         # Temporarily change the model for testing
-        import agent
-        original_model_name = agent.MODEL_NAME
-        agent.MODEL_NAME = f"{provider}:{model}"
+        import xiquet.agent as agent_module
+        original_model_name = agent_module.MODEL_NAME
+        agent_module.MODEL_NAME = f"{provider}:{model}"
         
         test_question = "Quina va ser la millor diada dels castellers de Vilafranca l'any 2024?"
         
@@ -45,13 +47,14 @@ def test_provider_model(provider, model):
         print(f"   SUCCESS: {response[:100]}...")
         
         # Restore original model
-        agent.MODEL_NAME = original_model_name
+        agent_module.MODEL_NAME = original_model_name
         
     except Exception as e:
         print(f"   FAILED: {e}")
         # Restore original model even if test failed
         try:
-            agent.MODEL_NAME = original_model_name
+            import xiquet.agent as agent_module
+            agent_module.MODEL_NAME = original_model_name
         except:
             pass
         return False
