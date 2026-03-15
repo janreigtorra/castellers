@@ -318,6 +318,15 @@
   flex-shrink: 0;
 }
 
+.joc-mocador-multiselect-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.joc-mocador-multiselect-option.disabled:hover {
+  background: transparent;
+}
+
 .joc-mocador-multiselect-option span {
   flex: 1;
   overflow: hidden;

@@ -129,7 +129,7 @@ export const apiService = {
    * @param {object|null} previousContext - Context from previous message for follow-ups
    *   {question, response, route, sql_query_type, entities}
    */
-  async startChat(content, sessionId = null, previousContext = null) {
+  async startChat(content, sessionId = null, previousContext = null, preSelectedEntities = null) {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token
     
@@ -142,6 +142,9 @@ export const apiService = {
     }
     if (previousContext) {
       body.previous_context = previousContext
+    }
+    if (preSelectedEntities) {
+      body.pre_selected_entities = preSelectedEntities
     }
     
     const response = await fetch(`${API_BASE_URL}/api/chat/start`, {
@@ -219,13 +222,14 @@ export const apiService = {
    * @param {object|null} previousContext - Context from previous message for follow-ups
    * @returns {Promise<object>} - Full response when complete
    */
-  async sendMessageWithPolling(content, sessionId = null, onEntities = null, previousContext = null) {
+  async sendMessageWithPolling(content, sessionId = null, onEntities = null, previousContext = null, preSelectedEntities = null) {
     const startTime = Date.now()
     console.log(`[API-POLL] === START at ${startTime} ===`)
     console.log(`[API-POLL] Has previous context: ${previousContext !== null}`)
+    console.log(`[API-POLL] Has pre-selected entities: ${preSelectedEntities !== null}`)
     
     // Step 1: Start processing (returns immediately)
-    const { message_id } = await this.startChat(content, sessionId, previousContext)
+    const { message_id } = await this.startChat(content, sessionId, previousContext, preSelectedEntities)
     console.log(`[API-POLL] Started, message_id: ${message_id} at ${Date.now() - startTime}ms`)
     
     // Step 2: Poll for status
@@ -358,6 +362,17 @@ export const apiService = {
     return response.data
   },
 
+  // Subscription endpoints
+  async getSubscriptionStatus() {
+    const response = await api.get('/api/subscription/status')
+    return response.data
+  },
+
+  async createCheckoutSession() {
+    const response = await api.post('/api/subscription/create-checkout')
+    return response.data
+  },
+
   // Auth endpoints (these use our backend, not Supabase directly)
   async login(email, password) {
     const response = await api.post('/api/auth/login', {
@@ -402,6 +417,60 @@ export const apiService = {
   // Contact form endpoint
   async sendContactMessage({ name, email, message }) {
     const response = await api.post('/api/contact', { name, email, message })
+    return response.data
+  },
+
+  // Feedback endpoint for chat responses
+  async sendFeedback({ name, email, feedback, user_question, xiquet_answer }) {
+    const response = await api.post('/api/feedback', { 
+      name, 
+      email, 
+      feedback, 
+      user_question, 
+      xiquet_answer 
+    })
+    return response.data
+  },
+
+  // Get entity options for dropdowns
+  async getEntityOptions() {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    const response = await fetch(`${API_BASE_URL}/api/entities/options`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+    
+    return response.json()
+  },
+
+  // Admin endpoints for syncing data
+  async getLastEventDate() {
+    const response = await api.get('/api/admin/last-event-date')
+    return response.data.last_event_date
+  },
+
+  async scrapeEvents(dateStart, dateEnd) {
+    const response = await api.post('/api/admin/scrape-events', {
+      date_start: dateStart,
+      date_end: dateEnd
+    })
+    return response.data
+  },
+
+  async updateDatabase(fromDate) {
+    const response = await api.post('/api/admin/update-database', {
+      from_date: fromDate
+    })
     return response.data
   }
 }

@@ -56,24 +56,24 @@ IS_SQL_QUERY_PATTERNS = {
     # Millor diada/actuació - retorna: data, lloc, colla, castells fets, punts totals
     # Exemples: "Quina va ser la millor diada dels Castellers de Vilafranca l'any 2023?"
     "millor_diada": [
-        "millor diada", "millor actuació", "millor actuacio", "millors diades", "millors actuacions",
+        "millor diada", "millor actuació", "millors diades", "millors actuacions",
         "quina diada", "quina actuació", "quina va ser la millor",
-        "millor jornada", "millors jornades", "actuació més destacada",
+        "millor jornada", "actuació més destacada",
     ],
     
     # Millor castell - retorna: castell més difícil/puntuació, data, lloc, colla, estat
     # Exemples: "Quin és el millor castell que han descarregat els Minyons de Terrassa?"
     "millor_castell": [
-        "millor castell", "millor torre", "millor construcció", "millor construccio",
-        "castell més difícil", "castell mes dificil", "castell més gran", "castell mes gran",
-        "màxim castell", "millor estructura"
+        "millor castell", "millor torre", "millor construcció",
+        "castell més difícil", "castell més gran",
+        "màxim castell", "millor estructura", 'Millor castell'
     ],
+    
     # Quines colles han fet X - retorna: colla, diada, lloc, any, castells fets
     "colles": [
-        "quines colles han", "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
-        "quines colles han fet", "quines colles van participar", "quines colles han participat", "quines colles han participat",
-        "quines colles van actuar", "quines colles van actuar a", "quines colles han actuat", "quines colles van actuar",
-        "quina colla"
+        "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
+        "quines colles han fet", "quines colles van participar", "quines colles han participat",
+        "quines colles van actuar", "quines colles han actuat","primera colla", "primeres colles",
     ],
     
     # Castell història - retorna: comptatge de vegades, dates (primera/última), llocs, estat
@@ -82,85 +82,75 @@ IS_SQL_QUERY_PATTERNS = {
         "quantes vegades han", "quants cops han", "han aconseguit mai", 
         "quants 3d", "quants 2d", "quants 4d", "quants 5d", "quants pilars de", "quantes torres de",
         "quants castells de 7", "quants castells de 8", "quants castells de 9", "quants castells de gamma extra",
-        "quants castells de 6",
+        "quants castells de 6", "quants castells", 
     ],
     
     # Castells list - retorna: llista de castells fets (filtrable per colla, diada, any, lloc, status, gamma)
     # Exemples: "Quins castells van fer els Castellers de Vilafranca a la Mercè l'any 2023?"
     "castells_list": [
-        "quins castells van fer", "quins castells va fer", "quins castells han fet",
-        "quins castells s'han fet", "quins castells s'han descarregat", "quins castells s'han carregat",
+        "quins castells van fer", "quins castells han fet",
+        "quins castells s'han descarregat", "quins castells s'han carregat",
         "quins castells van descarregar", "quins castells van carregar", "quins castells van intentar",
-        "quins castells van fer", "llista de castells", "castells que van fer", "castells que han fet",
-        "castells fets a",
+        "llista de castells", "castells que van fer", "castells que han fet",
     ],
     
     # Location actuations - retorna: any/lloc de millor actuació, castells fets
     # Exemples: "A quin any van fer la millor actuació a la Mercè?"
     "location_actuations": [
-        "quin any s'ha fet", "quin lloc s'ha fet", "a quina plaça s'ha fet", "a quina placa s'ha fet",
-        "quina ciutat s'ha fet", "quina població s'ha fet", "quina poblacio s'ha fet", "a quin lloc han fet", "quin any van fer", "a quin lloc van fer"
+        "quin any s'ha fet", "quin lloc s'ha fet", "a quina plaça s'ha fet",
+        "quina ciutat s'ha fet", "quina població s'ha fet", "a quin lloc han fet",
+        "quin any van fer", "a quin lloc van fer"
     ],
     
     # First castell - retorna: data, lloc, colla del primer cop que es va fer un castell
     # Exemples: "Quan va ser el primer 2d9fm de la Colla Vella dels Xiquets de Valls?"
     "first_castell": [
-        "quin va ser el primer", "quin va ser la primera vegada", "quin es el primer",  "quin és el primer",
+        "quin va ser el primer", "quin va ser la primera vegada", "quin és el primer",
         "quan van fer el primer", "quan es va fer per primer cop", "primer castell de",
         "quan van descarregar per primer cop", "quan van aconseguir per primera vegada", 
-        "quan van intentar per primera vegada", "quan van intentar per primer cop",
-        "quan van descarregar per primera vegada", "quan van carregar per primer cop", 
-        "quin any s'ha fet el primer", "quin any s'ha descarregat el primer", "quin any s'ha carregat el primer",
-         "quin any s'ha intentat el primer",
-         "on es va fer el primer",# add more
-         "A quin lloc van fer el primer", "quan es va carregar", "quan es va intentar", "quan es va fer el primer", 
-         "quan es va descarregar",  "quan es va descarregar", "quan van carregar el", "quan van descarregar el", 
-         "quan van carregar el primer", "quan van descarregar el primer", "quan van fer per primera vegada", 
-         "quan van fer per primer cop", "quan van fer el primer", "quan van fer el primer castell",
+        "quan van intentar per primera vegada", "quan van carregar per primer cop",
+        "quin any s'ha fet el primer", "quin any s'ha descarregat el primer",
+        "on es va fer el primer", "a quin lloc van fer el primer",
+        "quan van fer per primera vegada", "quan van fer el primer castell", "primer 3d", 
+        "primer 4d", "primer 5d",  "primer 7d",  "primer castell", "primer torre", "primer pd", "primer pilar"
     ],
     
     # Castell statistics - retorna: estadístiques completes (descarregats, carregats, colles, dates)
     # Exemples: "Dóna'm les estadístiques del 4d9fa"
     "castell_statistics": [
-        "estadístiques de", "estadisticas de", "estadistica de", "estadistica de",
         "estadístiques de", "estadístiques del castell",
-        "quantes colles han fet", "quantes colles han descarregat",
-         "ranking de colles", "qui ha fet més",
-        "colles que han aconseguit", "colles que han descarregat"
+        "ranking de colles", "qui ha fet més",
+        "colles que han aconseguit",
     ],
     
     # Year summary - retorna: resum d'actuacions, castells, resultats d'un any/temporada
-    # Exemples: "Com va anar la temporada 2023 dels Castellers de Barcelona?" TODO group by gamma 
+    # Exemples: "Com va anar la temporada 2023 dels Castellers de Barcelona?"
     "year_summary": [
-        "resum de la temporada", "resum temporada", "resum any", "resum de la temporada",
-        "activitat", "balanç de temporada", "balanc de temporada",
-        "com va ser la temporada", "com va ser l'any", "com va ser l any",
-        "com va anar la temporada", "com va anar l'any", "com va anar l any",
-        "què van fer a la temporada", "que van fer a la temporada",
-        "què van fer l'any", "que van fer l any", "resultats de la temporada",
-        "quants castells van fer a la temporada", "quants castells van fer l'any",
-        "quants castells van descarregar a la temporada", "quants castells van descarregar l'any",
-        "quants castells van carregar a la temporada", "quants castells van carregar l'any"
+        "resum de la temporada", "resum temporada", "resum any",
+        "balanç de temporada", "balanç de la temporada",
+        "com va ser la temporada", "com va ser l'any",
+        "com va anar la temporada", "com va anar l'any",
+        "què van fer a la temporada", "què van fer l'any",
+        "resultats de la temporada",
     ],
     
     # Concurs ranking - retorna: classificació, posicions, punts, rondes d'un concurs
     # Exemples: "Quina classificació va tenir la Colla Vella al concurs de Tarragona 2024?"
     "concurs_ranking": [
-        "classificació concurs", "classificacio concurs", "classificació al concurs",
-        "quina posició", "quina posicio van quedar", "en quina posició",
-        "guanyador concurs", "guanyadora concurs", "qui va guanyar el concurs",
+        "classificació concurs", "classificació al concurs",
+        "quina posició", "en quina posició",
+        "guanyador concurs", "guanyadora concurs",
         "resultats del concurs", "puntuació al concurs", "rondes del concurs"
     ],
     
     # Concurs history - retorna: història de concursos (guanyadors, edicions, estadístiques)
     # Exemples: "Quants cops han guanyat el concurs els Castellers de Vilafranca?"
     "concurs_history": [
-        "historia del concurs", "historia del concurs de castells",
-        "concursos celebrats", "història dels concursos",
+        "història del concurs", "història del concurs de castells",
         "concursos celebrats", "història dels concursos",
         "explica el concurs de l'any", "explica el concurs de la temporada",
-        "concurs de l'edició ", "com va anar el concurs de", "qui va guanyar el concurs",
-        ]
+        "concurs de l'edició", "com va anar el concurs de",
+    ]
 }
 
 SQL_QUERY_PATTERNS = IS_SQL_QUERY_PATTERNS

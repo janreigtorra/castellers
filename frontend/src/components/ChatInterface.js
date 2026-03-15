@@ -242,6 +242,132 @@ const GammaIcon = ({ color = "currentColor" }) => (
   </svg>
 );
 
+// Feedback icon
+const FeedbackIcon = ({ color = "currentColor" }) => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <line x1="9" y1="10" x2="15" y2="10" />
+    <line x1="9" y1="14" x2="13" y2="14" />
+  </svg>
+);
+
+// Multi-select dropdown component with search (copied from Menu.js)
+const MultiSelect = ({ options, selected, onChange, placeholder, disabled, displayTransform, maxSelections = 2 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Lock scroll when dropdown is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => searchInputRef.current?.focus(), 0);
+    } else {
+      document.body.style.overflow = '';
+      setSearchTerm('');
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
+  const closeDropdown = () => {
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const toggleOption = (option) => {
+    if (selected.includes(option)) {
+      onChange(selected.filter(item => item !== option));
+    } else {
+      // Limit to maxSelections
+      if (selected.length < maxSelections) {
+        onChange([...selected, option]);
+      }
+    }
+  };
+
+  const filteredOptions = options.filter(option => {
+    const displayValue = displayTransform ? displayTransform(option) : option;
+    return displayValue.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  const clearAll = () => {
+    onChange([]);
+    setSearchTerm('');
+  };
+
+  const getDisplayText = () => {
+    if (selected.length === 0) return placeholder;
+    if (selected.length <= 2) {
+      return selected.map(s => displayTransform ? displayTransform(s) : s).join(', ');
+    }
+    return `${selected.length} seleccionats`;
+  };
+
+  return (
+    <div className="joc-mocador-multiselect" ref={dropdownRef}>
+      {isOpen && <div className="joc-mocador-multiselect-overlay" onClick={closeDropdown} />}
+      <button 
+        type="button"
+        className={`joc-mocador-multiselect-trigger ${isOpen ? 'open' : ''}`}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+      >
+        <span className="joc-mocador-multiselect-text">{getDisplayText()}</span>
+        <span className="joc-mocador-multiselect-arrow">{isOpen ? '▲' : '▼'}</span>
+      </button>
+      {isOpen && (
+        <div className="joc-mocador-multiselect-dropdown">
+          <div className="joc-mocador-multiselect-search">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Cerca..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="joc-mocador-multiselect-search-input"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          {selected.length > 0 && (
+            <div className="joc-mocador-multiselect-actions">
+              <button type="button" onClick={clearAll} className="joc-mocador-multiselect-action">
+                Netejar
+              </button>
+            </div>
+          )}
+          <div className="joc-mocador-multiselect-options">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => {
+                const isSelected = selected.includes(option);
+                const isDisabled = !isSelected && selected.length >= maxSelections;
+                return (
+                  <label key={option} className={`joc-mocador-multiselect-option ${isDisabled ? 'disabled' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOption(option)}
+                      disabled={isDisabled}
+                    />
+                    <span>{displayTransform ? displayTransform(option) : option}</span>
+                    {isDisabled && <span style={{ fontSize: '0.75rem', color: '#999', marginLeft: 'auto' }}>(màx {maxSelections})</span>}
+                  </label>
+                );
+              })
+            ) : (
+              <div className="joc-mocador-multiselect-empty">
+                No s'han trobat resultats
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Helper to check if there are any entities to display
 const hasEntities = (entities) => {
   if (!entities) return false;
@@ -273,6 +399,25 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const [thinkingDots, setThinkingDots] = useState('');
   const isMobile = useIsMobile();
   const inputRef = useRef(null);
+  const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
+  const [feedbackMessageId, setFeedbackMessageId] = useState(null); // Track which message to send feedback for
+  const [feedbackFormData, setFeedbackFormData] = useState({ feedback: '' });
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSubmitStatus, setFeedbackSubmitStatus] = useState(null); // 'success', 'error', null
+  
+  // Pre-selected entities state (only colles, castells, anys - no diades)
+  const [preSelectedEntities, setPreSelectedEntities] = useState({
+    colles: [],
+    castells: [],
+    anys: []
+  });
+  const [showEntitySelector, setShowEntitySelector] = useState(false);
+  const [entityOptions, setEntityOptions] = useState({
+    colles: [],
+    castells: [],
+    anys: []
+  });
+  const [isLoadingEntityOptions, setIsLoadingEntityOptions] = useState(false);
 
   // Helper functions for localStorage persistence
   const getUnsavedChatKey = useCallback(() => {
@@ -533,22 +678,78 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setError('');
-    setIdentifiedEntities(null); // Clear previous entities
+    
+    // Build pre-selected entities object (only include non-empty arrays)
+    const preSelectedEntitiesToSend = {};
+    if (preSelectedEntities.colles && preSelectedEntities.colles.length > 0) {
+      preSelectedEntitiesToSend.colles = preSelectedEntities.colles;
+    }
+    if (preSelectedEntities.castells && preSelectedEntities.castells.length > 0) {
+      preSelectedEntitiesToSend.castells = preSelectedEntities.castells;
+    }
+    if (preSelectedEntities.anys && preSelectedEntities.anys.length > 0) {
+      preSelectedEntitiesToSend.anys = preSelectedEntities.anys;
+    }
+    const hasPreSelectedEntities = Object.keys(preSelectedEntitiesToSend).length > 0;
+    
+    // Show pre-selected entities immediately as chips (before agent processes)
+    if (hasPreSelectedEntities) {
+      const immediateEntities = {
+        colles: preSelectedEntitiesToSend.colles || [],
+        castells: (preSelectedEntitiesToSend.castells || []).map(c => ({ castell_code: c, status: null })),
+        anys: (preSelectedEntitiesToSend.anys || []).map(a => parseInt(a)),
+        llocs: [],
+        diades: []
+      };
+      console.log('[ChatInterface] 🎯 Showing pre-selected entities immediately:', immediateEntities);
+      setIdentifiedEntities(immediateEntities);
+      
+      // If a colla was pre-selected, change the app color theme immediately
+      if (immediateEntities.colles && immediateEntities.colles.length > 0) {
+        const firstColla = immediateEntities.colles[0];
+        console.log('[ChatInterface] Pre-selected colla:', firstColla);
+        const colorCode = COLLES_COLORS[firstColla];
+        if (colorCode && onCollaIdentified) {
+          const themeKey = COLOR_CODE_TO_THEME[colorCode];
+          if (themeKey && COLOR_THEMES[themeKey]) {
+            console.log('[ChatInterface] Changing theme to:', themeKey);
+            onCollaIdentified(themeKey);
+          }
+        }
+      }
+    } else {
+      setIdentifiedEntities(null); // Clear previous entities if no pre-selected
+    }
     // Note: scroll will be handled by useEffect when messages.length changes
 
     try {
       // Callback to handle entities as soon as they arrive (FAST ~500-1000ms)
       // This is called BEFORE the full response is ready
+      // Merge with pre-selected entities (pre-selected take precedence)
       const handleEntitiesReceived = (entities, routeUsed) => {
         console.log('[ChatInterface] 🎯 ENTITIES RECEIVED (fast path)!', entities);
         console.log('[ChatInterface] Setting identifiedEntities state NOW');
         
-        // Force immediate state update - chips will appear!
-        setIdentifiedEntities(entities);
+        // Merge agent entities with pre-selected entities (pre-selected take precedence)
+        const mergedEntities = {
+          colles: preSelectedEntitiesToSend.colles || entities.colles || [],
+          castells: preSelectedEntitiesToSend.castells 
+            ? (preSelectedEntitiesToSend.castells.map(c => ({ castell_code: c, status: null })))
+            : (entities.castells || []),
+          anys: preSelectedEntitiesToSend.anys 
+            ? (preSelectedEntitiesToSend.anys.map(a => parseInt(a)))
+            : (entities.anys || []),
+          llocs: entities.llocs || [],
+          diades: entities.diades || [],
+          gamma: entities.gamma || null
+        };
         
-        // If a colla was identified, change the app color theme
-        if (entities.colles && entities.colles.length > 0) {
-          const firstColla = entities.colles[0];
+        // Force immediate state update - chips will appear!
+        setIdentifiedEntities(mergedEntities);
+        
+        // If a colla was identified (and not already set from pre-selected), change the app color theme
+        if (mergedEntities.colles && mergedEntities.colles.length > 0 && !hasPreSelectedEntities) {
+          const firstColla = mergedEntities.colles[0];
           console.log('[ChatInterface] Colla identified:', firstColla);
           const colorCode = COLLES_COLORS[firstColla];
           if (colorCode && onCollaIdentified) {
@@ -593,7 +794,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         messageContent, 
         sessionId, 
         handleEntitiesReceived,
-        previousContext
+        previousContext,
+        hasPreSelectedEntities ? preSelectedEntitiesToSend : null
       );
 
       console.log('[ChatInterface] ✅ Full response received');
@@ -656,7 +858,63 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     if (!inputMessage.trim()) return;
     const messageContent = inputMessage.trim();
     setInputMessage('');
+    // Close entity selector section
+    setShowEntitySelector(false);
+    // Clear pre-selected entities after sending (user can select new ones for next question)
+    setPreSelectedEntities({ colles: [], castells: [], anys: [] });
     await sendMessageContent(messageContent);
+  };
+  
+  // Load entity options on component mount
+  useEffect(() => {
+    const loadEntityOptions = async () => {
+      setIsLoadingEntityOptions(true);
+      try {
+        const options = await apiService.getEntityOptions();
+        
+        // Filter colles: remove any that end with ')'
+        const filteredColles = (options.colles || []).filter(colla => !colla.endsWith(')'));
+        
+        // Filter castells: remove 'd4' and sort alphabetically
+        const filteredCastells = (options.castells || [])
+          .filter(castell => castell !== 'd4')
+          .sort((a, b) => a.localeCompare(b));
+        
+        // Sort years in descending order
+        const sortedAnys = (options.anys || [])
+          .map(year => year.toString())
+          .sort((a, b) => parseInt(b) - parseInt(a));
+        
+        setEntityOptions({
+          colles: filteredColles,
+          castells: filteredCastells,
+          anys: sortedAnys
+        });
+      } catch (error) {
+        console.error('Error loading entity options:', error);
+      } finally {
+        setIsLoadingEntityOptions(false);
+      }
+    };
+    loadEntityOptions();
+  }, []);
+  
+  // Handle entity selection with max 2 limit
+  const handleEntityChange = (type, newSelection) => {
+    // Limit to max 2 selections
+    const limitedSelection = newSelection.slice(0, 2);
+    setPreSelectedEntities(prev => ({
+      ...prev,
+      [type]: limitedSelection
+    }));
+  };
+  
+  // Remove a pre-selected entity
+  const handleRemoveEntity = (type, entity) => {
+    setPreSelectedEntities(prev => ({
+      ...prev,
+      [type]: prev[type].filter(e => e !== entity)
+    }));
   };
 
   // Handler for clicking on question chips in the welcome screen
@@ -680,6 +938,83 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       'unknown': 'Desconegut'
     };
     return routeNames[route] || route;
+  };
+
+  // Feedback handlers
+  const handleFeedbackClick = (messageId) => {
+    setFeedbackMessageId(messageId);
+    
+    // Find the message to get user question and xiquet answer
+    const message = messages.find(m => m.id === messageId);
+    if (!message) return;
+    
+    // Find the corresponding user message
+    const userMessage = messages.find(m => m.isUser && m.content === message.content);
+    const userQuestion = userMessage ? userMessage.content : message.content;
+    const xiquetAnswer = message.response || '';
+    
+    // Pre-fill feedback with user question and xiquet answer
+    const preFilledFeedback = `Pregunta: ${userQuestion}\n\nResposta de Xiquet: ${xiquetAnswer}\n\nResposta incorrecta perquè...`;
+    
+    setFeedbackFormData({
+      feedback: preFilledFeedback
+    });
+    setShowFeedbackDialog(true);
+  };
+
+  const handleFeedbackChange = (e) => {
+    const { name, value } = e.target;
+    setFeedbackFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    if (!feedbackFormData.feedback.trim() || isSubmittingFeedback) return;
+
+    // Find the message to get user question and xiquet answer
+    const message = messages.find(m => m.id === feedbackMessageId);
+    if (!message) {
+      setFeedbackSubmitStatus('error');
+      return;
+    }
+
+    // Find the corresponding user message
+    const userMessage = messages.find(m => m.isUser && m.content === message.content);
+    const userQuestion = userMessage ? userMessage.content : message.content;
+    const xiquetAnswer = message.response || '';
+
+    // Get user info automatically
+    const userName = user?.username || user?.email?.split('@')[0] || 'Usuari';
+    const userEmail = user?.email || '';
+
+    setIsSubmittingFeedback(true);
+    setFeedbackSubmitStatus(null);
+
+    try {
+      await apiService.sendFeedback({
+        name: userName,
+        email: userEmail,
+        feedback: feedbackFormData.feedback.trim(),
+        user_question: userQuestion,
+        xiquet_answer: xiquetAnswer
+      });
+      setFeedbackSubmitStatus('success');
+      // Reset form after a delay
+      setTimeout(() => {
+        setShowFeedbackDialog(false);
+        setFeedbackFormData({ feedback: '' });
+        setFeedbackMessageId(null);
+        setFeedbackSubmitStatus(null);
+      }, 2000);
+    } catch (error) {
+      console.error('Error sending feedback:', error);
+      setFeedbackSubmitStatus('error');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
   };
 
   const handleSaveChat = async (e) => {
@@ -1063,6 +1398,13 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
           // This prevents old chips from changing when a new question is asked
           const entitiesToShow = message.identified_entities;
           
+          // Find the last assistant message with a response
+          const assistantMessagesWithResponse = messages
+            .filter(m => !m.isUser && m.response && m.response.trim().length > 0)
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          const lastAssistantMessage = assistantMessagesWithResponse[0];
+          const isLastMessage = !message.isUser && message.response && message.response.trim().length > 0 && message.id === lastAssistantMessage?.id;
+          
           return (
           <div key={message.id} className={`message-wrapper ${message.isUser ? 'user' : 'assistant'}`}>
             {message.isUser ? (
@@ -1151,6 +1493,36 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                     )
                   )}
                 </div>
+                {/* Feedback message - small and subtle - only show if there's a response */}
+                {message.response && message.response.trim().length > 0 && (() => {
+                  // Determine color based on theme (use light gray if white)
+                  const isWhiteColor = theme?.secondary && 
+                    (theme.secondary.toLowerCase() === '#ffffff' || 
+                     theme.secondary.toLowerCase() === '#fff' ||
+                     theme.secondary.toLowerCase() === 'white');
+                  const feedbackColor = isWhiteColor ? '#999' : (theme?.secondary || '#666');
+                  
+                  return (
+                    <div className="feedback-message">
+                      <button 
+                        className={`feedback-link ${isLastMessage ? 'feedback-link-full' : 'feedback-link-short'}`}
+                        onClick={() => handleFeedbackClick(message.id)}
+                        type="button"
+                        style={{ color: feedbackColor }}
+                      >
+                        {isLastMessage ? (
+                          <>
+                            <FeedbackIcon color={feedbackColor} /> Encara estic aprenent. Si la resposta és incorrecta, ajuda'm a millorar →
+                          </>
+                        ) : (
+                          <>
+                            <FeedbackIcon color={feedbackColor} /> Feedback
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1241,7 +1613,125 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       </div>
       
       <div className="chat-input">
+        {/* Entity selector section - shown above input when + button is clicked */}
+        {showEntitySelector && (
+          <div className="entity-selector-section">
+            <p className="entity-selector-hint">
+              Selecciona a quina colla, any o castell vols centrar la teva pregunta. El Xiquet utilitzarà aquestes entitats per respondre.
+            </p>
+            <div className="entity-selector-dropdowns">
+              <div className="entity-selector-dropdown-item">
+                <label className="entity-selector-label">Colles</label>
+                <MultiSelect
+                  options={entityOptions.colles || []}
+                  selected={preSelectedEntities.colles}
+                  onChange={(newSelection) => handleEntityChange('colles', newSelection)}
+                  placeholder="Selecciona colla..."
+                  disabled={isLoading || isLoadingEntityOptions}
+                  maxSelections={2}
+                />
+              </div>
+              <div className="entity-selector-dropdown-item">
+                <label className="entity-selector-label">Anys</label>
+                <MultiSelect
+                  options={entityOptions.anys || []}
+                  selected={preSelectedEntities.anys}
+                  onChange={(newSelection) => handleEntityChange('anys', newSelection)}
+                  placeholder="Selecciona any..."
+                  disabled={isLoading || isLoadingEntityOptions}
+                  displayTransform={(year) => year.toString()}
+                  maxSelections={2}
+                />
+              </div>
+              <div className="entity-selector-dropdown-item">
+                <label className="entity-selector-label">Castells</label>
+                <MultiSelect
+                  options={entityOptions.castells || []}
+                  selected={preSelectedEntities.castells}
+                  onChange={(newSelection) => handleEntityChange('castells', newSelection)}
+                  placeholder="Selecciona castell..."
+                  disabled={isLoading || isLoadingEntityOptions}
+                  maxSelections={2}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Pre-selected entities chips */}
+        {(preSelectedEntities.colles.length > 0 || 
+          preSelectedEntities.castells.length > 0 || 
+          preSelectedEntities.anys.length > 0) && (
+          <div className="pre-selected-entities-chips">
+            {preSelectedEntities.colles.map((colla, idx) => {
+              // Get colla color from COLLES_COLORS
+              const collaColorCode = COLLES_COLORS[colla];
+              const collaThemeKey = collaColorCode ? COLOR_CODE_TO_THEME[collaColorCode] : null;
+              const themeColor = collaThemeKey && COLOR_THEMES[collaThemeKey] ? COLOR_THEMES[collaThemeKey].secondary : (theme?.secondary || '#d0282c');
+              const textColor = collaColorCode === 'white' ? '#333' : 'white';
+              return (
+                <span 
+                  key={`pre-colla-${idx}`} 
+                  className="entity-chip entity-chip-colla"
+                  style={{ backgroundColor: themeColor, color: textColor }}
+                >
+                  <CollaIcon color={textColor} /> {colla}
+                  <button 
+                    className="entity-chip-remove"
+                    onClick={() => handleRemoveEntity('colles', colla)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {preSelectedEntities.castells.map((castell, idx) => (
+              <span 
+                key={`pre-castell-${idx}`} 
+                className="entity-chip entity-chip-castell"
+                style={{ backgroundColor: 'white', color: '#d0282c', border: '2px solid #d0282c' }}
+              >
+                <CastellIcon color="#d0282c" /> {castell}
+                <button 
+                  className="entity-chip-remove"
+                  onClick={() => handleRemoveEntity('castells', castell)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {preSelectedEntities.anys.map((any, idx) => (
+              <span 
+                key={`pre-any-${idx}`} 
+                className="entity-chip entity-chip-any"
+                style={{ backgroundColor: 'white', color: '#d0282c', border: '2px solid #d0282c' }}
+              >
+                <CalendarIcon color="#d0282c" /> {any}
+                <button 
+                  className="entity-chip-remove"
+                  onClick={() => handleRemoveEntity('anys', any)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        
         <form onSubmit={sendMessage} className="input-group">
+          <button
+            type="button"
+            className={`entity-selector-button-inline ${showEntitySelector ? 'selected' : ''}`}
+            onClick={() => setShowEntitySelector(!showEntitySelector)}
+            disabled={isLoading}
+            title="Filtrar per colla, any o castell"
+            style={showEntitySelector && theme?.secondary ? { '--theme-color': theme.secondary } : {}}
+          >
+            {showEntitySelector ? '−' : '+'}
+          </button>
           <input
             ref={inputRef}
             type="text"
@@ -1290,6 +1780,71 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                     setSaveTitle('');
                   }}
                   disabled={isSaving}
+                >
+                  Cancel·lar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showFeedbackDialog && (
+        <div className="feedback-dialog-overlay" onClick={() => {
+          if (!isSubmittingFeedback) {
+            setShowFeedbackDialog(false);
+            setFeedbackFormData({ feedback: '' });
+            setFeedbackMessageId(null);
+            setFeedbackSubmitStatus(null);
+          }
+        }}>
+          <div className="feedback-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Envia feedback</h3>
+            <p className="feedback-dialog-description">
+              El teu feedback m'ajuda a millorar. Enviaré aquesta conversa al meu creador.
+            </p>
+            <form onSubmit={handleFeedbackSubmit}>
+              <div className="feedback-field">
+                <label htmlFor="feedback-message">Feedback</label>
+                <textarea
+                  id="feedback-message"
+                  name="feedback"
+                  value={feedbackFormData.feedback}
+                  onChange={handleFeedbackChange}
+                  placeholder="Modifica el text o afegeix el motiu per què la resposta és incorrecta..."
+                  rows={8}
+                  disabled={isSubmittingFeedback}
+                  required
+                />
+              </div>
+              {feedbackSubmitStatus === 'success' && (
+                <div className="feedback-status feedback-status-success">
+                  ✓ Feedback enviat correctament. Gràcies!
+                </div>
+              )}
+              {feedbackSubmitStatus === 'error' && (
+                <div className="feedback-status feedback-status-error">
+                  ✗ Error enviant el feedback. Si us plau, torna-ho a intentar.
+                </div>
+              )}
+              <div className="feedback-dialog-actions">
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingFeedback || !feedbackFormData.feedback.trim()}
+                  className="feedback-submit-btn"
+                >
+                  {isSubmittingFeedback ? 'Enviant...' : 'Enviar feedback'}
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowFeedbackDialog(false);
+                    setFeedbackFormData({ feedback: '' });
+                    setFeedbackMessageId(null);
+                    setFeedbackSubmitStatus(null);
+                  }}
+                  disabled={isSubmittingFeedback}
+                  className="feedback-cancel-btn"
                 >
                   Cancel·lar
                 </button>

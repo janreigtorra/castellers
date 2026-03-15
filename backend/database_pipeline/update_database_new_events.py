@@ -30,7 +30,12 @@ if str(BACKEND_DIR) not in sys.path:
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # FROM_DATE: Only process events from this date onwards (format: DD/MM/YYYY)
-FROM_DATE = "01/12/2025"  # Change this to the date you want to start from
+# Can be overridden by command line argument
+FROM_DATE = "01/12/2025"  # Default date
+
+# Get FROM_DATE from command line argument if provided
+if len(sys.argv) >= 2:
+    FROM_DATE = sys.argv[1]
 
 def parse_date(date_str):
     """Parse date string in DD/MM/YYYY format to datetime object"""

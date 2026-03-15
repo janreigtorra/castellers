@@ -4,6 +4,10 @@ primary_region = "cdg"  # Paris - closest available to Catalonia (Madrid depreca
 [build]
   dockerfile = "../docker/Dockerfile.backend"
 
+# Run migrations automatically on deploy (before app starts)
+[deploy]
+  release_command = "python migrations/run_migration.py"
+
 [env]
   PORT = "8000"
 

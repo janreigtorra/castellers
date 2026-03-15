@@ -52,7 +52,7 @@ const ColorSelector = ({ selectedColor, onColorChange, hideOnMobile = false }) =
     <div className={`color-selector ${showAllColors ? 'expanded' : ''}`}>
       <div className="color-selector-content">
         <span className="color-selector-label">
-          {isMobile ? 'Camisa?' : 'De quin color és la teva camisa?'}
+          {isMobile ? 'Color?' : 'De quin color és la teva camisa?'}
         </span>
         <div className="color-selector-options">
           {visibleColors.map(({ key, color }) => (

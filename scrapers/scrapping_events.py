@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import re
 import os
+import sys
 
 BASE_URL = "https://castellscat.cat/ca/base-de-dades"
 
@@ -14,6 +15,13 @@ OUTPUT_FORMAT = "json"  # "json" or "txt"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FILE = os.path.join(SCRIPT_DIR, "..", "backend", "data_basic", "castellers_data.json")
 OUTPUT_FILE = os.path.normpath(OUTPUT_FILE)  # Normalize the path
+
+# Get date parameters from command line arguments if provided
+DATE_START = None
+DATE_END = None
+if len(sys.argv) >= 3:
+    DATE_START = sys.argv[1]
+    DATE_END = sys.argv[2]
 
 session = requests.Session()
 session.headers.update({
@@ -160,10 +168,14 @@ token = soup.find("input", {"name": "_token"})["value"]
 print("Got CSRF token:", token)
 
 # Step 2: Build POST data
+# Use command line arguments if provided, otherwise use defaults
+date_start = DATE_START if DATE_START else "01/01/2026"
+date_end = DATE_END if DATE_END else "17/02/2026"
+
 payload = {
     "_token": token,
-    "date_start": "01/01/2026",  # Scrape from January 1950
-    "date_end": "17/02/2026",  # Scrape until December 1995
+    "date_start": date_start,
+    "date_end": date_end,
     "diada": "",
     "colla[]": "",        
     "castell": "",

@@ -969,6 +969,16 @@ class LLMSQLGeneratorV2:
             # Variant 1: Group by colla, event - show colla, diada, lloc, any, castells_fets
             raw_results.sort(key=lambda r: (r['colla_name'], r['event_id'], -r.get('punts', 0)))
             
+            # Parse date for sorting (DD/MM/YYYY format)
+            def parse_date(date_str):
+                try:
+                    if date_str:
+                        day, month, year = date_str.split('/')
+                        return (int(year), int(month), int(day))
+                except:
+                    pass
+                return (9999, 12, 31)  # Put invalid dates at the end
+            
             aggregated_results = []
             for (colla_name, event_id), group in groupby(raw_results, key=lambda r: (r['colla_name'], r['event_id'])):
                 group_list = list(group)
@@ -996,11 +1006,11 @@ class LLMSQLGeneratorV2:
                     'lloc': first_row['event_city'],
                     'any': year,
                     'castells_fets': castells_fets,
-                    '_sort_key': (-year if year else 0, sort_key_by_punts_and_date({'event_date': first_row.get('event_date', '')})[1])
+                    '_sort_key': parse_date(first_row.get('event_date', ''))
                 })
             
-            # Sort by year DESC, date DESC
-            aggregated_results.sort(key=lambda r: r['_sort_key'], reverse=True)
+            # Sort by date only (oldest first)
+            aggregated_results.sort(key=lambda r: r['_sort_key'], reverse=False)
             for r in aggregated_results:
                 del r['_sort_key']
             
@@ -1056,11 +1066,11 @@ class LLMSQLGeneratorV2:
                     'primera_data_descarregat': desc_dates[0] if desc_dates else None,
                     'primera_data_carregat': carr_dates[0] if carr_dates else None,
                     'primera_data': all_dates[0] if all_dates else None,
-                    '_sort_key': (all_dates[0] if all_dates else (0, 0, 0), group['colla_name'], group['castell_name'])
+                    '_sort_key': parse_date(all_dates[0] if all_dates else '')
                 })
             
-            # Sort by max date DESC, colla_name, castell_name
-            results.sort(key=lambda r: r['_sort_key'], reverse=True)
+            # Sort by primera_data only (oldest first)
+            results.sort(key=lambda r: r['_sort_key'], reverse=False)
             for r in results:
                 del r['_sort_key']
             
@@ -1479,25 +1489,16 @@ def get_sql_summary_prompt(
     previous_response: str = None,
     previous_context_max_chars: int = 200
 ) -> StructuredPrompt:
-    """
-    Retorna un prompt estructurat amb system, developer i user components.
-    
-    Args:
-        query_type: Tipus de consulta SQL
-        question: Pregunta de l'usuari
-        table_str: Resultats de la consulta en format string
-        previous_question: Pregunta anterior (opcional, per context de seguiment)
-        previous_response: Resposta anterior (opcional, per context de seguiment)
-        previous_context_max_chars: Màxim de caràcters a mostrar de la resposta anterior
-    
-    Returns:
-        StructuredPrompt amb els tres components separats
-    """
     
     # Query-type specific developer instructions
     developer_instructions = {
         "millor_diada": f"""{SHARED_DEVELOPER_RULES}""",
-        "millor_castell": f"""{SHARED_DEVELOPER_RULES}""",
+        "millor_castell": f"""{SHARED_DEVELOPER_RULES}
+
+            IMPORTANT - DETERMINAR EL MILLOR CASTELL:
+            - Els resultats estan ordenats de MILLOR a PITJOR (el primer és el millor)
+            - SEl millor castell serà el primer de la llista""",
+
         "castell_historia": f"""{SHARED_DEVELOPER_RULES}""",
         "castells_list": f"""{SHARED_DEVELOPER_RULES}""",
         "location_actuations": f"""{SHARED_DEVELOPER_RULES}""",
@@ -1533,6 +1534,10 @@ def get_sql_summary_prompt(
 
 Resultats:
 {table_str}"""
+
+    print(f"DEBUG User prompt: {user_prompt}")
+    print(f"DEBUG Developer message: {developer_message}")
+    print(f"DEBUG System message: {BASE_SYSTEM_MESSAGE}")
 
     return StructuredPrompt(
         system_message=BASE_SYSTEM_MESSAGE,

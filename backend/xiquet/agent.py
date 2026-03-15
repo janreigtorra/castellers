@@ -1,4 +1,5 @@
 import re
+import json
 import unicodedata
 from typing import List, Optional
 from langdetect import detect
@@ -97,7 +98,11 @@ MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
 
 DEBUG = True
 
-PREVIOUS_CONTEXT_MAX_CHARS = 100 
+PREVIOUS_CONTEXT_MAX_CHARS = 100
+
+# Rate limiting configuration for basic subscription
+MAX_QUESTIONS_BASIC = 7  # Maximum questions per time window
+TIME_BASIC = 3600  # Time window in seconds (1 hour = 3600 seconds) 
 
 # ---- Xiquet Class ----
 class Xiquet:
@@ -107,7 +112,8 @@ class Xiquet:
         previous_response: str = None,
         previous_route: str = None,
         previous_sql_query_type: str = None,
-        previous_entities: dict = None
+        previous_entities: dict = None,
+        pre_selected_entities: dict = None
     ):
         self.question = ""
         self.response = None
@@ -127,6 +133,8 @@ class Xiquet:
         self.previous_route = previous_route
         self.previous_sql_query_type = previous_sql_query_type
         self.previous_entities = previous_entities or {}
+        # Pre-selected entities from UI (user selected before asking question)
+        self.pre_selected_entities = pre_selected_entities or {}
     
     def _get_previous_context_section(self) -> str:
 
@@ -211,7 +219,7 @@ class Xiquet:
         question_lower = question.lower().strip()
         
         # Detect follow-up patterns: short question + starts with "I els...", "I de...", etc.
-        follow_up_patterns = ["i els ", "i de ", "i dels ", "i la ", "i les ", "i el ", "i al ", "i a ","i l'"]
+        follow_up_patterns = ["i els ", "i de ", "i dels ", "i la ", "i les ", "i el ", "i al ", "i a ","i l'", "i pel"]
         is_short_question = len(question) < 50
         one_entity_at_least = response.colla or response.castells or response.anys or response.llocs or response.diades
         has_follow_up_start = any(question_lower.startswith(p) for p in follow_up_patterns)
@@ -271,52 +279,69 @@ class Xiquet:
         if not self.previous_entities:
             return
         
-        # Helper to convert comma-separated string to list
-        def str_to_list(s: str) -> list:
+        # Helper to convert to list (handles both string and list)
+        def to_list(s) -> list:
             if not s:
                 return []
-            return [x.strip() for x in s.split(",") if x.strip()]
+            if isinstance(s, list):
+                return s
+            if isinstance(s, str):
+                return [x.strip() for x in s.split(",") if x.strip()]
+            return []
         
-        # Helper to convert list back to comma-separated string
+        # Helper to convert list back to comma-separated string (only if needed)
         def list_to_str(lst: list) -> str:
-            return ", ".join(lst)
+            return ", ".join(lst) if lst else ""
         
-        # Enrich colles (string, comma-separated)
-        if self.previous_entities.get("colles"):
-            current_colles = str_to_list(self.colles_castelleres)
+        # Enrich colles (can be string or list depending on pre-selected vs extracted)
+        # BUT: Skip if colles are pre-selected (user explicitly selected them)
+        if self.previous_entities.get("colles") and not self.pre_selected_entities.get("colles"):
+            current_colles = to_list(self.colles_castelleres)
             for colla in self.previous_entities["colles"]:
                 if colla and colla not in current_colles:
                     current_colles.append(colla)
-            self.colles_castelleres = list_to_str(current_colles)
+            # Keep as list if it was a list, otherwise convert to string
+            if isinstance(self.colles_castelleres, list):
+                self.colles_castelleres = current_colles
+            else:
+                self.colles_castelleres = list_to_str(current_colles)
         
         # Enrich castells (List[Castell] - the only real list!)
-        if self.previous_entities.get("castells"):
+        # BUT: Skip if castells are pre-selected (user explicitly selected them)
+        if self.previous_entities.get("castells") and not self.pre_selected_entities.get("castells"):
             current_castell_codes = {c.castell_code if hasattr(c, 'castell_code') else str(c) for c in self.castells}
             for c in self.previous_entities["castells"]:
                 castell_code = c.get("castell_code") if isinstance(c, dict) else (c.castell_code if hasattr(c, 'castell_code') else str(c))
                 if castell_code and castell_code not in current_castell_codes:
                     self.castells.append(Castell(castell_code=castell_code, status=None))
         
-        # Enrich anys (string, comma-separated)
-        if self.previous_entities.get("anys"):
-            current_anys = str_to_list(self.anys)
+        # Enrich anys (can be string or list depending on pre-selected vs extracted)
+        # BUT: Skip if anys are pre-selected (user explicitly selected them)
+        if self.previous_entities.get("anys") and not self.pre_selected_entities.get("anys"):
+            current_anys = to_list(self.anys)
             for a in self.previous_entities["anys"]:
                 any_str = str(a)
                 if any_str and any_str not in current_anys:
                     current_anys.append(any_str)
-            self.anys = list_to_str(current_anys)
+            # Keep as list if it was a list, otherwise convert to string
+            if isinstance(self.anys, list):
+                self.anys = current_anys
+            else:
+                self.anys = list_to_str(current_anys)
         
         # Enrich llocs (string, comma-separated)
+        # Note: llocs are not in pre-selected options, so always enrich
         if self.previous_entities.get("llocs"):
-            current_llocs = str_to_list(self.llocs)
+            current_llocs = to_list(self.llocs)
             for lloc in self.previous_entities["llocs"]:
                 if lloc and lloc not in current_llocs:
                     current_llocs.append(lloc)
             self.llocs = list_to_str(current_llocs)
         
         # Enrich diades (string, comma-separated)
-        if self.previous_entities.get("diades"):
-            current_diades = str_to_list(self.diades)
+        # BUT: Skip if diades are pre-selected (user explicitly selected them)
+        if self.previous_entities.get("diades") and not self.pre_selected_entities.get("diades"):
+            current_diades = to_list(self.diades)
             for diada in self.previous_entities["diades"]:
                 if diada and diada not in current_diades:
                     current_diades.append(diada)
@@ -324,11 +349,11 @@ class Xiquet:
 
         # Enrich gamma (string, comma-separated)
         if self.previous_entities.get("gamma"):
-            current_gamma = str_to_list(self.gamma)
+            current_gamma = to_list(self.gamma) if self.gamma else []
             for gamma in self.previous_entities["gamma"]:
                 if gamma and gamma not in current_gamma:
                     current_gamma.append(gamma)
-            self.gamma = list_to_str(current_gamma)
+            self.gamma = list_to_str(current_gamma) if current_gamma else None
     
     def _detect_gamma(self, question: str) -> Optional[str]:
         question_lower = question.lower()
@@ -357,7 +382,7 @@ class Xiquet:
         # 2. Analitza si la pregunta no és en català/espanyol/portuguès/francès
         try:
             lang = detect(question)
-            if lang not in ["ca", "es", 'pt', 'fr']:
+            if lang not in ["ca", "es", 'pt', 'fr', 'it']:
                 if lang in language_names:
                     response = f"Ho sento, no parlo {language_names[lang]}. Només puc respondre preguntes en català i relacionades amb el món casteller. Però sempre es bon moment per apendre a parlar català!"
                 else:
@@ -497,28 +522,47 @@ class Xiquet:
             response.castells = []
             print(f"[Gamma] Clearing individual castells - gamma filter will handle: {self.gamma}")
 
-        if DEBUG:
-            print(f"castells: {response.castells}")
-            print(f"anys: {response.anys}")
-            print(f"llocs: {response.llocs}")
-            print(f"diades: {response.diades}")
-            print(f"colles: {response.colla}")
-            print(f"editions: {response.editions}")
-            print(f"jornades: {response.jornades}")
-            print(f"positions: {response.positions}")
-            print(f"gamma: {self.gamma}")
-            print(f"tools: {response.tools}")
-            print(f"sql_query_type: {response.sql_query_type}")
+        # if DEBUG:
+        print(f"DEBUG ENTITIES FOR QUESTION")
+        print(f"castells: {response.castells}")
+        print(f"anys: {response.anys}")
+        print(f"llocs: {response.llocs}")
+        print(f"diades: {response.diades}")
+        print(f"colles: {response.colla}")
+        print(f"editions: {response.editions}")
+        print(f"jornades: {response.jornades}")
+        print(f"positions: {response.positions}")
+        print(f"gamma: {self.gamma}")
+        print(f"tools: {response.tools}")
+        print(f"sql_query_type: {response.sql_query_type}")
 
         return None  # Validation succeeded
 
     def generate_prompt_decide_route(self, question: str) -> str:
 
-        # Extract entities from question (heuristics)
+        # If we have pre-selected entities, use them directly and skip extraction for those types
+        if self.pre_selected_entities:
+            # Set pre-selected entities directly
+            if self.pre_selected_entities.get("colles"):
+                self.colles_castelleres = self.pre_selected_entities["colles"]
+            if self.pre_selected_entities.get("castells"):
+                # Convert castell codes to Castell objects
+                self.castells = [Castell(castell_code=c, status=None) for c in self.pre_selected_entities["castells"]]
+            if self.pre_selected_entities.get("anys"):
+                self.anys = self.pre_selected_entities["anys"]
+            if self.pre_selected_entities.get("diades"):
+                self.diades = self.pre_selected_entities["diades"]
+            print(f"[PRE-SELECTED] Using pre-selected entities: colles={self.colles_castelleres}, castells={[c.castell_code for c in self.castells]}, anys={self.anys}, diades={self.diades}")
+        
+        # Extract entities from question (heuristics) - but skip types that are pre-selected
         entity_start = datetime.now()
-        self.colles_castelleres = get_colles_castelleres_subset(question)
-        self.castells = get_castells_with_status_subset(question)
-        self.anys = get_anys_subset(question)
+        if not self.pre_selected_entities.get("colles"):
+            self.colles_castelleres = get_colles_castelleres_subset(question)
+        if not self.pre_selected_entities.get("castells"):
+            self.castells = get_castells_with_status_subset(question)
+        if not self.pre_selected_entities.get("anys"):
+            self.anys = get_anys_subset(question)
+        # Always extract llocs and diades (not in pre-selected options)
         self.llocs = get_llocs_subset(question)
         self.diades = get_diades_subset(question)
         self.gamma = self._detect_gamma(question)
@@ -529,15 +573,37 @@ class Xiquet:
         entity_time = (datetime.now() - entity_start).total_seconds() * 1000
         print(f"[TIMING] Entity extraction: {entity_time:.2f}ms")
 
+        # Check if pregunta starts with 'quina colla' or 'quines colles'
+        starts_with_quina_colla = False
+        if question.lower().startswith('quina colla') or question.lower().startswith('quines colles'):
+            starts_with_quina_colla = True
+
         # Build dynamic entities section
+        # If entities are pre-selected, inform LLM but don't ask to extract them
         entities_section = ""
-        if self.colles_castelleres:
+        
+        # Handle pre-selected colles
+        if self.pre_selected_entities.get("colles"):
+            entities_section += f"""
+        - **Colla castellera:** L'usuari ha seleccionat prèviament la següent colla: {', '.join(self.pre_selected_entities['colles'])}. NO cal que l'extreguis de la pregunta.
+        \n"""
+        elif self.colles_castelleres and not starts_with_quina_colla:
             entities_section += f"""
         - **Colla castellera:** Nom de la colla castellera.  
         Possibles opcions: {self.colles_castelleres}
          \n"""
+        else:
+            entities_section += f"""
+        - **Colla castellera:** NO extreguis cap colla. La pregunta no menciona cap colla específica.
+        \n"""
+        print(f"DEBUG 1 colles_castelleres: {self.colles_castelleres}")
         
-        if self.castells:
+        # Handle pre-selected castells
+        if self.pre_selected_entities.get("castells"):
+            entities_section += f"""
+        - **Castell o castells:** L'usuari ha seleccionat prèviament els següents castells: {', '.join(self.pre_selected_entities['castells'])}. NO cal que els extreguis de la pregunta.
+        \n"""
+        elif self.castells:
             entities_section += f"""
         - **Castell o castells:** Tipus de construcció castellera amb estat opcional.  
         Possibles opcions: {self.castells}
@@ -548,7 +614,12 @@ class Xiquet:
         - **Castell o castells:** No extreguis cap castell.  
         \n"""
         
-        if self.anys:
+        # Handle pre-selected anys
+        if self.pre_selected_entities.get("anys"):
+            entities_section += f"""
+        - **Any:** L'usuari ha seleccionat prèviament l'any: {', '.join(self.pre_selected_entities['anys'])}. NO cal que l'extreguis de la pregunta.
+        \n"""
+        elif self.anys:
             entities_section += f"""
         - **Any:** Any concret d'una actuació o d'una referència temporal (per exemple, "2024", "2025", etc.)  
         \n"""
@@ -564,6 +635,7 @@ class Xiquet:
         Possibles opcions: {self.llocs}
         \n"""
         
+        # Diades (not in pre-selected options, always extract)
         if self.diades and self.diades.strip():
             entities_section += f"""
         - **Diada:** Nom de la diada o jornada castellera.  
@@ -588,10 +660,24 @@ class Xiquet:
         # Get previous context if available
         previous_context = self._get_previous_context_section()
         
+        # Build enhanced question with pre-selected entities for LLM context
+        enhanced_question = question
+        pre_selected_parts = []
+        if self.pre_selected_entities.get("colles"):
+            pre_selected_parts.append(f"colles: {', '.join(self.pre_selected_entities['colles'])}")
+        if self.pre_selected_entities.get("anys"):
+            pre_selected_parts.append(f"anys: {', '.join(self.pre_selected_entities['anys'])}")
+        if self.pre_selected_entities.get("castells"):
+            pre_selected_parts.append(f"castells: {', '.join(self.pre_selected_entities['castells'])}")
+        
+        if pre_selected_parts:
+            enhanced_question = f"{question} ({', '.join(pre_selected_parts)})"
+            print(f"[ENHANCED QUESTION] {enhanced_question}")
+        
         route_prompt = f"""
         Ets el Xiquet, un assistent expert en el món casteller. 
         La teva tasca és analitzar la següent pregunta sobre castells:  
-        > "{question}"
+        > "{enhanced_question}"
 
         Segueix estrictament aquests passos:
 
@@ -631,7 +717,7 @@ class Xiquet:
         Ara analitza la pregunta de l'usuari i genera la sortida amb el format indicat.
         
         ### PREGUNTA DE L'USUARI:
-        > "{question}"
+        > "{enhanced_question}"
         """
         
         return route_prompt
@@ -655,6 +741,7 @@ class Xiquet:
         # Generate route prompt (extracts entities and builds prompt)
         llm_start = datetime.now()
         route_prompt = self.generate_prompt_decide_route(question)
+        print(f"[ROUTE PROMPT] {route_prompt}")
 
         response = llm_call(route_prompt, model=MODEL_NAME_ROUTE, response_format=FirstCallResponseFormat)
         llm_time = (datetime.now() - llm_start).total_seconds() * 1000
@@ -693,12 +780,32 @@ class Xiquet:
                 threshold = 0.75
             else:
                 threshold = 0.65
+            # Check if entities exist (either from LLM extraction or pre-selected)
+            has_entities = (
+                response.colla or response.castells or response.anys or response.llocs or response.diades or
+                self.pre_selected_entities.get("colles") or 
+                self.pre_selected_entities.get("castells") or 
+                self.pre_selected_entities.get("anys")
+            )
             # Only attempt SQL determination if entities exist
-            if response.colla or response.castells or response.anys or response.llocs or response.diades:
-                response.sql_query_type = self._determine_sql_query_type(question, response, IS_SQL_QUERY_PATTERNS, threshold=threshold)
+            if has_entities:
+                # Use enhanced question (with pre-selected entities) for better pattern matching
+                enhanced_question = question
+                pre_selected_parts = []
+                if self.pre_selected_entities.get("colles"):
+                    pre_selected_parts.append(f"colles: {', '.join(self.pre_selected_entities['colles'])}")
+                if self.pre_selected_entities.get("anys"):
+                    pre_selected_parts.append(f"anys: {', '.join(self.pre_selected_entities['anys'])}")
+                if self.pre_selected_entities.get("castells"):
+                    pre_selected_parts.append(f"castells: {', '.join(self.pre_selected_entities['castells'])}")
+                if pre_selected_parts:
+                    enhanced_question = f"{question} ({', '.join(pre_selected_parts)})"
+                
+                response.sql_query_type = self._determine_sql_query_type(enhanced_question, response, IS_SQL_QUERY_PATTERNS, threshold=threshold)
                 if response.sql_query_type != "custom":
                     response.tools = "sql"
                     skip_sql_check = True
+                    print(f"[SQL ROUTE] Detected SQL query type '{response.sql_query_type}' from enhanced question with pre-selected entities")
 
         
         # If SQL or hybrid, determine the specific query type
@@ -723,6 +830,17 @@ class Xiquet:
         if validation_result is not None:
             return validation_result
 
+        # Merge pre-selected entities with LLM-extracted entities
+        # Pre-selected entities take precedence (user explicitly selected them)
+        if self.pre_selected_entities:
+            if self.pre_selected_entities.get("colles"):
+                response.colla = self.pre_selected_entities["colles"]
+            if self.pre_selected_entities.get("castells"):
+                # Convert castell codes to Castell objects
+                response.castells = [Castell(castell_code=c, status=None) for c in self.pre_selected_entities["castells"]]
+            if self.pre_selected_entities.get("anys"):
+                response.anys = self.pre_selected_entities["anys"]
+        
         # Update self with validated entities
         self.colles_castelleres = response.colla
         self.castells = response.castells
@@ -743,16 +861,52 @@ class Xiquet:
         scores = {}
         for query_type, patterns in query_patterns.items():
             max_similarity = 0
+            best_pattern = None
+            
             for pattern in patterns:
                 # Calculate similarity between question and pattern
                 similarity = SequenceMatcher(None, question_lower, pattern).ratio()
-                max_similarity = max(max_similarity, similarity)
+                if similarity > max_similarity:
+                    max_similarity = similarity
+                    best_pattern = pattern
             
-            # Also check for partial matches (substring matching)
-            partial_matches = sum(1 for pattern in patterns if pattern in question_lower)
-            if partial_matches > 0:
-                # Boost score for exact substring matches
-                max_similarity = max(max_similarity, 0.65)
+            # Check for exact substring matches (highest priority)
+            exact_substring_matches = [p for p in patterns if p in question_lower]
+            if exact_substring_matches:
+                # Boost score significantly for exact substring matches
+                max_similarity = max(max_similarity, 0.80)
+            
+            # Check for fuzzy substring matches (handle typos)
+            # For key patterns, check if all words appear in question (with fuzzy matching)
+            fuzzy_match_score = 0
+            for pattern in patterns:
+                pattern_words = pattern.split()
+                if len(pattern_words) >= 2:  # Only for multi-word patterns
+                    # Check if all key words from pattern appear in question (with some tolerance)
+                    words_found = 0
+                    for word in pattern_words:
+                        # Check exact match first
+                        if word in question_lower:
+                            words_found += 1
+                        else:
+                            # Check fuzzy match (typo tolerance) - look for similar words
+                            for q_word in question_lower.split():
+                                word_sim = SequenceMatcher(None, word, q_word).ratio()
+                                if word_sim > 0.85:  # High similarity threshold for typos
+                                    words_found += 1
+                                    break
+                    
+                    # If most/all words match, boost the score significantly
+                    if words_found >= len(pattern_words) * 0.8:  # 80% of words match
+                        # For important patterns like "millor castell", give high priority
+                        if words_found == len(pattern_words):  # All words match
+                            fuzzy_match_score = max(fuzzy_match_score, 0.75)
+                        else:  # Most words match
+                            fuzzy_sim = SequenceMatcher(None, question_lower, pattern).ratio()
+                            fuzzy_match_score = max(fuzzy_match_score, fuzzy_sim * 1.3)  # Boost by 30%
+            
+            if fuzzy_match_score > 0:
+                max_similarity = max(max_similarity, fuzzy_match_score)
             
             scores[query_type] = max_similarity
         
@@ -935,6 +1089,43 @@ Respon basant-te en els documents."""
         except Exception as e:
             print(f"[RAG] Error: {e}")
             return f"Error en la cerca semàntica: {e}"
+
+    def _format_results_for_llm(self, rows: list, max_rows: int = None) -> str:
+
+        if not rows:
+            return "columns=[]\nrows=[]"
+        
+        # Limit rows if specified
+        limited_rows = rows[:max_rows] if max_rows else rows
+        
+        # First pass: collect all column names (skip internal metadata fields)
+        # Use the first row to determine column order
+        all_columns = []
+        for db_col in limited_rows[0].keys():
+            if not db_col.startswith('_'):
+                # Use human-readable column name if available
+                display_col = COLUMN_MAPPINGS.get(db_col, db_col)
+                all_columns.append((db_col, display_col))
+        
+        # Extract just the display column names
+        column_names = [display_col for _, display_col in all_columns]
+        
+        # Second pass: build rows as arrays of values in column order
+        formatted_rows = []
+        for row in limited_rows:
+            row_values = []
+            for db_col, display_col in all_columns:
+                value = row.get(db_col)
+                # Convert None to None (will be represented as null in output)
+                row_values.append(value)
+            formatted_rows.append(row_values)
+        
+        # Format as columns=[...]\nrows=[[...],[...]]
+        # Use json.dumps for proper formatting of values (handles None, strings, numbers, etc.)
+        columns_str = json.dumps(column_names, ensure_ascii=False)
+        rows_str = json.dumps(formatted_rows, ensure_ascii=False, default=str)
+        
+        return f"columns={columns_str}\nrows={rows_str}"
 
     def _format_table_for_frontend(self, rows: list, query_type: str) -> dict:
         if not rows:
@@ -1125,20 +1316,18 @@ Respon basant-te en els documents."""
                                        if k not in ['_table_type', '_is_aggregation']} 
                                       for r in top_results_for_llm]
                 
-                # Convert top_results to table string for LLM (only top 10, no IDs)
+                # Convert top_results to compact column-header format for LLM (only top 10, no IDs)
                 if top_results_for_llm:
-                    header = list(top_results_for_llm[0].keys())
-                    table_str = "\n".join([" | ".join(header)] + [" | ".join(str(v) for v in r.values()) for r in top_results_for_llm[:llm_context_limit]])
+                    table_str = self._format_results_for_llm(top_results_for_llm, max_rows=llm_context_limit)
                     print(f"[SQL Results for LLM] (showing {min(len(top_results_for_llm), llm_context_limit)}/{len(top_results_for_llm)} rows from top_results table)\n", table_str)
                 else:
-                    table_str = "No results found."
+                    table_str = "columns=[]\nrows=[]"
                 
                 # Store multiple tables for frontend display
                 self.table_data = self._format_custom_tables_for_frontend(rows)
             else:
-                # Convert rows to a friendly table (limited for LLM context)
-                header = list(rows[0].keys()) if rows else []
-                table_str = "\n".join([" | ".join(header)] + [" | ".join(str(v) for v in r.values()) for r in rows[:llm_context_limit]]) if rows else "No results found."
+                # Convert rows to compact column-header format for LLM (limited for LLM context)
+                table_str = self._format_results_for_llm(rows, max_rows=llm_context_limit) if rows else "columns=[]\nrows=[]"
                 print(f"[SQL Results for LLM] (showing {min(len(rows), llm_context_limit)}/{len(rows)} rows)\n", table_str)
                 
                 # Store table data for frontend display (full results up to SQL_RESULT_LIMIT)
@@ -1219,7 +1408,8 @@ def xiquet_agent(
     previous_response: str = None,
     previous_route: str = None,
     previous_sql_query_type: str = None,
-    previous_entities: dict = None
+    previous_entities: dict = None,
+    pre_selected_entities: dict = None
 ) -> str:
 
     xiquet = Xiquet(
@@ -1227,7 +1417,8 @@ def xiquet_agent(
         previous_response=previous_response,
         previous_route=previous_route,
         previous_sql_query_type=previous_sql_query_type,
-        previous_entities=previous_entities
+        previous_entities=previous_entities,
+        pre_selected_entities=pre_selected_entities
     )
     return xiquet.process_question(question)
 

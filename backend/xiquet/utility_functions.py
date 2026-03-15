@@ -23,6 +23,19 @@ load_dotenv()
 _cache = {}
 _CACHE_TTL = 3600  # 1 hour in seconds
 
+DIADA_SCORE_CUTOFF = 80
+COLLA_SCORE_CUTOFF = 75
+CASTELL_SCORE_CUTOFF = 60
+LLOC_SCORE_CUTOFF = 85
+
+
+priority_colles_keywords = {
+    'colla vella': 'Colla Vella dels Xiquets de Valls',
+    'colla joves': 'Colla Joves Xiquets de Valls',
+    'els verds': 'Castellers de Vilafranca (aka "els verds")',
+    'colla jove': 'Colla Jove Xiquets de Tarragona'
+}
+
 def _get_cached(key: str, fetch_fn):
     """Get from cache or fetch and cache."""
     now = time.time()
@@ -257,18 +270,46 @@ def get_colles_castelleres_subset(question: str, top_n: int = 5) -> str:
     """
     Get colles matching the question using fast batch fuzzy matching.
     """
+    question_lower = question.lower()
+    
+    # Skip extraction for general historical questions about "primeres colles" (first colles)
+    # These questions are asking about the concept/history, not specific colles
+    historical_patterns = [
+        'primeres colles',
+        'primera colla',
+        'primer colla',
+        'colles que hi ha hagut',
+        'colles que han existit',
+        'colles que han estat',
+        'historia de les colles',
+        'història de les colles',
+        'origen de les colles',
+        'naixement de les colles'
+    ]
+    
+    for pattern in historical_patterns:
+        if pattern in question_lower:
+            return ""  # Don't extract colles for general historical questions
+    
     colles_names = get_all_colla_options()
     if not colles_names:
         return ""
     
+
     # Use rapidfuzz.process.extract for batch matching (much faster)
     matches = process.extract(
-        question.lower(), 
+        question_lower, 
         colles_names, 
-        scorer=fuzz.partial_ratio,
+        scorer=fuzz.partial_ratio,  # Better for matching actual names vs substrings
         limit=top_n,
-        score_cutoff=70
+        score_cutoff=COLLA_SCORE_CUTOFF 
     )
+
+    # If words appear in priority_colles_keywords, add the colles to the matches as well (apart from the fuzzy matching)
+    for keyword, colla_name in priority_colles_keywords.items():
+        if keyword in question_lower:
+            matches.append((colla_name, 100))
+    
     
     if matches:
         return ", ".join([match[0] for match in matches])
@@ -465,7 +506,7 @@ def get_castells_subset(question: str, top_n: int = 3) -> str:
         castells_codes,
         scorer=fuzz.partial_ratio,
         limit=top_n,
-        score_cutoff=60
+        score_cutoff=CASTELL_SCORE_CUTOFF
     )
     
     if matches:
@@ -554,7 +595,7 @@ def get_llocs_subset(question: str, top_n: int = 3) -> str:
         locations,
         scorer=fuzz.partial_ratio,
         limit=top_n,
-        score_cutoff=85
+        score_cutoff=LLOC_SCORE_CUTOFF
     )
     
     if matches:
@@ -624,7 +665,7 @@ def get_diades_subset(question: str, top_n: int = 6) -> str:
         diades_names,
         scorer=fuzz.partial_ratio,
         limit=top_n,
-        score_cutoff=75
+        score_cutoff=DIADA_SCORE_CUTOFF
     )
     
     # Add fuzzy matches (avoiding duplicates)

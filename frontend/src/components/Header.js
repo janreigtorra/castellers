@@ -1,12 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import LoginForm from './LoginForm';
+import SyncDataModal from './SyncDataModal';
+import { apiService } from '../apiService';
 
 const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageChange, onOpenProfile, onOpenAbout }) => {
   const [showLogin, setShowLogin] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [userRole, setUserRole] = useState(null);
   const dropdownRef = useRef(null);
+
+  // Fetch user profile to check role
+  useEffect(() => {
+    if (user) {
+      apiService.getUserProfile()
+        .then(profile => {
+          setUserRole(profile.role || 'user');
+        })
+        .catch(err => {
+          console.error('Error fetching user profile:', err);
+          setUserRole('user');
+        });
+    }
+  }, [user]);
 
   const handleLoginSuccess = (userData) => {
     onLogin(userData);
@@ -66,6 +84,9 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
           onPageChange('contact');
         }
         break;
+      case 'sync':
+        setShowSyncModal(true);
+        break;
       default:
         break;
     }
@@ -80,8 +101,8 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
         style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}
       >
         <div className="header-logo">
-          <img src="/xiquet_images/xiquet_logo.png" alt="Xiquet AI" width="55" height="55" />
-          <h1>Xiquet AI</h1>
+          <img src="/xiquet_images/xiquet_logo.png" alt="Xiquet CAT" width="55" height="55" />
+          <h1>Xiquet CAT</h1>
         </div>
         <div className="header-nav">
           {user && (
@@ -169,7 +190,7 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
                         height="16" 
                         style={{ objectFit: 'contain' }}
                       />
-                      Sobre Xiquet AI
+                      Sobre Xiquet CAT
                     </button>
                     
                     <button 
@@ -182,6 +203,21 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
                       </svg>
                       Contacte
                     </button>
+                    
+                    {userRole === 'admin' && (
+                      <>
+                        <div className="settings-dropdown-divider"></div>
+                        <button 
+                          className="settings-dropdown-item"
+                          onClick={() => handleSettingsItemClick('sync')}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                          </svg>
+                          Sincronitzar Noves Dades
+                        </button>
+                      </>
+                    )}
                     
                     <div className="settings-dropdown-divider"></div>
                     
@@ -229,7 +265,7 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
             </button>
             
             
-            <h2>Comparteix Xiquet AI</h2>
+            <h2>Comparteix Xiquet CAT</h2>
             
             <div className="share-modal-link-container">
               <input 
@@ -266,6 +302,15 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sync Data Modal */}
+      {showSyncModal && (
+        <SyncDataModal
+          user={user}
+          onClose={() => setShowSyncModal(false)}
+          theme={theme}
+        />
       )}
     </>
   );

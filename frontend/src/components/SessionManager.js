@@ -108,7 +108,11 @@ const SessionManager = ({ currentSessionId, onSessionChange, onNewSession, theme
                     className="new-session-btn"
                     title="Nova conversa"
                   >
-                    +
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M22 16a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <line x1="12" y1="7" x2="12" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      <line x1="9" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
                   </button>
                   {isUnsaved && (
                     <button 
@@ -136,14 +140,28 @@ const SessionManager = ({ currentSessionId, onSessionChange, onNewSession, theme
             </>
           )}
           {isCollapsed && (
-            <button 
-              className="collapse-btn"
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              title="Mostrar converses"
-              style={collapsedBtnStyle}
-            >
-              ▶
-            </button>
+            <div className="collapsed-buttons">
+              <button 
+                className="collapse-btn"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                title="Mostrar converses"
+                style={collapsedBtnStyle}
+              >
+                ▶
+              </button>
+              <button 
+                onClick={handleNewConversa}
+                className="new-session-btn"
+                title="Nova conversa"
+                style={collapsedBtnStyle}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22 16a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="12" y1="7" x2="12" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="9" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
           )}
         </div>
 

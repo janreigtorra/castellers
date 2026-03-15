@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { authHelpers } from '../supabaseClient';
+import { apiService } from '../apiService';
 import { COLOR_THEMES } from '../colorTheme';
 import collesData from '../data/colles_fundacio.json';
 
@@ -43,6 +44,8 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [subscription, setSubscription] = useState({ subscription: 'basic', stripe_subscription: null });
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   
   const [formData, setFormData] = useState({
     username: user?.username || '',
@@ -65,6 +68,17 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
         username: user?.username || parsed.username || ''
       }));
     }
+    
+    // Fetch subscription status
+    const fetchSubscription = async () => {
+      try {
+        const status = await apiService.getSubscriptionStatus();
+        setSubscription(status);
+      } catch (err) {
+        console.error('Error fetching subscription status:', err);
+      }
+    };
+    fetchSubscription();
   }, [user]);
 
   const handleChange = (e) => {
@@ -162,6 +176,21 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
     setError('');
   };
 
+  const handleUpgrade = async () => {
+    setIsLoadingSubscription(true);
+    setError('');
+    
+    try {
+      const { checkout_url } = await apiService.createCheckoutSession();
+      // Redirect to Stripe checkout
+      window.location.href = checkout_url;
+    } catch (err) {
+      setError('Error al crear la sessió de pagament. Si us plau, torna-ho a intentar.');
+      console.error('Error creating checkout session:', err);
+      setIsLoadingSubscription(false);
+    }
+  };
+
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
@@ -203,96 +232,151 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
         {success && <div className="profile-success">{success}</div>}
 
         <div className="profile-modal-content">
-          <div className="profile-field">
-            <label>Nom</label>
-            {isEditing ? (
-              <input
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleChange}
-                placeholder="El teu nom"
-              />
-            ) : (
-              <p>{formData.username || user?.username || '-'}</p>
-            )}
-          </div>
-
-          <div className="profile-field">
-            <label>Email</label>
-            <p className="profile-email">{user?.email || '-'}</p>
-          </div>
-
-          <div className="profile-field">
-            <label>Colla Castellera</label>
-            {isEditing ? (
-              <select
-                name="colla"
-                value={formData.colla}
-                onChange={handleChange}
-              >
-                <option value="">Selecciona una colla...</option>
-                {colles.map(colla => (
-                  <option key={colla.name} value={colla.name}>
-                    {colla.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="profile-colla-display">
-                {formData.colla ? (
-                  <span 
-                    className="colla-chip"
-                    style={{ 
-                      backgroundColor: selectedCollaColor || '#e0e0e0',
-                      color: selectedCollaColor === '#ffffff' || selectedCollaColor === '#e8c62b' || selectedCollaColor === '#C1B6D7' || selectedCollaColor === '#93BB7B' ? '#000' : '#fff'
-                    }}
-                  >
-                    {formData.colla}
-                  </span>
+          <div className="profile-modal-two-columns">
+            {/* Left Column - Profile Info */}
+            <div className="profile-column-left">
+              <div className="profile-field">
+                <label>Nom</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    name="username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    placeholder="El teu nom"
+                  />
                 ) : (
-                  <p className="profile-empty">No especificada</p>
+                  <p>{formData.username || user?.username || '-'}</p>
                 )}
               </div>
-            )}
-          </div>
 
-          <div className="profile-field">
-            <label>Telèfon</label>
-            {isEditing ? (
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="+34 600 000 000"
-              />
-            ) : (
-              <p>{formData.phone || <span className="profile-empty">No especificat</span>}</p>
-            )}
-          </div>
+              <div className="profile-field">
+                <label>Email</label>
+                <p className="profile-email">{user?.email || '-'}</p>
+              </div>
 
-          <div className="profile-field">
-            <label>Data de Naixement</label>
-            {isEditing ? (
-              <input
-                type="date"
-                name="birthDate"
-                value={formData.birthDate}
-                onChange={handleChange}
-              />
-            ) : (
-              <p>
-                {formData.birthDate 
-                  ? new Date(formData.birthDate).toLocaleDateString('ca-ES', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    })
-                  : <span className="profile-empty">No especificada</span>
-                }
-              </p>
-            )}
+              <div className="profile-field">
+                <label>Colla Castellera</label>
+                {isEditing ? (
+                  <select
+                    name="colla"
+                    value={formData.colla}
+                    onChange={handleChange}
+                  >
+                    <option value="">Selecciona una colla...</option>
+                    {colles.map(colla => (
+                      <option key={colla.name} value={colla.name}>
+                        {colla.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="profile-colla-display">
+                    {formData.colla ? (
+                      <span 
+                        className="colla-chip"
+                        style={{ 
+                          backgroundColor: selectedCollaColor || '#e0e0e0',
+                          color: selectedCollaColor === '#ffffff' || selectedCollaColor === '#e8c62b' || selectedCollaColor === '#C1B6D7' || selectedCollaColor === '#93BB7B' ? '#000' : '#fff'
+                        }}
+                      >
+                        {formData.colla}
+                      </span>
+                    ) : (
+                      <p className="profile-empty">No especificada</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="profile-field">
+                <label>Telèfon</label>
+                {isEditing ? (
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+34 600 000 000"
+                  />
+                ) : (
+                  <p>{formData.phone || <span className="profile-empty">No especificat</span>}</p>
+                )}
+              </div>
+
+              <div className="profile-field">
+                <label>Data de Naixement</label>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    name="birthDate"
+                    value={formData.birthDate}
+                    onChange={handleChange}
+                  />
+                ) : (
+                  <p>
+                    {formData.birthDate 
+                      ? new Date(formData.birthDate).toLocaleDateString('ca-ES', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        })
+                      : <span className="profile-empty">No especificada</span>
+                    }
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column - Subscription */}
+            <div className="profile-column-right">
+              <div className="profile-field">
+                <label>Subscripció</label>
+                <div className="profile-subscription">
+                  <div className="subscription-badge-container">
+                    <span className={`subscription-badge ${subscription.subscription === 'premium' ? 'premium' : 'basic'}`}>
+                      {subscription.subscription === 'premium' ? 'Premium' : 'Bàsic'}
+                    </span>
+                    {subscription.subscription === 'basic' && (
+                      <span className="subscription-limitation"> (7 consultes per hora)</span>
+                    )}
+                  </div>
+                  
+                  {subscription.subscription === 'basic' && (
+                    <div className="subscription-upgrade">
+                      <button
+                        className="subscription-upgrade-btn"
+                        onClick={handleUpgrade}
+                        disabled={isLoadingSubscription}
+                      >
+                        {isLoadingSubscription ? 'Carregant...' : 'Actualitzar a Premium - 1,99€/mes'}
+                      </button>
+                      <span className="subscription-limitation"> Tantes consultes com vulguis</span>
+
+                      <div className="subscription-explanation">
+                        <p className="subscription-reason-short">
+                          <strong>Per què hauria de pagar?</strong><br />
+                          Fer servir models d'intel·ligència artificial no és gratis. Cada pregunta que es fa al Xiquet té un cost real de computació i d'ús dels models d'IA. Xiquet.cat no està finançat per cap empresa ni inversor, i fins ara tot el projecte s'ha pagat directament de la meva butxaca.
+                        </p>
+                        
+                        <div className="subscription-reason-expanded">
+                          <p className="subscription-reason-short">
+                            Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent.
+                            Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {subscription.subscription === 'premium' && subscription.stripe_subscription && (
+                    <p className="subscription-info">
+                      La teva subscripció està activa. Gràcies pel teu suport!
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

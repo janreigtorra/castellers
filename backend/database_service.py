@@ -270,26 +270,63 @@ class ChatDatabaseService:
             cur.close()
             conn.close()
     
+    def create_user_profile(self, user_id: str, username: str = None) -> bool:
+        """Create a new user profile with default subscription and role"""
+        conn = self.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("""
+                INSERT INTO public.profiles (id, username, subscription, role)
+                VALUES (%s, %s, 'basic', 'user')
+                ON CONFLICT (id) DO NOTHING
+            """, (user_id, username))
+            
+            conn.commit()
+            return cur.rowcount > 0
+            
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Error creating user profile: {e}")
+        finally:
+            cur.close()
+            conn.close()
+    
     def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user profile"""
         conn = self.get_connection()
         cur = conn.cursor()
         
         try:
-            cur.execute("""
-                SELECT id, username, created_at, updated_at
-                FROM public.profiles
-                WHERE id = %s
-            """, (user_id,))
+            # Try to get profile with stripe_customer_id (if column exists)
+            try:
+                cur.execute("""
+                    SELECT id, username, subscription, role, created_at, updated_at, stripe_customer_id
+                    FROM public.profiles
+                    WHERE id = %s
+                """, (user_id,))
+            except Exception:
+                # Fallback if stripe_customer_id column doesn't exist yet
+                cur.execute("""
+                    SELECT id, username, subscription, role, created_at, updated_at
+                    FROM public.profiles
+                    WHERE id = %s
+                """, (user_id,))
             
             row = cur.fetchone()
             if row:
-                return {
+                profile = {
                     "id": str(row[0]),
                     "username": row[1],
-                    "created_at": row[2].isoformat(),
-                    "updated_at": row[3].isoformat()
+                    "subscription": row[2] if row[2] else 'basic',
+                    "role": row[3] if row[3] else 'user',
+                    "created_at": row[4].isoformat() if row[4] else None,
+                    "updated_at": row[5].isoformat() if row[5] else None
                 }
+                # Add stripe_customer_id if it exists in the row
+                if len(row) > 6:
+                    profile["stripe_customer_id"] = row[6]
+                return profile
             return None
             
         except Exception as e:
@@ -323,6 +360,65 @@ class ChatDatabaseService:
         except Exception as e:
             conn.rollback()
             raise Exception(f"Error updating user profile: {e}")
+        finally:
+            cur.close()
+            conn.close()
+    
+    def check_rate_limit(self, user_id: str, max_questions: int, time_window_seconds: int) -> tuple:
+        """
+        Check if user has exceeded rate limit.
+        Returns (is_allowed, question_count) where:
+        - is_allowed: True if user can ask another question, False if limit exceeded
+        - question_count: Number of questions asked in the time window
+        """
+        conn = self.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            # Count messages in the last time_window_seconds
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM public.chat_messages
+                WHERE user_id = %s 
+                  AND created_at >= NOW() - INTERVAL '%s seconds'
+            """, (user_id, time_window_seconds))
+            
+            count = cur.fetchone()[0]
+            is_allowed = count < max_questions
+            
+            return (is_allowed, count)
+            
+        except Exception as e:
+            raise Exception(f"Error checking rate limit: {e}")
+        finally:
+            cur.close()
+            conn.close()
+    
+    def update_subscription(self, user_id: str, subscription: str, stripe_customer_id: str = None) -> bool:
+        """Update user subscription status"""
+        conn = self.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            if stripe_customer_id:
+                cur.execute("""
+                    UPDATE public.profiles 
+                    SET subscription = %s, stripe_customer_id = %s, updated_at = NOW()
+                    WHERE id = %s
+                """, (subscription, stripe_customer_id, user_id))
+            else:
+                cur.execute("""
+                    UPDATE public.profiles 
+                    SET subscription = %s, updated_at = NOW()
+                    WHERE id = %s
+                """, (subscription, user_id))
+            
+            conn.commit()
+            return cur.rowcount > 0
+            
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Error updating subscription: {e}")
         finally:
             cur.close()
             conn.close()

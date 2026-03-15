@@ -4,10 +4,10 @@ FastAPI backend for Xiquet Casteller Agent
 Wraps the existing agent.py functionality with REST API endpoints
 """
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List, Union
 import uuid
@@ -19,9 +19,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import stripe
 
 # Import our existing agent and Supabase auth
-from xiquet.agent import Xiquet
+from xiquet.agent import Xiquet, MAX_QUESTIONS_BASIC, TIME_BASIC
 from auth_service import supabase_auth
 from database_service import chat_db
 from joc_del_mocador.main import generate_question
@@ -29,6 +30,13 @@ from joc_del_mocador.db_pool import init_connection_pool, close_connection_pool
 
 # Load environment variables
 load_dotenv()
+
+# Initialize Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+PREMIUM_PRICE_ID = os.getenv("STRIPE_PREMIUM_PRICE_ID")  # Price ID for 1.99€/month subscription
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://xiquet.vercel.app")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -116,10 +124,17 @@ class PreviousContext(BaseModel):
     sql_query_type: Optional[str] = None
     entities: Optional[dict] = None  # {colles: [], castells: [], anys: [], llocs: [], diades: []}
 
+class PreSelectedEntities(BaseModel):
+    """Pre-selected entities from the frontend UI"""
+    colles: List[str] = []
+    castells: List[str] = []  # List of castell codes
+    anys: List[str] = []  # List of years as strings
+
 class ChatMessage(BaseModel):
     content: str
     session_id: Optional[str] = None
     previous_context: Optional[PreviousContext] = None  # Context from frontend for follow-up questions
+    pre_selected_entities: Optional[PreSelectedEntities] = None  # Pre-selected entities from UI
 
 class TableData(BaseModel):
     title: str
@@ -165,6 +180,8 @@ class UserProfile(BaseModel):
     id: str
     username: Optional[str] = None
     email: Optional[str] = None
+    subscription: str = 'basic'
+    role: str = 'user'
     created_at: datetime
 
 # Simple in-memory storage for demo (replace with Supabase later)
@@ -224,6 +241,30 @@ async def list_chat_routes():
         ]
     }
 
+@app.get("/api/entities/options")
+async def get_entity_options(current_user: dict = Depends(get_current_user)):
+    """
+    Get all available entity options for frontend dropdowns.
+    Returns colles, castells, anys, and diades.
+    """
+    try:
+        from xiquet.utility_functions import (
+            get_all_colla_options,
+            get_all_castell_options,
+            get_all_any_options,
+            get_all_diada_options
+        )
+        
+        return {
+            "colles": get_all_colla_options(),
+            "castells": get_all_castell_options(),
+            "anys": get_all_any_options(),
+            "diades": get_all_diada_options()
+        }
+    except Exception as e:
+        print(f"Error fetching entity options: {e}")
+        raise HTTPException(status_code=500, detail="Error obtenint les opcions d'entitats")
+
 def _get_friendly_error_message(error: Exception) -> str:
     """
     Convert technical errors to user-friendly Catalan messages.
@@ -271,6 +312,47 @@ async def chat_with_xiquet(
         print(f"[TIMING] Request started at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
         print(f"[TIMING] Question: {message.content[:100]}...")
         print(f"{'='*60}\n")
+        
+        # Check user subscription and rate limit for basic users
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        subscription = user_profile.get("subscription", "basic") if user_profile else "basic"
+        
+        if subscription == "basic":
+            is_allowed, question_count = chat_db.check_rate_limit(
+                current_user["id"], 
+                MAX_QUESTIONS_BASIC, 
+                TIME_BASIC
+            )
+            
+            if not is_allowed:
+                # Rate limit exceeded - return message explaining limit and upgrade link
+                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el pla bàsic.
+
+Per continuar fent preguntes il·limitades, pots actualitzar al pla premium per només 1,99€/mes.
+
+Obre el teu perfil per actualitzar.
+
+Aquesta subscripció permet fer tantes preguntes com vulguis al Xiquet.
+
+Per què hauria de pagar?
+Fer servir models d'intel·ligència artificial no és gratis. Cada pregunta que es fa al Xiquet té un cost real de computació i d'ús dels models d'IA. Xiquet.cat no està finançat per cap empresa ni inversor, i fins ara tot el projecte s'ha pagat directament de la meva butxaca.
+
+Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent.
+
+Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
+                
+                # Return error response with upgrade message
+                message_id = f"temp_{uuid.uuid4()}"
+                error_response = ChatResponse(
+                    id=message_id,
+                    content=message.content,
+                    response=upgrade_message,
+                    route_used='rate_limit',
+                    timestamp=datetime.now(timezone.utc),
+                    response_time_ms=0,
+                    session_id=message.session_id
+                )
+                return error_response
         
         # Get previous message context if session_id is provided
         previous_question = None
@@ -589,7 +671,8 @@ def _process_message_background(
     question: str, 
     user_id: str, 
     session_id: Optional[str],
-    frontend_context: Optional[dict] = None  # Context passed from frontend
+    frontend_context: Optional[dict] = None,  # Context passed from frontend
+    pre_selected_entities: Optional[dict] = None  # Pre-selected entities from UI
 ):
     """
     Background task to process a message in two phases:
@@ -661,13 +744,14 @@ def _process_message_background(
         else:
             print(f"[BACKGROUND CONTEXT] No context available (no frontend_context and no session_id)")
         
-        # Initialize Xiquet agent with previous context
+        # Initialize Xiquet agent with previous context and pre-selected entities
         xiquet = Xiquet(
             previous_question=previous_question,
             previous_response=previous_response,
             previous_route=previous_route,
             previous_sql_query_type=previous_sql_query_type,
-            previous_entities=previous_entities
+            previous_entities=previous_entities,
+            pre_selected_entities=pre_selected_entities
         )
         
         # ============================================================
@@ -780,6 +864,45 @@ async def start_chat(
     4. Show response when status='complete'
     """
     try:
+        # Check user subscription and rate limit for basic users
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        subscription = user_profile.get("subscription", "basic") if user_profile else "basic"
+        
+        if subscription == "basic":
+            is_allowed, question_count = chat_db.check_rate_limit(
+                current_user["id"], 
+                MAX_QUESTIONS_BASIC, 
+                TIME_BASIC
+            )
+            
+            if not is_allowed:
+                # Rate limit exceeded - create pending message with error status
+                message_id = chat_db.create_pending_message(
+                    user_id=current_user["id"],
+                    content=message.content,
+                    session_id=message.session_id
+                )
+                
+                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el pla bàsic.
+
+Per continuar fent preguntes il·limitades, pots actualitzar al pla premium per només 1,99€/mes. Obre el teu perfil per actualitzar. Aquesta subscripció permet fer tantes preguntes com vulguis al Xiquet.
+
+**Per què hauria de pagar?**
+
+Fer servir models d'intel·ligència artificial no és gratis. Cada pregunta que es fa al Xiquet té un cost real de computació i d'ús dels models d'IA. Xiquet.cat no està finançat per cap empresa ni inversor, i fins ara tot el projecte s'ha pagat directament de la meva butxaca.
+
+Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent.
+
+Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
+                
+                # Update pending message with error status
+                chat_db.update_pending_error(message_id, upgrade_message)
+                
+                return StartChatResponse(
+                    message_id=message_id,
+                    status="error"
+                )
+        
         # Create pending message record in database
         message_id = chat_db.create_pending_message(
             user_id=current_user["id"],
@@ -803,6 +926,16 @@ async def start_chat(
                 "entities": message.previous_context.entities
             }
         
+        # Convert pre-selected entities to dict
+        pre_selected_entities = None
+        if message.pre_selected_entities:
+            pre_selected_entities = {
+                "colles": message.pre_selected_entities.colles or [],
+                "castells": message.pre_selected_entities.castells or [],
+                "anys": message.pre_selected_entities.anys or []
+            }
+            print(f"[START] Pre-selected entities: {pre_selected_entities}")
+        
         # Start background processing
         background_tasks.add_task(
             _process_message_background,
@@ -810,7 +943,8 @@ async def start_chat(
             message.content,
             current_user["id"],
             message.session_id,
-            frontend_context
+            frontend_context,
+            pre_selected_entities
         )
         
         # Return immediately with message_id
@@ -1069,13 +1203,33 @@ async def get_user_profile(
                 id=profile["id"],
                 username=profile["username"],
                 email=current_user.get("email"),
+                subscription=profile.get("subscription", "basic"),
+                role=profile.get("role", "user"),
                 created_at=datetime.fromisoformat(profile["created_at"])
             )
         else:
+            # If profile doesn't exist, create it with defaults
+            try:
+                chat_db.create_user_profile(current_user["id"], current_user.get("username"))
+                profile = chat_db.get_user_profile(current_user["id"])
+                if profile:
+                    return UserProfile(
+                        id=profile["id"],
+                        username=profile["username"],
+                        email=current_user.get("email"),
+                        subscription=profile.get("subscription", "basic"),
+                        role=profile.get("role", "user"),
+                        created_at=datetime.fromisoformat(profile["created_at"])
+                    )
+            except Exception:
+                pass
+            
             return UserProfile(
                 id=current_user["id"],
                 username=current_user.get("username"),
                 email=current_user.get("email"),
+                subscription="basic",
+                role="user",
                 created_at=datetime.now(timezone.utc)
             )
     except Exception as e:
@@ -1097,6 +1251,457 @@ async def update_user_profile(
             raise HTTPException(status_code=404, detail="Profile not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")
+
+# ============================================================
+# STRIPE SUBSCRIPTION ENDPOINTS
+# ============================================================
+
+@app.post("/api/subscription/create-checkout")
+async def create_checkout_session(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a Stripe checkout session for premium subscription upgrade
+    """
+    try:
+        if not PREMIUM_PRICE_ID:
+            raise HTTPException(
+                status_code=500, 
+                detail="Stripe price ID not configured. Please contact support."
+            )
+        
+        # Get or create Stripe customer
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        stripe_customer_id = user_profile.get("stripe_customer_id") if user_profile else None
+        
+        if not stripe_customer_id:
+            # Create new Stripe customer
+            customer = stripe.Customer.create(
+                email=current_user.get("email"),
+                metadata={
+                    "user_id": current_user["id"],
+                    "username": current_user.get("username", "")
+                }
+            )
+            stripe_customer_id = customer.id
+            
+            # Save customer ID to database
+            chat_db.update_subscription(
+                current_user["id"], 
+                "basic", 
+                stripe_customer_id
+            )
+        
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            customer=stripe_customer_id,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": PREMIUM_PRICE_ID,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            success_url=f"{FRONTEND_URL}/profile?success=true",
+            cancel_url=f"{FRONTEND_URL}/profile?canceled=true",
+            metadata={
+                "user_id": current_user["id"]
+            }
+        )
+        
+        return {
+            "checkout_url": checkout_session.url,
+            "session_id": checkout_session.id
+        }
+        
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stripe error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating checkout session: {str(e)}"
+        )
+
+@app.post("/api/subscription/webhook")
+async def stripe_webhook(request: Request):
+    """
+    Handle Stripe webhook events for subscription updates
+    """
+    try:
+        payload = await request.body()
+        sig_header = request.headers.get("stripe-signature")
+        
+        if not STRIPE_WEBHOOK_SECRET:
+            raise HTTPException(
+                status_code=500,
+                detail="Stripe webhook secret not configured"
+            )
+        
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        except stripe.error.SignatureVerificationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
+        
+        # Handle the event
+        if event["type"] == "checkout.session.completed":
+            session = event["data"]["object"]
+            user_id = session.get("metadata", {}).get("user_id")
+            
+            if user_id:
+                # Get subscription details
+                subscription_id = session.get("subscription")
+                if subscription_id:
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                    customer_id = subscription.customer
+                    
+                    # Update user subscription to premium
+                    chat_db.update_subscription(
+                        user_id,
+                        "premium",
+                        customer_id
+                    )
+                    print(f"[STRIPE] User {user_id} upgraded to premium")
+        
+        elif event["type"] == "customer.subscription.updated":
+            subscription = event["data"]["object"]
+            customer_id = subscription.customer
+            
+            # Find user by customer_id
+            customer = stripe.Customer.retrieve(customer_id)
+            user_id = customer.metadata.get("user_id")
+            
+            if user_id:
+                if subscription.status == "active":
+                    chat_db.update_subscription(user_id, "premium", customer_id)
+                    print(f"[STRIPE] User {user_id} subscription active")
+                elif subscription.status in ["canceled", "unpaid", "past_due"]:
+                    chat_db.update_subscription(user_id, "basic", customer_id)
+                    print(f"[STRIPE] User {user_id} subscription downgraded to basic")
+        
+        elif event["type"] == "customer.subscription.deleted":
+            subscription = event["data"]["object"]
+            customer_id = subscription.customer
+            
+            # Find user by customer_id
+            customer = stripe.Customer.retrieve(customer_id)
+            user_id = customer.metadata.get("user_id")
+            
+            if user_id:
+                chat_db.update_subscription(user_id, "basic", customer_id)
+                print(f"[STRIPE] User {user_id} subscription canceled")
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        print(f"[STRIPE WEBHOOK ERROR] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Webhook error: {str(e)}")
+
+@app.get("/api/subscription/status")
+async def get_subscription_status(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get current subscription status and Stripe customer info
+    """
+    try:
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        if not user_profile:
+            return {
+                "subscription": "basic",
+                "stripe_customer_id": None,
+                "stripe_subscription": None
+            }
+        
+        subscription = user_profile.get("subscription", "basic")
+        stripe_customer_id = user_profile.get("stripe_customer_id")
+        
+        stripe_subscription = None
+        if stripe_customer_id and subscription == "premium":
+            try:
+                # Get active subscriptions for this customer
+                subscriptions = stripe.Subscription.list(
+                    customer=stripe_customer_id,
+                    status="active",
+                    limit=1
+                )
+                if subscriptions.data:
+                    stripe_subscription = {
+                        "id": subscriptions.data[0].id,
+                        "status": subscriptions.data[0].status,
+                        "current_period_end": subscriptions.data[0].current_period_end,
+                        "cancel_at_period_end": subscriptions.data[0].cancel_at_period_end
+                    }
+            except Exception as e:
+                print(f"[STRIPE] Error fetching subscription: {e}")
+        
+        return {
+            "subscription": subscription,
+            "stripe_customer_id": stripe_customer_id,
+            "stripe_subscription": stripe_subscription
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting subscription status: {str(e)}"
+        )
+
+# Admin helper function
+async def require_admin(current_user: dict = Depends(get_current_user)):
+    """Check if current user is admin"""
+    try:
+        profile = chat_db.get_user_profile(current_user["id"])
+        if not profile or profile.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        return current_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking admin status: {str(e)}")
+
+# Admin endpoints
+@app.get("/api/admin/last-event-date")
+async def get_last_event_date(
+    admin_user: dict = Depends(require_admin)
+):
+    """Get the last event date from the database"""
+    try:
+        import psycopg2
+        from datetime import datetime
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        
+        # Since dates are stored as TEXT in DD/MM/YYYY format, we need to parse them properly
+        # to find the chronologically latest date, not just the lexicographically maximum string
+        cur.execute("""
+            SELECT date 
+            FROM events 
+            WHERE date IS NOT NULL 
+              AND date ~ '^\\d{2}/\\d{2}/\\d{4}$'
+            ORDER BY 
+              CAST(SPLIT_PART(date, '/', 3) AS INTEGER) DESC,
+              CAST(SPLIT_PART(date, '/', 2) AS INTEGER) DESC,
+              CAST(SPLIT_PART(date, '/', 1) AS INTEGER) DESC
+            LIMIT 1
+        """)
+        result = cur.fetchone()
+        
+        conn.close()
+        
+        last_date = result[0] if result and result[0] else None
+        return {"last_event_date": last_date}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting last event date: {str(e)}")
+
+class ScrapeEventsRequest(BaseModel):
+    date_start: str
+    date_end: str
+
+@app.post("/api/admin/scrape-events")
+async def scrape_events(
+    request: ScrapeEventsRequest,
+    admin_user: dict = Depends(require_admin)
+):
+    """Trigger event scraping with date range"""
+    try:
+        import subprocess
+        import sys
+        from pathlib import Path
+        import traceback
+        
+        # Get the script path - script is now in backend/database_pipeline/
+        # main.py is at /app/backend/main.py, so parent = /app/backend
+        script_path = Path(__file__).parent / "database_pipeline" / "scrapping_events.py"
+        
+        # If not found, try with resolved path
+        if not script_path.exists():
+            script_path = script_path.resolve()
+        
+        # Verify script exists
+        if not script_path.exists():
+            cwd = Path.cwd()
+            tried_path = Path(__file__).parent / "database_pipeline" / "scrapping_events.py"
+            raise HTTPException(
+                status_code=500,
+                detail=f"Script not found at: {tried_path}. Current working directory: {cwd}. File location: {Path(__file__)}"
+            )
+        
+        # Verify script is readable
+        if not os.access(script_path, os.R_OK):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Script is not readable: {script_path}"
+            )
+        
+        script_abs_path = script_path.resolve()
+        # Determine project root - script is in backend/database_pipeline/, so parent.parent = backend, parent.parent.parent = project root
+        # But in Docker, we want to use backend as the working directory
+        project_root = Path(__file__).parent  # backend/ directory
+        
+        print(f"[ADMIN] Running scraping script: {script_abs_path}")
+        print(f"[ADMIN] Script exists: {script_path.exists()}")
+        print(f"[ADMIN] Date range: {request.date_start} to {request.date_end}")
+        print(f"[ADMIN] Python executable: {sys.executable}")
+        print(f"[ADMIN] Current working directory: {Path.cwd()}")
+        print(f"[ADMIN] Project root: {project_root}")
+        import sys
+        sys.stdout.flush()
+        
+        # Run the script with date parameters
+        # Use absolute paths and set working directory to project root
+        result = subprocess.run(
+            [sys.executable, str(script_abs_path), request.date_start, request.date_end],
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+            cwd=str(project_root),  # Set working directory to project root
+            env=dict(os.environ, PYTHONPATH=str(project_root))  # Add project root to PYTHONPATH
+        )
+        
+        print(f"[ADMIN] Script return code: {result.returncode}")
+        if result.stdout:
+            print(f"[ADMIN] Script stdout (first 500 chars): {result.stdout[:500]}")
+        if result.stderr:
+            print(f"[ADMIN] Script stderr: {result.stderr}")
+        
+        if result.returncode != 0:
+            error_msg = result.stderr if result.stderr else "Unknown error"
+            print(f"[ADMIN] Scraping failed with error: {error_msg}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Scraping failed: {error_msg}"
+            )
+        
+        # Parse output to extract statistics for NEW events only
+        output = result.stdout
+        stats = {}
+        
+        # Try to extract statistics from output - look for "New Events Statistics" section
+        import re
+        # Match patterns from "New Events Statistics" section
+        # Look for "Total new events" first
+        total_new_match = re.search(r'Total new events:\s*(\d+)', output)
+        if total_new_match:
+            stats['total_events'] = int(total_new_match.group(1))
+        
+        # Look for statistics in the "New Events Statistics" section
+        # Find the section and extract from there
+        new_events_section = re.search(r'New Events Statistics.*?Total new events:\s*(\d+).*?Events with results:\s*(\d+).*?Total castells:\s*(\d+).*?Unique colles:\s*(\d+).*?Unique cities:\s*(\d+)', output, re.DOTALL)
+        if new_events_section:
+            stats['total_events'] = int(new_events_section.group(1))
+            stats['events_with_results'] = int(new_events_section.group(2))
+            stats['total_castells'] = int(new_events_section.group(3))
+            stats['unique_colles'] = int(new_events_section.group(4))
+            stats['unique_cities'] = int(new_events_section.group(5))
+        else:
+            # Fallback to individual matches if section not found
+            events_with_results_match = re.search(r'Events with results:\s*(\d+)', output)
+            if events_with_results_match:
+                stats['events_with_results'] = int(events_with_results_match.group(1))
+            
+            total_castells_match = re.search(r'Total castells:\s*(\d+)', output)
+            if total_castells_match:
+                stats['total_castells'] = int(total_castells_match.group(1))
+            
+            unique_colles_match = re.search(r'Unique colles:\s*(\d+)', output)
+            if unique_colles_match:
+                stats['unique_colles'] = int(unique_colles_match.group(1))
+            
+            unique_cities_match = re.search(r'Unique cities:\s*(\d+)', output)
+            if unique_cities_match:
+                stats['unique_cities'] = int(unique_cities_match.group(1))
+        
+        return {
+            "message": "Scraping completed successfully",
+            "output": output,
+            **stats
+        }
+    except subprocess.TimeoutExpired as e:
+        error_msg = "Scraping timed out after 10 minutes"
+        print(f"[ADMIN] {error_msg}")
+        import sys
+        sys.stdout.flush()
+        raise HTTPException(status_code=500, detail=error_msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        error_msg = f"Error scraping events: {str(e)}"
+        print(f"[ADMIN] {error_msg}")
+        print(f"[ADMIN] Traceback:\n{error_trace}")
+        import sys
+        sys.stdout.flush()
+        # Include traceback in detail for debugging (can be removed in production)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"{error_msg}\n\nTraceback:\n{error_trace[:1000]}"  # Limit traceback length
+        )
+
+class UpdateDatabaseRequest(BaseModel):
+    from_date: str
+
+@app.post("/api/admin/update-database")
+async def update_database(
+    request: UpdateDatabaseRequest,
+    admin_user: dict = Depends(require_admin)
+):
+    """Trigger database update with FROM_DATE"""
+    try:
+        import subprocess
+        import sys
+        from pathlib import Path
+        
+        # Get the script path
+        script_path = Path(__file__).parent / "database_pipeline" / "update_database_new_events.py"
+        
+        # Run the script with FROM_DATE parameter
+        result = subprocess.run(
+            [sys.executable, str(script_path), request.from_date],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+        
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database update failed: {result.stderr}"
+            )
+        
+        # Parse output to extract statistics
+        output = result.stdout
+        stats = {}
+        
+        # Try to extract statistics from output
+        import re
+        events_inserted_match = re.search(r'Actuacions updated:\s*(\d+)\s+new events inserted', output)
+        if events_inserted_match:
+            stats['events_inserted'] = int(events_inserted_match.group(1))
+        
+        event_colles_match = re.search(r'Event-colles relationships:\s*(\d+)\s+inserted', output)
+        if event_colles_match:
+            stats['event_colles_inserted'] = int(event_colles_match.group(1))
+        
+        castells_match = re.search(r'Castells:\s*(\d+)\s+inserted', output)
+        if castells_match:
+            stats['castells_inserted'] = int(castells_match.group(1))
+        
+        return {
+            "message": "Database update completed successfully",
+            "output": output,
+            **stats
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Database update timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating database: {str(e)}")
 
 # Authentication endpoints with Supabase
 class LoginRequest(BaseModel):
@@ -1132,6 +1737,15 @@ async def register(request: RegisterRequest):
     """
     try:
         result = await supabase_auth.sign_up(request.email, request.password, request.username)
+        
+        # Create user profile in database with default subscription and role
+        if result["user"]:
+            try:
+                chat_db.create_user_profile(result["user"]["id"], request.username)
+            except Exception as profile_error:
+                # Log the error but don't fail registration if profile creation fails
+                print(f"Warning: Failed to create user profile: {profile_error}")
+        
         return {
             "access_token": result["session"].access_token if result["session"] else None,
             "token_type": "bearer",
@@ -1185,7 +1799,7 @@ async def send_contact_message(
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
-        msg['Subject'] = f"[Xiquet AI Contact] Missatge de {contact.name}"
+        msg['Subject'] = f"[Xiquet CAT Contact] Missatge de {contact.name}"
         
         # Email body
         body = f"""
@@ -1214,6 +1828,82 @@ Enviat des de xiquet.cat.ai
     except Exception as e:
         print(f"Error sending contact email: {e}")
         raise HTTPException(status_code=500, detail="Error enviant el missatge. Si us plau, torna-ho a intentar.")
+
+# Feedback endpoint for chat responses
+class FeedbackMessage(BaseModel):
+    name: str
+    email: str
+    feedback: str
+    user_question: str
+    xiquet_answer: str
+
+@app.post("/api/feedback")
+async def send_feedback(
+    feedback: FeedbackMessage,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Send feedback about a chat response via email.
+    Includes the user's question and Xiquet's answer for context.
+    """
+    try:
+        # Email configuration
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        sender_email = os.getenv("SMTP_EMAIL", "xiquet.cat.ai@gmail.com")
+        sender_password = os.getenv("SMTP_PASSWORD")
+        recipient_email = "xiquet.cat.ai@gmail.com"
+        
+        if not sender_password:
+            # If no SMTP password configured, just log the message
+            print(f"[Feedback] From: {feedback.name} <{feedback.email}>")
+            print(f"[Feedback] Question: {feedback.user_question}")
+            print(f"[Feedback] Answer: {feedback.xiquet_answer}")
+            print(f"[Feedback] Feedback: {feedback.feedback}")
+            return {"message": "Feedback rebut correctament (mode desenvolupament)"}
+        
+        # Create email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = f"[Xiquet AI Feedback] Comentari de {feedback.name}"
+        
+        # Email body with chat context
+        body = f"""
+Nou feedback sobre una resposta de Xiquet AI:
+
+Nom: {feedback.name}
+Correu: {feedback.email}
+Usuari connectat: {current_user.get('username', 'Desconegut')} ({current_user.get('email', 'N/A')})
+
+---
+PREGUNTA DE L'USUARI:
+{feedback.user_question}
+
+---
+RESPOSTA DE XIQUET:
+{feedback.xiquet_answer}
+
+---
+FEEDBACK DE L'USUARI:
+{feedback.feedback}
+
+---
+Enviat des de xiquet.cat.ai
+        """
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        
+        # Send email
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        
+        return {"message": "Feedback enviat correctament"}
+        
+    except Exception as e:
+        print(f"Error sending feedback email: {e}")
+        raise HTTPException(status_code=500, detail="Error enviant el feedback. Si us plau, torna-ho a intentar.")
 
 # El Joc del Mocador game endpoints
 async def generate_single_question_with_retry(selected_colles: List[str] = None, selected_years: List[int] = None, max_retries: int = 10):
