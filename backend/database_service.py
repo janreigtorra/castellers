@@ -367,28 +367,83 @@ class ChatDatabaseService:
     def check_rate_limit(self, user_id: str, max_questions: int, time_window_seconds: int) -> tuple:
         """
         Check if user has exceeded rate limit.
+        Counts ALL messages for the user across ALL chats (saved and unsaved).
+        
+        IMPORTANT:
+        - Time window is rolling: messages older than time_window_seconds are automatically excluded
+        - After the hour passes, old messages drop out of the count, allowing new messages
+        - This only applies to basic subscription users (premium users bypass this check)
+        
+        Flow:
+        - Saved chats: messages are in chat_messages table
+        - Unsaved chats: messages stay in pending_messages table (never moved)
+        - When a message is moved from pending to chat, it's deleted from pending first, so no duplicates
+        
         Returns (is_allowed, question_count) where:
         - is_allowed: True if user can ask another question, False if limit exceeded
-        - question_count: Number of questions asked in the time window
+        - question_count: Number of questions asked in the time window (rolling window)
         """
         conn = self.get_connection()
         cur = conn.cursor()
         
         try:
-            # Count messages in the last time_window_seconds
+            # Count messages from BOTH chat_messages AND pending_messages
+            # This counts ALL messages for the user across ALL chats (saved and unsaved)
+            # The time window is ROLLING: messages older than time_window_seconds are automatically excluded
+            # This means after 1 hour passes, old messages drop out and user can send 7 more
+            # Note: When a message is moved from pending_messages to chat_messages, 
+            # it's deleted from pending first, so we won't double-count
+            # We exclude 'error' status because those are rate limit errors, not actual questions
+            
+            # Get separate counts for debugging
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM public.chat_messages
                 WHERE user_id = %s 
                   AND created_at >= NOW() - INTERVAL '%s seconds'
             """, (user_id, time_window_seconds))
+            chat_count = cur.fetchone()[0] or 0
             
-            count = cur.fetchone()[0]
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM public.pending_messages
+                WHERE user_id = %s 
+                  AND created_at >= NOW() - INTERVAL '%s seconds'
+                  AND status != 'error'
+            """, (user_id, time_window_seconds))
+            pending_count = cur.fetchone()[0] or 0
+            
+            count = chat_count + pending_count
+            
+            print(f"[RATE_LIMIT DEBUG] chat_messages: {chat_count}, pending_messages: {pending_count}, total: {count}")
             is_allowed = count < max_questions
+            
+            # Calculate how many seconds until the oldest message in the window expires
+            # This helps with debugging - shows when the rate limit will reset
+            cur.execute("""
+                SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::INTEGER
+                FROM (
+                    SELECT created_at FROM public.chat_messages
+                    WHERE user_id = %s AND created_at >= NOW() - INTERVAL '%s seconds'
+                    UNION ALL
+                    SELECT created_at FROM public.pending_messages
+                    WHERE user_id = %s AND created_at >= NOW() - INTERVAL '%s seconds' AND status != 'error'
+                ) AS all_messages
+            """, (user_id, time_window_seconds, user_id, time_window_seconds))
+            
+            oldest_age_result = cur.fetchone()[0]
+            if oldest_age_result is not None and count > 0:
+                seconds_until_reset = time_window_seconds - oldest_age_result
+                print(f"[RATE_LIMIT] User {user_id}: {count}/{max_questions} messages in last {time_window_seconds}s (across ALL chats - saved + unsaved), allowed: {is_allowed}, reset in: {max(0, seconds_until_reset)}s")
+            else:
+                print(f"[RATE_LIMIT] User {user_id}: {count}/{max_questions} messages in last {time_window_seconds}s (across ALL chats - saved + unsaved), allowed: {is_allowed}")
             
             return (is_allowed, count)
             
         except Exception as e:
+            print(f"[RATE_LIMIT ERROR] {e}")
+            import traceback
+            print(f"[RATE_LIMIT ERROR] Traceback: {traceback.format_exc()}")
             raise Exception(f"Error checking rate limit: {e}")
         finally:
             cur.close()
@@ -578,18 +633,39 @@ class ChatDatabaseService:
     def delete_pending_message(self, message_id: str, user_id: str) -> bool:
         """
         Delete a pending message (cleanup after frontend receives complete response).
+        
+        IMPORTANT: Only deletes if message has a session_id (saved chat).
+        For unsaved chats (no session_id), we keep the message for rate limiting purposes.
         """
         conn = self.get_connection()
         cur = conn.cursor()
         
         try:
+            # Only delete if message has a session_id (saved chat)
+            # Unsaved chats (no session_id) should be kept for rate limiting
             cur.execute("""
                 DELETE FROM public.pending_messages 
-                WHERE id = %s AND user_id = %s
+                WHERE id = %s 
+                  AND user_id = %s
+                  AND session_id IS NOT NULL
             """, (message_id, user_id))
             
             conn.commit()
-            return cur.rowcount > 0
+            deleted = cur.rowcount > 0
+            
+            if deleted:
+                print(f"[RATE_LIMIT] Deleted pending message {message_id} (saved chat)")
+            else:
+                # Check if message exists but has no session_id
+                cur.execute("""
+                    SELECT id FROM public.pending_messages 
+                    WHERE id = %s AND user_id = %s
+                """, (message_id, user_id))
+                exists = cur.fetchone()
+                if exists:
+                    print(f"[RATE_LIMIT] Keeping pending message {message_id} for rate limiting (unsaved chat)")
+            
+            return deleted
             
         except Exception as e:
             conn.rollback()
@@ -635,10 +711,11 @@ class ChatDatabaseService:
             
             result = cur.fetchone()
             
-            # Delete from pending_messages
+            # Delete from pending_messages (only for saved chats - unsaved chats stay for rate limiting)
             cur.execute("""
                 DELETE FROM public.pending_messages WHERE id = %s
             """, (message_id,))
+            print(f"[RATE_LIMIT] Moved and deleted pending message {message_id} (saved chat with session_id)")
             
             conn.commit()
             return result[0] if result else None

@@ -541,7 +541,8 @@ class LLMSQLGeneratorV2:
                 'date': r['event_date'],
                 'colla_name': r['colla_name'],
                 'city': r['event_city'],
-                'status': r['status']
+                'status': r['status'],
+                'punts': r.get('punts', 0)
             }
             
             # Add gamma_filtrada if gamma was used
@@ -1497,7 +1498,7 @@ def get_sql_summary_prompt(
 
             IMPORTANT - DETERMINAR EL MILLOR CASTELL:
             - Els resultats estan ordenats de MILLOR a PITJOR (el primer és el millor)
-            - SEl millor castell serà el primer de la llista""",
+            - El millor castell serà el primer de la llista""",
 
         "castell_historia": f"""{SHARED_DEVELOPER_RULES}""",
         "castells_list": f"""{SHARED_DEVELOPER_RULES}""",

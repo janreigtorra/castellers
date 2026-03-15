@@ -313,10 +313,14 @@ async def chat_with_xiquet(
         print(f"[TIMING] Question: {message.content[:100]}...")
         print(f"{'='*60}\n")
         
-        # Check user subscription and rate limit for basic users
+        # Check user subscription and rate limit for basic users ONLY
+        # Premium users bypass rate limiting completely
         user_profile = chat_db.get_user_profile(current_user["id"])
         subscription = user_profile.get("subscription", "basic") if user_profile else "basic"
+        print(f"[RATE_LIMIT] User {current_user['id']} subscription: {subscription}")
         
+        # Only check rate limit for basic subscription users
+        # Premium users have unlimited messages
         if subscription == "basic":
             is_allowed, question_count = chat_db.check_rate_limit(
                 current_user["id"], 
@@ -324,22 +328,21 @@ async def chat_with_xiquet(
                 TIME_BASIC
             )
             
+            print(f"[RATE_LIMIT] Check result: {question_count}/{MAX_QUESTIONS_BASIC} messages, allowed: {is_allowed}")
+            
             if not is_allowed:
                 # Rate limit exceeded - return message explaining limit and upgrade link
-                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el pla bàsic.
+                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el **pla bàsic**.
 
-Per continuar fent preguntes il·limitades, pots actualitzar al pla premium per només 1,99€/mes.
-
-Obre el teu perfil per actualitzar.
+Per continuar fent preguntes il·limitades, pots [actualitzar al pla premium per només 1,99€/mes](/profile).
 
 Aquesta subscripció permet fer tantes preguntes com vulguis al Xiquet.
 
-Per què hauria de pagar?
+**Per què hauria de pagar?**
+
 Fer servir models d'intel·ligència artificial no és gratis. Cada pregunta que es fa al Xiquet té un cost real de computació i d'ús dels models d'IA. Xiquet.cat no està finançat per cap empresa ni inversor, i fins ara tot el projecte s'ha pagat directament de la meva butxaca.
 
-Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent.
-
-Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
+Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent. Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
                 
                 # Return error response with upgrade message
                 message_id = f"temp_{uuid.uuid4()}"
@@ -833,7 +836,9 @@ def _process_message_background(
             else:
                 print(f"[BACKGROUND] WARNING: Failed to move message to chat_messages!")
         else:
-            print(f"[BACKGROUND] No session_id - message will NOT be saved to chat history")
+            # For unsaved chats (no session_id), keep the pending_message for rate limiting
+            # It will be counted in rate limit checks and can be cleaned up later (after 1 hour)
+            print(f"[BACKGROUND] No session_id - message stays in pending_messages for rate limiting")
         
     except Exception as e:
         error_msg = _get_friendly_error_message(e)
@@ -864,10 +869,21 @@ async def start_chat(
     4. Show response when status='complete'
     """
     try:
-        # Check user subscription and rate limit for basic users
+        # Check user subscription
+        # Premium users bypass rate limiting completely
         user_profile = chat_db.get_user_profile(current_user["id"])
         subscription = user_profile.get("subscription", "basic") if user_profile else "basic"
+        print(f"[RATE_LIMIT] User {current_user['id']} subscription: {subscription}")
         
+        # Create pending message record FIRST (so it gets counted in rate limit check)
+        message_id = chat_db.create_pending_message(
+            user_id=current_user["id"],
+            content=message.content,
+            session_id=message.session_id
+        )
+        
+        # Only check rate limit for basic subscription users
+        # Premium users have unlimited messages - skip rate limit check
         if subscription == "basic":
             is_allowed, question_count = chat_db.check_rate_limit(
                 current_user["id"], 
@@ -876,24 +892,16 @@ async def start_chat(
             )
             
             if not is_allowed:
-                # Rate limit exceeded - create pending message with error status
-                message_id = chat_db.create_pending_message(
-                    user_id=current_user["id"],
-                    content=message.content,
-                    session_id=message.session_id
-                )
-                
-                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el pla bàsic.
+                # Rate limit exceeded - mark pending message as error
+                upgrade_message = f"""Has arribat al límit de {MAX_QUESTIONS_BASIC} preguntes per hora amb el **pla bàsic**.
 
-Per continuar fent preguntes il·limitades, pots actualitzar al pla premium per només 1,99€/mes. Obre el teu perfil per actualitzar. Aquesta subscripció permet fer tantes preguntes com vulguis al Xiquet.
+Per continuar fent preguntes il·limitades, pots [actualitzar al pla premium per només 1,99€/mes](/profile). Aquesta subscripció permet fer tantes preguntes com vulguis al Xiquet.
 
 **Per què hauria de pagar?**
 
 Fer servir models d'intel·ligència artificial no és gratis. Cada pregunta que es fa al Xiquet té un cost real de computació i d'ús dels models d'IA. Xiquet.cat no està finançat per cap empresa ni inversor, i fins ara tot el projecte s'ha pagat directament de la meva butxaca.
 
-Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent.
-
-Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
+Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús dels models d'IA, manteniment i millores) i permet que el projecte pugui continuar existint i creixent. Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó que també estàs ajudant a mantenir viu aquest projecte fet amb passió pel món casteller."""
                 
                 # Update pending message with error status
                 chat_db.update_pending_error(message_id, upgrade_message)
@@ -902,13 +910,6 @@ Si decideixes subscriure't, no només obtens accés il·limitat al Xiquet, sinó
                     message_id=message_id,
                     status="error"
                 )
-        
-        # Create pending message record in database
-        message_id = chat_db.create_pending_message(
-            user_id=current_user["id"],
-            content=message.content,
-            session_id=message.session_id
-        )
         
         print(f"\n[START] Created pending message: {message_id}")
         print(f"[START] Question: {message.content[:100]}...")
