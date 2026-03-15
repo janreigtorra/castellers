@@ -105,7 +105,13 @@ UPDATE public.events
 SET name = 'Festa Major de La Bisbal del Penedès'
 WHERE name = 'Festa Major de la Bisbal del PenedèsFesta Major de La Bisbal del Penedès';
 
+
+
 UPDATE public.events
+SET name = 'Festa Major de la Bisbal del Penedès'
+WHERE name = 'Festa Major de la Bisbal del PenedèsFesta Major de la Bisbal del Penedès'
+
+
 SET name = TRIM(
     REPLACE(name, 'Concurs de Castells de Tarragona', '')
 )

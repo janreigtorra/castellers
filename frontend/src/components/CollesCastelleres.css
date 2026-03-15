@@ -1,0 +1,185 @@
+.colles-page {
+  min-height: 100vh;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--theme-background, #ffffff);
+  padding: 2rem 1rem;
+  padding-bottom: 10rem; /* Extra padding to avoid overlap with ColorSelector */
+  -webkit-overflow-scrolling: touch;
+}
+
+.colles-page-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.colles-back-link {
+  background: none;
+  border: none;
+  color: var(--theme-color, #d0282c);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  text-decoration: none;
+  display: inline-block;
+  transition: opacity 0.2s;
+}
+
+.colles-back-link:hover {
+  opacity: 0.7;
+}
+
+.colles-header {
+  margin-bottom: 2rem;
+}
+
+.colles-header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--theme-text, #333);
+}
+
+.colles-search {
+  margin-bottom: 2rem;
+}
+
+.colles-search-input {
+  width: 100%;
+  max-width: 500px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--theme-border, #ddd);
+  border-radius: 8px;
+  background: var(--theme-background, #fff);
+  color: var(--theme-text, #333);
+  transition: border-color 0.2s;
+}
+
+.colles-search-input:focus {
+  outline: none;
+  border-color: var(--theme-color, #d0282c);
+}
+
+.colles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.colla-card {
+  background: var(--theme-background, #fff);
+  border: 1px solid var(--theme-border, #e0e0e0);
+  border-radius: 12px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.colla-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--theme-color, #d0282c);
+}
+
+.colla-card-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--theme-background, #fff);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.colla-card-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.colla-card-content {
+  flex: 1;
+}
+
+.colla-card-name {
+  font-size: 1.5rem;
+  margin: 0 0 0.75rem 0;
+  color: var(--theme-text, #333);
+}
+
+
+.colla-card-links {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.colla-card-link {
+  color: var(--theme-color, #d0282c);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.colla-card-link:hover {
+  opacity: 0.7;
+  text-decoration: underline;
+}
+
+.colla-card-arrow {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  font-size: 1.5rem;
+  color: var(--theme-color, #d0282c);
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.colla-card:hover .colla-card-arrow {
+  opacity: 1;
+}
+
+.colles-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--theme-text-secondary, #666);
+  font-size: 1.1rem;
+}
+
+.colles-error {
+  text-align: center;
+  padding: 2rem;
+  color: #d0282c;
+  background: #ffe0e0;
+  border-radius: 8px;
+  margin-top: 2rem;
+}
+
+@media (max-width: 768px) {
+  .colles-page {
+    padding-bottom: 10rem !important; /* More padding on mobile for ColorSelector */
+  }
+
+  .colles-header h1 {
+    font-size: 2rem;
+  }
+
+  .colles-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .colla-card {
+    padding: 1.25rem;
+  }
+}
+

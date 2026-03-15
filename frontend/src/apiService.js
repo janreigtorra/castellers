@@ -472,6 +472,37 @@ export const apiService = {
       from_date: fromDate
     })
     return response.data
+  },
+
+  // Colles Castelleres endpoints
+  async getColles() {
+    const response = await api.get('/api/colles')
+    return response.data
+  },
+
+  async getCollaDetail(collaId) {
+    const response = await api.get(`/api/colles/${collaId}`)
+    return response.data
+  },
+
+  async getCollaMillorDiada(collaId, limit = 10, year = null) {
+    const params = { limit }
+    if (year) {
+      params.year = year
+    }
+    const response = await api.get(`/api/colles/${collaId}/millor-diada`, { params })
+    return response.data
+  },
+
+  async getCollaMillorsCastells(collaId, limit = 20, year = null) {
+    const params = { limit }
+    if (year) {
+      params.year = year
+    }
+    const response = await api.get(`/api/colles/${collaId}/millors-castells`, {
+      params
+    })
+    return response.data
   }
 }
 

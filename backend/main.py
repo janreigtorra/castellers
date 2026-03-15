@@ -41,7 +41,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://xiquet.vercel.app")
 # Initialize FastAPI app
 app = FastAPI(
     title="Xiquet Casteller API",
-    description="API for the Xiquet AI knowledge system",
+    description="API for the Xiquet.cat knowledge system",
     version="1.0.0"
 )
 
@@ -1800,11 +1800,11 @@ async def send_contact_message(
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
-        msg['Subject'] = f"[Xiquet CAT Contact] Missatge de {contact.name}"
+        msg['Subject'] = f"[Xiquet.CAT Contact] Missatge de {contact.name}"
         
         # Email body
         body = f"""
-Nou missatge del formulari de contacte de Xiquet AI:
+Nou missatge del formulari de contacte de Xiquet.cat:
 
 Nom: {contact.name}
 Correu: {contact.email}
@@ -1867,11 +1867,11 @@ async def send_feedback(
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
-        msg['Subject'] = f"[Xiquet AI Feedback] Comentari de {feedback.name}"
+        msg['Subject'] = f"[Xiquet.cat Feedback] Comentari de {feedback.name}"
         
         # Email body with chat context
         body = f"""
-Nou feedback sobre una resposta de Xiquet AI:
+Nou feedback sobre una resposta de Xiquet.cat:
 
 Nom: {feedback.name}
 Correu: {feedback.email}
@@ -2020,6 +2020,267 @@ async def get_game_questions(
         print(f"ERROR in get_game_questions: {str(e)}")
         print(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Error generating questions: {str(e)}")
+
+# ============================================================
+# COLLES CASTELLERES ENDPOINTS
+# ============================================================
+
+@app.get("/api/colles")
+async def get_colles(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get all colles from the database.
+    Returns basic information: id, colla_id, name, logo_url, website, etc.
+    """
+    try:
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                id, colla_id, name, logo_url, website, instagram, facebook,
+                wikipedia_url, wikipedia_title, wikipedia_description,
+                scraped_at, detail_url, basic_info_json, first_actuacio,
+                best_castells_json, wiki_stats_json
+            FROM colles
+            WHERE name IS NOT NULL
+            ORDER BY name ASC
+        """)
+        
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        
+        colles = []
+        for row in rows:
+            colla_dict = dict(zip(columns, row))
+            # Parse JSON fields if they exist
+            if colla_dict.get('basic_info_json'):
+                try:
+                    colla_dict['basic_info'] = json.loads(colla_dict['basic_info_json'])
+                except:
+                    colla_dict['basic_info'] = None
+            if colla_dict.get('best_castells_json'):
+                try:
+                    colla_dict['best_castells'] = json.loads(colla_dict['best_castells_json'])
+                except:
+                    colla_dict['best_castells'] = None
+            if colla_dict.get('wiki_stats_json'):
+                try:
+                    colla_dict['wiki_stats'] = json.loads(colla_dict['wiki_stats_json'])
+                except:
+                    colla_dict['wiki_stats'] = None
+            
+            # Remove JSON string fields, keep parsed versions
+            colla_dict.pop('basic_info_json', None)
+            colla_dict.pop('best_castells_json', None)
+            colla_dict.pop('wiki_stats_json', None)
+            
+            colles.append(colla_dict)
+        
+        conn.close()
+        
+        return {"colles": colles}
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_colles: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching colles: {str(e)}")
+
+@app.get("/api/colles/{colla_id}")
+async def get_colla_detail(
+    colla_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get detailed information about a specific colla.
+    """
+    try:
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        # Try to find by ID first, then by name (slug)
+        cursor.execute("""
+            SELECT 
+                id, colla_id, name, logo_url, website, instagram, facebook,
+                wikipedia_url, wikipedia_title, wikipedia_description,
+                scraped_at, detail_url, basic_info_json, first_actuacio,
+                best_castells_json, wiki_stats_json
+            FROM colles
+            WHERE colla_id = %s OR id::text = %s OR LOWER(name) = LOWER(%s)
+        """, (colla_id, colla_id, colla_id))
+        
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Colla not found")
+        
+        columns = [desc[0] for desc in cursor.description]
+        colla_dict = dict(zip(columns, row))
+        
+        # Parse JSON fields
+        if colla_dict.get('basic_info_json'):
+            try:
+                colla_dict['basic_info'] = json.loads(colla_dict['basic_info_json'])
+            except:
+                colla_dict['basic_info'] = None
+        if colla_dict.get('best_castells_json'):
+            try:
+                colla_dict['best_castells'] = json.loads(colla_dict['best_castells_json'])
+            except:
+                colla_dict['best_castells'] = None
+        if colla_dict.get('wiki_stats_json'):
+            try:
+                colla_dict['wiki_stats'] = json.loads(colla_dict['wiki_stats_json'])
+            except:
+                colla_dict['wiki_stats'] = None
+        
+        # Remove JSON string fields
+        colla_dict.pop('basic_info_json', None)
+        colla_dict.pop('best_castells_json', None)
+        colla_dict.pop('wiki_stats_json', None)
+        
+        conn.close()
+        
+        return colla_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_colla_detail: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching colla details: {str(e)}")
+
+@app.get("/api/colles/{colla_id}/millor-diada")
+async def get_colla_millor_diada(
+    colla_id: str,
+    limit: int = 10,
+    year: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get millor diada (best performances) for a specific colla.
+    Uses the same logic as the millor_diada query type.
+    """
+    try:
+        from xiquet.llm_sql_v2 import LLMSQLGeneratorV2
+        
+        # Get colla name from colla_id
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT name FROM colles WHERE colla_id = %s OR id::text = %s OR LOWER(name) = LOWER(%s)", (colla_id, colla_id, colla_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Colla not found")
+        
+        colla_name = row[0]
+        conn.close()
+        
+        # Use LLMSQLGeneratorV2 to get millor diada
+        generator = LLMSQLGeneratorV2()
+        entities = {"colla": [colla_name]}
+        if year:
+            entities["anys"] = [str(year)]
+        sql_query, params = generator._create_general_query("", entities, "millor_diada")
+        
+        # Execute query
+        raw_results = generator.execute_sql_query(sql_query, params)
+        
+        # Organize results
+        organized_results = generator._organize_millor_diada(raw_results, entities)
+        
+        return {"results": organized_results[:limit]}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_colla_millor_diada: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching millor diada: {str(e)}")
+
+@app.get("/api/colles/{colla_id}/millors-castells")
+async def get_colla_millors_castells(
+    colla_id: str,
+    limit: int = 20,
+    year: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get millors castells (best castells) for a specific colla.
+    Uses the same logic as the millor_castell query type.
+    """
+    try:
+        from xiquet.llm_sql_v2 import LLMSQLGeneratorV2
+        
+        # Get colla name from colla_id
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT name FROM colles WHERE colla_id = %s OR id::text = %s OR LOWER(name) = LOWER(%s)", (colla_id, colla_id, colla_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Colla not found")
+        
+        colla_name = row[0]
+        conn.close()
+        
+        # Use LLMSQLGeneratorV2 to get millors castells
+        generator = LLMSQLGeneratorV2()
+        entities = {"colla": [colla_name]}
+        if year:
+            entities["anys"] = [str(year)]
+        sql_query, params = generator._create_general_query("", entities, "millor_castell")
+        
+        # Execute query
+        raw_results = generator.execute_sql_query(sql_query, params)
+        
+        # Organize results
+        organized_results = generator._organize_millor_castell(raw_results, entities)
+        
+        return {"results": organized_results[:limit]}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_colla_millors_castells: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching millors castells: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

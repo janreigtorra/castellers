@@ -21,10 +21,10 @@ const AboutPage = ({ theme, onBack }) => {
 
         {/* Project Section */}
         <section className="about-section">
-          <h1>Sobre Xiquet CAT</h1>
+          <h1>Sobre Xiquet.cat</h1>
           
           <p>
-            <strong>Xiquet CAT</strong> neix amb la missió de facilitar l'accés a la informació del món casteller 
+            <strong>Xiquet.cat</strong> neix amb la missió de facilitar l'accés a la informació del món casteller 
             a través de la intel·ligència artificial.
           </p>
           

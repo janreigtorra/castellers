@@ -381,7 +381,7 @@ const hasEntities = (entities) => {
   );
 };
 
-const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified, onInputFocusChange }) => {
+const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified, onInputFocusChange, onOpenProfile }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1298,6 +1298,26 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
         ).join(''));
       return <th {...props} title={textContent} data-title={textContent}>{children}</th>;
     },
+    a: ({ href, children, ...props }) => {
+      // Handle profile link - open profile modal instead of navigating
+      if (href === '/profile' && onOpenProfile) {
+        return (
+          <a
+            {...props}
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              onOpenProfile();
+            }}
+            style={{ color: theme?.secondary || '#d0282c', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            {children}
+          </a>
+        );
+      }
+      // Default link behavior for other links
+      return <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
   };
   useEffect(() => {
     if (!isLoading) {
@@ -1493,8 +1513,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                     )
                   )}
                 </div>
-                {/* Feedback message - small and subtle - only show if there's a response */}
-                {message.response && message.response.trim().length > 0 && (() => {
+                {/* Feedback message - small and subtle - only show if there's a response and it's not a rate limit message */}
+                {message.response && message.response.trim().length > 0 && !message.response.trim().startsWith('Has arribat al límit de') && (() => {
                   // Determine color based on theme (use light gray if white)
                   const isWhiteColor = theme?.secondary && 
                     (theme.secondary.toLowerCase() === '#ffffff' || 

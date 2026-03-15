@@ -101,8 +101,8 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
         style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}
       >
         <div className="header-logo">
-          <img src="/xiquet_images/xiquet_logo.png" alt="Xiquet CAT" width="55" height="55" />
-          <h1>Xiquet CAT</h1>
+          <img src="/xiquet_images/xiquet_logo.png" alt="Xiquet.cat" width="55" height="55" />
+          <h1>Xiquet.cat</h1>
         </div>
         <div className="header-nav">
           {user && (
@@ -118,6 +118,12 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
                 onClick={() => onPageChange && onPageChange('joc-del-mocador')}
               >
                 El Joc del Mocador
+              </button>
+              <button 
+                className={`header-nav-btn ${currentPage === 'colles-castelleres' ? 'active' : ''}`}
+                onClick={() => onPageChange && onPageChange('colles-castelleres')}
+              >
+                Colles Castelleres
               </button>
             </nav>
           )}
@@ -190,7 +196,7 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
                         height="16" 
                         style={{ objectFit: 'contain' }}
                       />
-                      Sobre Xiquet CAT
+                      Sobre Xiquet.cat
                     </button>
                     
                     <button 
@@ -265,7 +271,7 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
             </button>
             
             
-            <h2>Comparteix Xiquet CAT</h2>
+            <h2>Comparteix Xiquet.cat</h2>
             
             <div className="share-modal-link-container">
               <input 

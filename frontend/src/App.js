@@ -9,6 +9,8 @@ import ColorSelector from './components/ColorSelector';
 import ProfileModal from './components/ProfileModal';
 import AboutPage from './components/AboutPage';
 import ContactPage from './components/ContactPage';
+import CollesCastelleres from './components/CollesCastelleres';
+import CollaDetail from './components/CollaDetail';
 import PilarLoader from './components/PilarLoader';
 import AuthCallback from './components/AuthCallback';
 import { authHelpers } from './supabaseClient';
@@ -24,6 +26,7 @@ function App() {
   const [newConversationKey, setNewConversationKey] = useState(0); // Key to force new conversation
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false); // Track if chat input is focused (for mobile keyboard)
+  const [selectedCollaId, setSelectedCollaId] = useState(null);
   const saveChatRef = useRef(null);
   
   // Derive currentPage from URL
@@ -33,20 +36,47 @@ function App() {
     if (path === '/joc-del-mocador') return 'joc-del-mocador';
     if (path === '/sobre-xiquet-ai') return 'about';
     if (path === '/contacte') return 'contact';
+    if (path === '/colles-castelleres') return 'colles-castelleres';
+    if (path.startsWith('/colles/')) {
+      return 'colla-detail';
+    }
     return 'chat';
   }, []);
   
   const [currentPage, setCurrentPageState] = useState(getPageFromPath);
   
-  const setCurrentPage = useCallback((page) => {
+  // Extract colla slug from URL when on colla-detail page
+  useEffect(() => {
+    if (currentPage === 'colla-detail') {
+      const path = window.location.pathname;
+      if (path.startsWith('/colles/')) {
+        const collaSlug = path.replace('/colles/', '');
+        setSelectedCollaId(collaSlug);
+      }
+    } else {
+      setSelectedCollaId(null);
+    }
+  }, [currentPage]);
+  
+  const setCurrentPage = useCallback((page, collaId = null) => {
     let path = '/';
     if (page === 'joc-del-mocador') path = '/joc-del-mocador';
     else if (page === 'about') path = '/sobre-xiquet-ai';
     else if (page === 'contact') path = '/contacte';
+    else if (page === 'colles-castelleres') path = '/colles-castelleres';
+    else if (page === 'colla-detail' && collaId) {
+      path = `/colles/${collaId}`;
+      setSelectedCollaId(collaId);
+    }
     
     window.history.pushState({}, '', path);
     setCurrentPageState(page);
   }, []);
+  
+  const handleCollaClick = useCallback((collaSlug, collaId) => {
+    // Use slug for URL, but keep ID for API calls
+    setCurrentPage('colla-detail', collaSlug);
+  }, [setCurrentPage]);
   
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -245,6 +275,7 @@ function App() {
                   onMessagesChange={setUnsavedMessagesCount}
                   onCollaIdentified={handleColorChange}
                   onInputFocusChange={setIsInputFocused}
+                  onOpenProfile={() => setShowProfileModal(true)}
                 />
               </main>
             </div>
@@ -264,6 +295,22 @@ function App() {
           ) : currentPage === 'contact' ? (
             <main className="main-content-with-sessions">
               <ContactPage theme={theme} onBack={() => setCurrentPage('chat')} />
+            </main>
+          ) : currentPage === 'colles-castelleres' ? (
+            <main className="main-content-with-sessions">
+              <CollesCastelleres 
+                theme={theme} 
+                onBack={() => setCurrentPage('chat')}
+                onCollaClick={handleCollaClick}
+              />
+            </main>
+          ) : currentPage === 'colla-detail' ? (
+            <main className="main-content-with-sessions">
+              <CollaDetail 
+                collaId={selectedCollaId}
+                theme={theme} 
+                onBack={() => setCurrentPage('colles-castelleres')}
+              />
             </main>
           ) : null}
           <ColorSelector 

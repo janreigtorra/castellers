@@ -172,7 +172,7 @@ const ContactPage = ({ theme, onBack }) => {
 
         {/* Footer */}
         <footer className="contact-footer">
-          <p>Gràcies per ajudar-nos a millorar Xiquet AI!</p>
+          <p>Gràcies per ajudar-nos a millorar Xiquet.cat!</p>
         </footer>
       </div>
     </div>
