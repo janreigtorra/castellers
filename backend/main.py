@@ -2378,6 +2378,45 @@ async def get_diades(
         print(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Error fetching diades: {str(e)}")
 
+@app.get("/api/castells/catalog")
+async def get_castells_catalog():
+    """
+    Get a catalog of castells with their scoring values for the simulation UI.
+    """
+    try:
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT DISTINCT
+                COALESCE(NULLIF(p.castell_code_external, ''), NULLIF(p.castell_code_name, ''), NULLIF(p.castell_code, '')) AS castell_name,
+                COALESCE(p.punts_descarregat, 0) AS punts_descarregat,
+                COALESCE(p.punts_carregat, 0) AS punts_carregat
+            FROM puntuacions p
+            WHERE COALESCE(NULLIF(p.castell_code_external, ''), NULLIF(p.castell_code_name, ''), NULLIF(p.castell_code, '')) IS NOT NULL
+            ORDER BY COALESCE(p.punts_descarregat, 0) DESC, COALESCE(p.punts_carregat, 0) DESC, castell_name ASC
+        """
+
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        castells = [dict(zip(columns, row)) for row in rows]
+
+        cursor.close()
+        conn.close()
+
+        return {"castells": castells}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching castells catalog: {str(e)}")
+
+
 @app.get("/api/diades/{event_id}/details")
 async def get_diada_details(
     event_id: int,
