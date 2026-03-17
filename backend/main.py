@@ -242,10 +242,11 @@ async def list_chat_routes():
     }
 
 @app.get("/api/entities/options")
-async def get_entity_options(current_user: dict = Depends(get_current_user)):
+async def get_entity_options():
     """
     Get all available entity options for frontend dropdowns.
     Returns colles, castells, anys, and diades.
+    Public endpoint: no authentication required (used by Colles Castelleres and Comparar Diades).
     """
     try:
         from xiquet.utility_functions import (
@@ -2026,12 +2027,11 @@ async def get_game_questions(
 # ============================================================
 
 @app.get("/api/colles")
-async def get_colles(
-    current_user: dict = Depends(get_current_user)
-):
+async def get_colles():
     """
     Get all colles from the database.
     Returns basic information: id, colla_id, name, logo_url, website, etc.
+    Public endpoint: no authentication required (Colles Castelleres page).
     """
     try:
         import psycopg2
@@ -2097,12 +2097,10 @@ async def get_colles(
         raise HTTPException(status_code=500, detail=f"Error fetching colles: {str(e)}")
 
 @app.get("/api/colles/{colla_id}")
-async def get_colla_detail(
-    colla_id: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def get_colla_detail(colla_id: str):
     """
     Get detailed information about a specific colla.
+    Public endpoint: no authentication required (Colles Castelleres page).
     """
     try:
         import psycopg2
@@ -2173,11 +2171,11 @@ async def get_colla_millor_diada(
     colla_id: str,
     limit: int = 10,
     year: Optional[int] = None,
-    current_user: dict = Depends(get_current_user)
 ):
     """
     Get millor diada (best performances) for a specific colla.
     Uses the same logic as the millor_diada query type.
+    Public endpoint: no authentication required.
     """
     try:
         from xiquet.llm_sql_v2 import LLMSQLGeneratorV2
@@ -2230,11 +2228,11 @@ async def get_colla_millors_castells(
     colla_id: str,
     limit: int = 20,
     year: Optional[int] = None,
-    current_user: dict = Depends(get_current_user)
 ):
     """
     Get millors castells (best castells) for a specific colla.
     Uses the same logic as the millor_castell query type.
+    Public endpoint: no authentication required.
     """
     try:
         from xiquet.llm_sql_v2 import LLMSQLGeneratorV2
@@ -2281,6 +2279,352 @@ async def get_colla_millors_castells(
         print(f"ERROR in get_colla_millors_castells: {str(e)}")
         print(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Error fetching millors castells: {str(e)}")
+
+@app.get("/api/diades")
+async def get_diades(
+    colla_id: Optional[str] = None,
+    year: Optional[int] = None,
+):
+    """
+    Get list of diades (events) for a specific colla and year.
+    Returns list of diades with event_id, name, date, city.
+    Public endpoint: no authentication required (Comparar Diades page).
+    """
+    try:
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        # First, find the exact colla (same logic as details endpoint)
+        colla_db_id = None
+        if colla_id:
+            colla_id_str = str(colla_id)
+            find_colla_cursor = conn.cursor()
+            
+            # Try by name first (most reliable)
+            find_colla_query = "SELECT id FROM colles WHERE LOWER(name) = LOWER(%s) LIMIT 1"
+            find_colla_cursor.execute(find_colla_query, [colla_id_str])
+            colla_row = find_colla_cursor.fetchone()
+            
+            if not colla_row:
+                # Try by colla_id
+                find_colla_query = "SELECT id FROM colles WHERE colla_id = %s LIMIT 1"
+                find_colla_cursor.execute(find_colla_query, [colla_id_str])
+                colla_row = find_colla_cursor.fetchone()
+            
+            if not colla_row:
+                # Try by database id
+                find_colla_query = "SELECT id FROM colles WHERE id::text = %s LIMIT 1"
+                find_colla_cursor.execute(find_colla_query, [colla_id_str])
+                colla_row = find_colla_cursor.fetchone()
+            
+            find_colla_cursor.close()
+            
+            if colla_row:
+                colla_db_id = colla_row[0]
+            else:
+                cursor.close()
+                conn.close()
+                return {"diades": []}  # Colla not found, return empty list
+        
+        # Build query - only return diades where the colla has castells
+        query = """
+            SELECT DISTINCT
+                e.id AS event_id,
+                e.name AS event_name,
+                e.date AS event_date,
+                e.city AS event_city,
+                e.place AS event_place
+            FROM events e
+            JOIN event_colles ec ON e.id = ec.event_fk
+            JOIN colles co ON ec.colla_fk = co.id
+            JOIN castells c ON ec.id = c.event_colla_fk
+            WHERE 1=1
+        """
+        params = []
+        
+        if colla_db_id:
+            # Filter by the exact database PRIMARY KEY id
+            query += " AND co.id = %s"
+            params.append(colla_db_id)
+        
+        if year:
+            query += " AND EXTRACT(YEAR FROM TO_DATE(e.date, 'DD/MM/YYYY')) = %s::integer"
+            params.append(year)
+        
+        query += " ORDER BY e.date DESC, e.name ASC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        columns = [desc[0] for desc in cursor.description]
+        diades = [dict(zip(columns, row)) for row in rows]
+        
+        cursor.close()
+        conn.close()
+        
+        return {"diades": diades}
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_diades: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching diades: {str(e)}")
+
+@app.get("/api/diades/{event_id}/details")
+async def get_diada_details(
+    event_id: int,
+    colla_id: Optional[str] = None,
+    castells: int = 3,  # Number of top castells to count
+    pilars: int = 1,  # Number of top pilars to count
+):
+    """
+    Get detailed diada data with castells, status, and points for a specific colla.
+    
+    castells: Number of top castells to include in points calculation (default: 3)
+    pilars: Number of top pilars to include in points calculation (default: 1)
+    
+    Note: If multiple castells/pilars have the same points, they count as 1.
+    Note: colla_id should be provided to get castells for a specific colla in the event.
+    Public endpoint: no authentication required (Comparar Diades page).
+    """
+    try:
+        import psycopg2
+        from dotenv import load_dotenv
+        import os
+        
+        load_dotenv()
+        DATABASE_URL = os.getenv("DATABASE_URL")
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        # Get event and colla info - MUST filter by colla_id if provided
+        query = """
+            SELECT 
+                e.id AS event_id,
+                e.name AS event_name,
+                e.date AS event_date,
+                e.city AS event_city,
+                e.place AS event_place,
+                co.id AS colla_id,
+                co.name AS colla_name,
+                co.logo_url AS colla_logo_url,
+                c.castell_name,
+                c.status,
+                CASE 
+                    WHEN c.status = 'Descarregat' THEN COALESCE(p.punts_descarregat, 0)
+                    WHEN c.status = 'Carregat' THEN COALESCE(p.punts_carregat, 0)
+                    ELSE 0
+                END AS punts,
+                CASE
+                    WHEN c.status = 'Descarregat' AND p.punts_descarregat IS NULL THEN true
+                    WHEN c.status = 'Carregat' AND p.punts_carregat IS NULL THEN true
+                    ELSE false
+                END AS punts_missing,
+                CASE
+                    WHEN c.castell_name ~ '^[0-9]' THEN 'castell'
+                    WHEN c.castell_name ~ '^[Pp]' THEN 'pilar'
+                    ELSE 'altres'
+                END AS tipus
+            FROM events e
+            JOIN event_colles ec ON e.id = ec.event_fk
+            JOIN colles co ON ec.colla_fk = co.id
+            JOIN castells c ON ec.id = c.event_colla_fk
+            LEFT JOIN puntuacions p ON (
+                c.castell_name = p.castell_code_external 
+                OR c.castell_name = p.castell_code
+                OR c.castell_name = p.castell_code_name
+            )
+            WHERE e.id = %s
+        """
+        params = [event_id]
+        
+        # REQUIRED: Filter by colla_id to get only castells for the selected colla
+        if not colla_id:
+            raise HTTPException(status_code=400, detail="colla_id is required to get diada details")
+        
+        # Cast colla_id parameter to string to ensure proper matching
+        colla_id_str = str(colla_id)
+        
+        # Find the exact colla - prioritize NAME match (most reliable, unique)
+        # Then try colla_id, then database id
+        find_colla_cursor = conn.cursor()
+        colla_row = None
+        
+        # 1. Try exact match by NAME first (most reliable - names are unique)
+        find_colla_query = "SELECT id, colla_id, name FROM colles WHERE LOWER(name) = LOWER(%s) LIMIT 1"
+        find_colla_cursor.execute(find_colla_query, [colla_id_str])
+        colla_row = find_colla_cursor.fetchone()
+        
+        # 2. If not found by name, try by colla_id (TEXT field)
+        if not colla_row:
+            find_colla_query = "SELECT id, colla_id, name FROM colles WHERE colla_id = %s LIMIT 1"
+            find_colla_cursor.execute(find_colla_query, [colla_id_str])
+            colla_row = find_colla_cursor.fetchone()
+        
+        # 3. If still not found, try by database id (PRIMARY KEY)
+        if not colla_row:
+            find_colla_query = "SELECT id, colla_id, name FROM colles WHERE id::text = %s LIMIT 1"
+            find_colla_cursor.execute(find_colla_query, [colla_id_str])
+            colla_row = find_colla_cursor.fetchone()
+        
+        find_colla_cursor.close()
+        
+        if not colla_row:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Colla not found: {colla_id_str}")
+        
+        # Get the actual database PRIMARY KEY id (most reliable, unique)
+        actual_colla_db_id = colla_row[0]
+        
+        # Filter by the actual database PRIMARY KEY id (most reliable, unique)
+        query += " AND co.id = %s"
+        params.append(actual_colla_db_id)
+        
+        query += " ORDER BY tipus, punts DESC"
+        
+        try:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        except Exception as query_error:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=500, detail=f"Database query error: {str(query_error)}")
+        
+        if not rows:
+            cursor.close()
+            conn.close()
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Diada not found for the specified colla (event_id: {event_id}, colla_id: {colla_id_str}). The colla may not have participated in this diada."
+            )
+        
+        columns = [desc[0] for desc in cursor.description]
+        raw_results = [dict(zip(columns, row)) for row in rows]
+        
+        # All results should be for the same colla (since we filtered)
+        first_row = raw_results[0]
+        
+        # Verify all results are for the same colla (safety check)
+        colla_ids_in_results = set(r.get('colla_id') for r in raw_results)
+        
+        if len(colla_ids_in_results) > 1:
+            # This shouldn't happen if filtering works correctly, but filter to be safe
+            requested_colla_id = first_row.get('colla_id')
+            raw_results = [r for r in raw_results if r.get('colla_id') == requested_colla_id]
+            first_row = raw_results[0] if raw_results else first_row
+        
+        cursor.close()
+        conn.close()
+        
+        # Separate castells and pilars
+        castells_list = [r for r in raw_results if r.get('tipus') == 'castell']
+        pilars_list = [r for r in raw_results if r.get('tipus') == 'pilar']
+        
+        # Sort by points descending
+        castells_list.sort(key=lambda x: -x.get('punts', 0))
+        pilars_list.sort(key=lambda x: -x.get('punts', 0))
+        
+        # Select top C castells (can count multiple with same points)
+        selected_castells = []
+        for c in castells_list:
+            selected_castells.append(c)
+            if len(selected_castells) >= castells:
+                break
+        
+        # Select top P pilars (can count multiple with same points)
+        selected_pilars = []
+        for p in pilars_list:
+            selected_pilars.append(p)
+            if len(selected_pilars) >= pilars:
+                break
+        
+        # Combine selected castells and pilars for points calculation
+        selected_for_points = selected_castells + selected_pilars
+        
+        # Count how many times each identifier appears in selected_for_points
+        # This allows counting multiple items with the same points
+        selected_items_count = {}
+        for r in selected_for_points:
+            identifier = (
+                r.get('castell_name', ''),
+                r.get('status', ''),
+                r.get('punts', 0),
+                r.get('tipus', '')
+            )
+            selected_items_count[identifier] = selected_items_count.get(identifier, 0) + 1
+        
+        # Calculate total points
+        total_punts = sum(r.get('punts', 0) for r in selected_for_points)
+        
+        # Get all castells for display (sorted by points)
+        all_castells = castells_list + pilars_list
+        all_castells.sort(key=lambda x: -x.get('punts', 0))
+        
+        # Track how many times we've marked each identifier as counted
+        # This ensures we mark the correct number of items (e.g., if 2 pilars with same points are selected, mark 2)
+        identifier_count_map = {}
+        
+        # Format castells for display
+        castells_display = []
+        for r in all_castells:
+            identifier = (
+                r.get('castell_name', ''),
+                r.get('status', ''),
+                r.get('punts', 0),
+                r.get('tipus', '')
+            )
+            
+            # Check how many times this identifier should be counted
+            expected_count = selected_items_count.get(identifier, 0)
+            current_count = identifier_count_map.get(identifier, 0)
+            
+            # Mark as counted if we haven't reached the expected count yet
+            is_counted = (current_count < expected_count)
+            if is_counted:
+                identifier_count_map[identifier] = current_count + 1
+            
+            castells_display.append({
+                'castell_name': r.get('castell_name', ''),
+                'status': r.get('status', ''),
+                'punts': r.get('punts', 0),
+                'punts_missing': r.get('punts_missing', False),
+                'tipus': r.get('tipus', ''),
+                'is_counted': is_counted
+            })
+        
+        return {
+            'event_id': first_row['event_id'],
+            'event_name': first_row['event_name'],
+            'event_date': first_row['event_date'],
+            'event_city': first_row['event_city'],
+            'event_place': first_row['event_place'],
+            'colla_id': first_row['colla_id'],
+            'colla_name': first_row['colla_name'],
+            'colla_logo_url': first_row['colla_logo_url'],
+            'castells': castells_display,
+            'total_punts': total_punts,
+            'castells_count': castells,
+            'pilars_count': pilars
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in get_diada_details: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Error fetching diada details: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -503,6 +503,28 @@ export const apiService = {
       params
     })
     return response.data
+  },
+
+  // Diades comparison endpoints
+  async getDiades(collaId = null, year = null) {
+    const params = {}
+    if (collaId) {
+      params.colla_id = collaId
+    }
+    if (year) {
+      params.year = year
+    }
+    const response = await api.get('/api/diades', { params })
+    return response.data
+  },
+
+  async getDiadaDetails(eventId, collaId = null, castells = 3, pilars = 1) {
+    const params = { castells, pilars }
+    if (collaId) {
+      params.colla_id = collaId
+    }
+    const response = await api.get(`/api/diades/${eventId}/details`, { params })
+    return response.data
   }
 }
 

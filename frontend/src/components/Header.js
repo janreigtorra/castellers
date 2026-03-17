@@ -105,28 +105,65 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
           <h1>Xiquet.cat</h1>
         </div>
         <div className="header-nav">
-          {user && (
-            <nav className="header-nav-buttons">
-              <button 
-                className={`header-nav-btn ${currentPage === 'chat' ? 'active' : ''}`}
-                onClick={() => onPageChange && onPageChange('chat')}
-              >
-                Xat
-              </button>
-              <button 
-                className={`header-nav-btn ${currentPage === 'joc-del-mocador' ? 'active' : ''}`}
-                onClick={() => onPageChange && onPageChange('joc-del-mocador')}
-              >
-                El Joc del Mocador
-              </button>
-              <button 
-                className={`header-nav-btn ${currentPage === 'colles-castelleres' ? 'active' : ''}`}
-                onClick={() => onPageChange && onPageChange('colles-castelleres')}
-              >
-                Colles Castelleres
-              </button>
-            </nav>
-          )}
+          <nav className="header-nav-buttons">
+            {user ? (
+              <>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'chat' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('chat')}
+                >
+                  Xat
+                </button>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'joc-del-mocador' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('joc-del-mocador')}
+                >
+                  El Joc del Mocador
+                </button>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'colles-castelleres' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('colles-castelleres')}
+                >
+                  Colles Castelleres
+                </button>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'comparar-diades' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('comparar-diades')}
+                >
+                  Comparar Diades
+                </button>
+              </>
+            ) : (
+              <>
+                <button 
+                  className="header-nav-btn"
+                  onClick={() => setShowLogin(true)}
+                  title="Cal iniciar sessió"
+                >
+                  Xat
+                </button>
+                <button 
+                  className="header-nav-btn"
+                  onClick={() => setShowLogin(true)}
+                  title="Cal iniciar sessió"
+                >
+                  El Joc del Mocador
+                </button>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'colles-castelleres' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('colles-castelleres')}
+                >
+                  Colles Castelleres
+                </button>
+                <button 
+                  className={`header-nav-btn ${currentPage === 'comparar-diades' ? 'active' : ''}`}
+                  onClick={() => onPageChange && onPageChange('comparar-diades')}
+                >
+                  Comparar Diades
+                </button>
+              </>
+            )}
+          </nav>
         </div>
         <div className="user-info">
           {user ? (
@@ -243,15 +280,80 @@ const Header = ({ user, onLogin, onLogout, theme, currentPage = 'chat', onPageCh
               </div>
             </div>
           ) : (
-            <button onClick={() => setShowLogin(true)}>Entrar</button>
+            <div className="user-controls">
+              {/* Settings (Compartir, Sobre, Contacte) - accessible to everyone */}
+              <div className="settings-dropdown-container" ref={dropdownRef}>
+                <button 
+                  className={`settings-btn ${showSettingsDropdown ? 'active' : ''}`}
+                  onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+                  title="Configuració"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+
+                {showSettingsDropdown && (
+                  <div className="settings-dropdown">
+                    <button 
+                      className="settings-dropdown-item"
+                      onClick={() => handleSettingsItemClick('share')}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="18" cy="5" r="3" />
+                        <circle cx="6" cy="12" r="3" />
+                        <circle cx="18" cy="19" r="3" />
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                      </svg>
+                      Compartir Xiquet
+                    </button>
+                    <button 
+                      className="settings-dropdown-item"
+                      onClick={() => handleSettingsItemClick('about')}
+                    >
+                      <img 
+                        src="/xiquet_images/xiquet_logo_zoom.png" 
+                        alt="Xiquet" 
+                        width="16" 
+                        height="16" 
+                        style={{ objectFit: 'contain' }}
+                      />
+                      Sobre Xiquet.cat
+                    </button>
+                    <button 
+                      className="settings-dropdown-item"
+                      onClick={() => handleSettingsItemClick('contact')}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                        <polyline points="22,6 12,13 2,6" />
+                      </svg>
+                      Contacte
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button 
+                className="header-login-btn"
+                onClick={() => setShowLogin(true)}
+              >
+                Entrar
+              </button>
+            </div>
           )}
         </div>
         
         {showLogin && (
-          <LoginForm 
-            onLogin={handleLoginSuccess}
-            onClose={() => setShowLogin(false)}
-          />
+          <div className="login-modal-overlay" onClick={() => setShowLogin(false)}>
+            <div className="login-modal" onClick={(e) => e.stopPropagation()}>
+              <LoginForm 
+                onLogin={handleLoginSuccess}
+                onClose={() => setShowLogin(false)}
+              />
+            </div>
+          </div>
         )}
       </header>
       <div className="header-border-bottom"></div>

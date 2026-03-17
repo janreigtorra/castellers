@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import LoginForm from './LoginForm';
 import ColorSelector from './ColorSelector';
 import { getCurrentTheme, COLOR_THEMES, getThemeForColor } from '../colorTheme';
@@ -85,47 +85,14 @@ const ScrollingBanner = ({ questions, direction, onQuestionClick }) => {
 
 const WelcomePage = ({ selectedColor, onColorChange, onLogin }) => {
   const [showLogin, setShowLogin] = React.useState(false);
-  const [isUserSelectedColor, setIsUserSelectedColor] = useState(false);
-  const [userSelectedColor, setUserSelectedColor] = useState(null);
-  const [animatedColorIndex, setAnimatedColorIndex] = useState(0);
-  const animationIntervalRef = useRef(null);
+  const [userSelectedColor, setUserSelectedColor] = useState('white');
   
-  // Get all available color keys (excluding white from animation)
-  const availableColors = Object.keys(COLOR_THEMES).filter(key => key !== 'white');
-  
-  // Determine which color to use: user-selected or animated
-  const currentColor = isUserSelectedColor && userSelectedColor 
-    ? userSelectedColor 
-    : availableColors[animatedColorIndex % availableColors.length];
+  // Use user-selected color or default to white
+  const currentColor = userSelectedColor || 'white';
   const theme = getThemeForColor(currentColor);
-
-  // Auto-cycling color animation (only if user hasn't manually selected)
-  useEffect(() => {
-    if (isUserSelectedColor) {
-      // Stop animation if user has selected a color
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current);
-        animationIntervalRef.current = null;
-      }
-      return;
-    }
-
-    // Start animation: cycle through colors every 2 seconds
-    animationIntervalRef.current = setInterval(() => {
-      setAnimatedColorIndex(prev => (prev + 1) % availableColors.length);
-    }, 2000);
-
-    return () => {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current);
-        animationIntervalRef.current = null;
-      }
-    };
-  }, [isUserSelectedColor, availableColors.length]);
 
   // Handle color change from ColorSelector
   const handleColorChange = (colorKey) => {
-    setIsUserSelectedColor(true);
     setUserSelectedColor(colorKey);
     onColorChange(colorKey);
   };
@@ -163,16 +130,16 @@ const WelcomePage = ({ selectedColor, onColorChange, onLogin }) => {
           </div>
           <div className="welcome-right-section">
             <div className="welcome-text-content">
-              <h1 className="welcome-title">Benvingut a Xiquet!</h1>
+              <h1 className="welcome-title">Benvingut a Xiquet.cat!</h1>
               <p className="welcome-subtitle">
-                L'assistent expert en el món casteller
+                L'assistent d'IA expert en el món casteller
               </p>
               <p className="welcome-description">
                 Xiquet és el teu assistent intel·ligent per descobrir tot el món dels castells.
                 Fes preguntes sobre colles, actuacions, castells i molt més!
               </p>
               <p className="welcome-cta">
-                Per començar, entra o registra't per accedir a l'assistent.
+                Per començar, entra o registra't.
               </p>
               <div className="welcome-btn-container">
                 <button 

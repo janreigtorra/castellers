@@ -11,6 +11,7 @@ import AboutPage from './components/AboutPage';
 import ContactPage from './components/ContactPage';
 import CollesCastelleres from './components/CollesCastelleres';
 import CollaDetail from './components/CollaDetail';
+import CompararDiades from './components/CompararDiades';
 import PilarLoader from './components/PilarLoader';
 import AuthCallback from './components/AuthCallback';
 import { authHelpers } from './supabaseClient';
@@ -37,6 +38,7 @@ function App() {
     if (path === '/sobre-xiquet-ai') return 'about';
     if (path === '/contacte') return 'contact';
     if (path === '/colles-castelleres') return 'colles-castelleres';
+    if (path === '/comparar-diades') return 'comparar-diades';
     if (path.startsWith('/colles/')) {
       return 'colla-detail';
     }
@@ -64,6 +66,7 @@ function App() {
     else if (page === 'about') path = '/sobre-xiquet-ai';
     else if (page === 'contact') path = '/contacte';
     else if (page === 'colles-castelleres') path = '/colles-castelleres';
+    else if (page === 'comparar-diades') path = '/comparar-diades';
     else if (page === 'colla-detail' && collaId) {
       path = `/colles/${collaId}`;
       setSelectedCollaId(collaId);
@@ -312,6 +315,13 @@ function App() {
                 onBack={() => setCurrentPage('colles-castelleres')}
               />
             </main>
+          ) : currentPage === 'comparar-diades' ? (
+            <main className="main-content-with-sessions">
+              <CompararDiades 
+                theme={theme} 
+                onBack={() => setCurrentPage('chat')}
+              />
+            </main>
           ) : null}
           <ColorSelector 
             selectedColor={selectedColor}
@@ -329,11 +339,47 @@ function App() {
           )}
         </>
       ) : (
-        <WelcomePage 
-          selectedColor={selectedColor}
-          onColorChange={handleColorChange}
-          onLogin={handleLogin}
-        />
+        <>
+          <Header
+            user={null}
+            onLogin={handleLogin}
+            onLogout={() => {}}
+            theme={theme}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            onOpenAbout={() => setCurrentPage('about')}
+          />
+          <div className="app-guest-main">
+            {currentPage === 'colles-castelleres' ? (
+              <CollesCastelleres
+                theme={theme}
+                onBack={() => setCurrentPage('chat')}
+                onCollaClick={handleCollaClick}
+              />
+            ) : currentPage === 'comparar-diades' ? (
+              <CompararDiades
+                theme={theme}
+                onBack={() => setCurrentPage('chat')}
+              />
+            ) : currentPage === 'about' ? (
+              <AboutPage theme={theme} onBack={() => setCurrentPage('chat')} />
+            ) : currentPage === 'contact' ? (
+              <ContactPage theme={theme} onBack={() => setCurrentPage('chat')} />
+            ) : currentPage === 'colla-detail' ? (
+              <CollaDetail
+                collaId={selectedCollaId}
+                theme={theme}
+                onBack={() => setCurrentPage('colles-castelleres')}
+              />
+            ) : (
+              <WelcomePage
+                selectedColor={selectedColor}
+                onColorChange={handleColorChange}
+                onLogin={handleLogin}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );

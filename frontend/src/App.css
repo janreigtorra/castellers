@@ -20,6 +20,15 @@
   position: relative;
 }
 
+/* Guest layout: header + main area so welcome page fits remaining space */
+.app-guest-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Allow scrolling on mobile */
 @media (max-width: 768px) {
   .app {
@@ -225,6 +234,25 @@
 }
 
 .header button:hover {
+  opacity: 0.9;
+}
+
+/* Log in button when not logged in (replaces profile circle) */
+.header .header-login-btn {
+  padding: 0.5rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: #000000;
+  color: #ffffff;
+}
+
+.header-white-theme .header-login-btn {
+  background: #000000;
+  color: #ffffff;
+}
+
+.header .header-login-btn:hover {
   opacity: 0.9;
 }
 
@@ -3171,6 +3199,11 @@
 
   .user-info {
     flex-shrink: 0;
+  }
+
+  /* Hide Entrar button on mobile (user can use main CTA on welcome page) */
+  .header .header-login-btn {
+    display: none;
   }
 
   .header .user-info span {
