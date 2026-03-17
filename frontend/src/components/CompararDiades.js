@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { apiService } from '../apiService';
+import { authHelpers } from '../supabaseClient';
 import './CompararDiades.css';
 import '../components/JocDelMocador/JocDelMocador.css';
 import PilarLoader from './PilarLoader';
@@ -45,6 +46,14 @@ const getCollaTheme = (collaName) => {
   return getThemeForColor(themeKey);
 };
 
+const STATUS_OPTIONS = ['Descarregat', 'Carregat', 'Intent desmuntat', 'Intent'];
+
+const normalizeCastellName = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/-/g, '');
+
 // Single-select dropdown component with search (based on MultiSelect from Menu.js)
 const SingleSelect = ({ options, selected, onChange, placeholder, disabled, displayTransform, getOptionKey }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -80,14 +89,18 @@ const SingleSelect = ({ options, selected, onChange, placeholder, disabled, disp
       
       // Position below if there's enough space, otherwise above
       const shouldPositionAbove = spaceBelow < dropdownHeight && spaceAbove > spaceBelow;
+      const maxAvailableHeight = shouldPositionAbove
+        ? Math.max(160, spaceAbove - 10)
+        : Math.max(160, spaceBelow - 10);
       
       setDropdownPosition({
-        top: shouldPositionAbove 
-          ? rect.top + window.scrollY - Math.min(dropdownHeight, spaceAbove - 10)
+        top: shouldPositionAbove
+          ? rect.top + window.scrollY
           : rect.bottom + window.scrollY,
         left: rect.left + window.scrollX,
         width: rect.width,
-        positionAbove: shouldPositionAbove
+        positionAbove: shouldPositionAbove,
+        maxHeight: Math.min(dropdownHeight, maxAvailableHeight)
       });
       setTimeout(() => searchInputRef.current?.focus(), 0);
     } else {
@@ -177,6 +190,7 @@ const SingleSelect = ({ options, selected, onChange, placeholder, disabled, disp
             top: `${dropdownPosition.top}px`,
             left: `${dropdownPosition.left}px`,
             width: `${dropdownPosition.width}px`,
+            maxHeight: `${dropdownPosition.maxHeight || 300}px`,
             zIndex: 10000
           }}
           onClick={(e) => e.stopPropagation()}
@@ -223,26 +237,64 @@ const SingleSelect = ({ options, selected, onChange, placeholder, disabled, disp
   );
 };
 
+const SimulationEntryRow = ({ index, label, value, options, onChange, emptyPlaceholder }) => {
+  return (
+    <div className="simulation-castell-row">
+      <div className="simulation-castell-field">
+        <label>{label} {index + 1}</label>
+        <SingleSelect
+          options={options}
+          selected={value.castell}
+          onChange={(castell) => onChange({ ...value, castell })}
+          placeholder={emptyPlaceholder}
+          disabled={options.length === 0}
+          displayTransform={(castell) => castell.castell_name}
+          getOptionKey={(castell) => castell.castell_name}
+        />
+      </div>
+
+      <div className="simulation-castell-field">
+        <label>Estat</label>
+        <SingleSelect
+          options={STATUS_OPTIONS}
+          selected={value.status}
+          onChange={(status) => onChange({ ...value, status })}
+          placeholder="Selecciona un estat"
+        />
+      </div>
+    </div>
+  );
+};
+
 const CompararDiades = ({ theme, onBack }) => {
   const [colles, setColles] = useState([]);
   const [anys, setAnys] = useState([]);
+  const [castellsCatalog, setCastellsCatalog] = useState([]);
+  const [currentUserName, setCurrentUserName] = useState('Usuari');
   const [loading, setLoading] = useState(true);
+  const [showScoreTable, setShowScoreTable] = useState(false);
   
   // Diada 1 state
+  const [diada1Mode, setDiada1Mode] = useState('database');
   const [colla1, setColla1] = useState(null);
   const [any1, setAny1] = useState(null);
   const [diades1, setDiades1] = useState([]);
   const [diada1, setDiada1] = useState(null);
   const [diada1Details, setDiada1Details] = useState(null);
   const [loadingDiada1, setLoadingDiada1] = useState(false);
+  const [simulationCastells1, setSimulationCastells1] = useState([]);
+  const [simulationPilars1, setSimulationPilars1] = useState([]);
   
   // Diada 2 state
+  const [diada2Mode, setDiada2Mode] = useState('database');
   const [colla2, setColla2] = useState(null);
   const [any2, setAny2] = useState(null);
   const [diades2, setDiades2] = useState([]);
   const [diada2, setDiada2] = useState(null);
   const [diada2Details, setDiada2Details] = useState(null);
   const [loadingDiada2, setLoadingDiada2] = useState(false);
+  const [simulationCastells2, setSimulationCastells2] = useState([]);
+  const [simulationPilars2, setSimulationPilars2] = useState([]);
   
   // Comparison parameters
   const [castellsCount, setCastellsCount] = useState(3);
@@ -253,12 +305,14 @@ const CompararDiades = ({ theme, onBack }) => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [collesData, entityOptions] = await Promise.all([
+        const [collesData, entityOptions, castellsCatalogData] = await Promise.all([
           apiService.getColles(),
-          apiService.getEntityOptions()
+          apiService.getEntityOptions(),
+          apiService.getCastellsCatalog()
         ]);
         
         setColles(collesData.colles || []);
+        setCastellsCatalog(castellsCatalogData.castells || []);
         
         // Extract years from entity options and sort descending
         const years = (entityOptions.anys || []).map(y => parseInt(y)).filter(y => !isNaN(y)).sort((a, b) => b - a);
@@ -273,8 +327,47 @@ const CompararDiades = ({ theme, onBack }) => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const { user } = await authHelpers.getCurrentUser();
+      setCurrentUserName(user?.user_metadata?.username || user?.email?.split('@')[0] || 'Usuari');
+    };
+
+    fetchCurrentUser();
+  }, []);
+
+  useEffect(() => {
+    const createEmptyRow = () => ({ castell: null, status: 'Descarregat' });
+
+    const buildSimulationRows = (currentRows) => {
+      const normalizedRows = Array.isArray(currentRows) ? currentRows.slice(0, castellsCount) : [];
+      while (normalizedRows.length < castellsCount) {
+        normalizedRows.push(createEmptyRow());
+      }
+      return normalizedRows;
+    };
+
+    const buildPilotRows = (currentRows) => {
+      const normalizedRows = Array.isArray(currentRows) ? currentRows.slice(0, pilarsCount) : [];
+      while (normalizedRows.length < pilarsCount) {
+        normalizedRows.push(createEmptyRow());
+      }
+      return normalizedRows;
+    };
+
+    setSimulationCastells1((currentRows) => (diada1Mode === 'simulated' ? buildSimulationRows(currentRows) : currentRows.slice(0, castellsCount)));
+    setSimulationPilars1((currentRows) => (diada1Mode === 'simulated' ? buildPilotRows(currentRows) : currentRows.slice(0, pilarsCount)));
+    setSimulationCastells2((currentRows) => (diada2Mode === 'simulated' ? buildSimulationRows(currentRows) : currentRows.slice(0, castellsCount)));
+    setSimulationPilars2((currentRows) => (diada2Mode === 'simulated' ? buildPilotRows(currentRows) : currentRows.slice(0, pilarsCount)));
+  }, [castellsCount, pilarsCount, diada1Mode, diada2Mode]);
+
   // Fetch diades when colla1 and any1 change
   useEffect(() => {
+    if (diada1Mode !== 'database') {
+      setDiades1([]);
+      return;
+    }
+
     if (colla1 && any1) {
       const fetchDiades = async () => {
         try {
@@ -293,10 +386,15 @@ const CompararDiades = ({ theme, onBack }) => {
       setDiada1(null);
       setDiada1Details(null);
     }
-  }, [colla1, any1, colles]);
+  }, [colla1, any1, colles, diada1Mode]);
 
   // Fetch diades when colla2 and any2 change
   useEffect(() => {
+    if (diada2Mode !== 'database') {
+      setDiades2([]);
+      return;
+    }
+
     if (colla2 && any2) {
       const fetchDiades = async () => {
         try {
@@ -315,10 +413,16 @@ const CompararDiades = ({ theme, onBack }) => {
       setDiada2(null);
       setDiada2Details(null);
     }
-  }, [colla2, any2, colles]);
+  }, [colla2, any2, colles, diada2Mode]);
 
   // Fetch diada 1 details when diada1 or comparisonMode changes
   useEffect(() => {
+    if (diada1Mode !== 'database') {
+      setDiada1Details(null);
+      setLoadingDiada1(false);
+      return;
+    }
+
     if (diada1 && colla1) {
       const fetchDetails = async () => {
         try {
@@ -341,10 +445,16 @@ const CompararDiades = ({ theme, onBack }) => {
     } else {
       setDiada1Details(null);
     }
-  }, [diada1, castellsCount, pilarsCount, colla1, colles]);
+  }, [diada1, castellsCount, pilarsCount, colla1, colles, diada1Mode]);
 
   // Fetch diada 2 details when diada2 or comparisonMode changes
   useEffect(() => {
+    if (diada2Mode !== 'database') {
+      setDiada2Details(null);
+      setLoadingDiada2(false);
+      return;
+    }
+
     if (diada2 && colla2) {
       const fetchDetails = async () => {
         try {
@@ -367,7 +477,7 @@ const CompararDiades = ({ theme, onBack }) => {
     } else {
       setDiada2Details(null);
     }
-  }, [diada2, castellsCount, pilarsCount, colla2, colles]);
+  }, [diada2, castellsCount, pilarsCount, colla2, colles, diada2Mode]);
 
   const colla1Theme = colla1 ? getCollaTheme(colla1) : null;
   const colla2Theme = colla2 ? getCollaTheme(colla2) : null;
@@ -391,6 +501,158 @@ const CompararDiades = ({ theme, onBack }) => {
     return parts.join(' ');
   };
 
+  const canMirrorColla = (sourceColla) => {
+    if (!sourceColla) return false;
+    return colles.some((colla) => colla.name === sourceColla);
+  };
+
+  const canMirrorAny = (sourceAny) => {
+    if (sourceAny === null || sourceAny === undefined) return false;
+    return anys.includes(sourceAny);
+  };
+
+  const canMirrorDiada = (sourceDiada, targetDiades) => {
+    if (!sourceDiada) return false;
+    return targetDiades.some((diada) => String(diada.event_id) === String(sourceDiada.event_id));
+  };
+
+  const isPilarName = (name) => normalizeCastellName(name).startsWith('p');
+  const castellOptions = castellsCatalog.filter((item) => !isPilarName(item.castell_name));
+  const pilarOptions = castellsCatalog.filter((item) => isPilarName(item.castell_name));
+
+  const getCastellPoints = (castellName, status) => {
+    const catalogEntry = castellsCatalog.find((item) => normalizeCastellName(item.castell_name) === normalizeCastellName(castellName));
+    if (!catalogEntry) {
+      return { punts: 0, puntsMissing: true };
+    }
+
+    if (status === 'Descarregat') {
+      return {
+        punts: catalogEntry.punts_descarregat || 0,
+        puntsMissing: catalogEntry.punts_descarregat === null || catalogEntry.punts_descarregat === undefined
+      };
+    }
+
+    if (status === 'Carregat') {
+      return {
+        punts: catalogEntry.punts_carregat || 0,
+        puntsMissing: catalogEntry.punts_carregat === null || catalogEntry.punts_carregat === undefined
+      };
+    }
+
+    return { punts: 0, puntsMissing: false };
+  };
+
+  const buildSimulatedDiada = (rows) => {
+    const castells = (rows || [])
+      .map((row) => {
+        if (!row?.castell?.castell_name || !row?.status) {
+          return null;
+        }
+
+        const { punts, puntsMissing } = getCastellPoints(row.castell.castell_name, row.status);
+        return {
+          castell_name: row.castell.castell_name,
+          status: row.status,
+          punts,
+          punts_missing: puntsMissing && (row.status === 'Descarregat' || row.status === 'Carregat'),
+          tipus: row.castell.castell_name.toLowerCase().startsWith('p') ? 'pilar' : 'castell',
+          is_counted: true
+        };
+      })
+      .filter(Boolean);
+
+    const total_punts = castells.reduce((sum, castell) => sum + (castell.punts || 0), 0);
+
+    return {
+      event_id: `simulated-${currentUserName || 'user'}`,
+      event_name: 'Diada simulada',
+      event_date: null,
+      event_city: null,
+      event_place: null,
+      colla_id: 'simulated',
+      colla_name: `Colla ${currentUserName || 'Usuari'}`,
+      colla_logo_url: null,
+      castells,
+      total_punts,
+      castells_count: castellsCount,
+      pilars_count: pilarsCount,
+      is_simulated: true
+    };
+  };
+
+  const buildSimulatedRows = (rows, count, defaultStatus = 'Descarregat') => {
+    const normalizedRows = Array.isArray(rows) ? rows.slice(0, count) : [];
+    while (normalizedRows.length < count) {
+      normalizedRows.push({ castell: null, status: defaultStatus });
+    }
+    return normalizedRows;
+  };
+
+  const handleModeToggle = (side) => {
+    if (side === 'left') {
+      setDiada1Mode((mode) => {
+        const nextMode = mode === 'simulated' ? 'database' : 'simulated';
+        if (nextMode === 'simulated') {
+          setColla1(null);
+          setAny1(null);
+          setDiada1(null);
+          setDiada1Details(null);
+          setSimulationCastells1((rows) => buildSimulatedRows(rows, castellsCount));
+          setSimulationPilars1((rows) => buildSimulatedRows(rows, pilarsCount));
+        }
+        return nextMode;
+      });
+      return;
+    }
+
+    setDiada2Mode((mode) => {
+      const nextMode = mode === 'simulated' ? 'database' : 'simulated';
+      if (nextMode === 'simulated') {
+        setColla2(null);
+        setAny2(null);
+        setDiada2(null);
+        setDiada2Details(null);
+        setSimulationCastells2((rows) => buildSimulatedRows(rows, castellsCount));
+        setSimulationPilars2((rows) => buildSimulatedRows(rows, pilarsCount));
+      }
+      return nextMode;
+    });
+  };
+
+  const updateSimulationCastell = (side, kind, index, nextValue) => {
+    const updater =
+      side === 'left'
+        ? kind === 'castell'
+          ? setSimulationCastells1
+          : setSimulationPilars1
+        : kind === 'castell'
+          ? setSimulationCastells2
+          : setSimulationPilars2;
+    updater((rows) => rows.map((row, rowIndex) => (rowIndex === index ? nextValue : row)));
+  };
+
+  const displayDiada1Details = diada1Mode === 'simulated' ? buildSimulatedDiada([...simulationCastells1, ...simulationPilars1]) : diada1Details;
+  const displayDiada2Details = diada2Mode === 'simulated' ? buildSimulatedDiada([...simulationCastells2, ...simulationPilars2]) : diada2Details;
+  const scoreTableRows = [...castellsCatalog].sort((a, b) => {
+    const pointsA = Number(a?.punts_descarregat ?? -1);
+    const pointsB = Number(b?.punts_descarregat ?? -1);
+
+    if (pointsA !== pointsB) return pointsB - pointsA;
+    return String(a?.castell_name || '').localeCompare(String(b?.castell_name || ''));
+  });
+
+  const MirrorButton = ({ label, onClick, disabled = false }) => (
+    <button
+      type="button"
+      className="comparison-copy-button"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {label}
+    </button>
+  );
+
   if (loading) {
     return (
       <div className="comparar-diades-container">
@@ -409,6 +671,13 @@ const CompararDiades = ({ theme, onBack }) => {
           Tornar
         </button>
         <h1>Comparar Diades</h1>
+        <button
+          type="button"
+          className="score-table-button"
+          onClick={() => setShowScoreTable(true)}
+        >
+          Taula de puntuacions
+        </button>
       </div>
 
       {/* Comparison Parameters Selector */}
@@ -474,42 +743,115 @@ const CompararDiades = ({ theme, onBack }) => {
       <div className="diades-selection">
         {/* Diada 1 */}
         <div className="diada-selector" style={{ '--colla-color': colla1Theme?.secondary || theme?.secondary }}>
-          <h2>Diada 1</h2>
-          <div className="joc-mocador-sidebar-option">
-            <label className="joc-mocador-option-label">Colla</label>
-            <SingleSelect
-              options={colles.map(c => c.name)}
-              selected={colla1}
-              onChange={setColla1}
-              placeholder="Selecciona una colla"
-            />
+          <div className="diada-selector-title-row">
+            <h2>Diada 1</h2>
+            <button
+              type="button"
+              className={`simulation-mode-button ${diada1Mode === 'simulated' ? 'active' : ''}`}
+              onClick={() => handleModeToggle('left')}
+            >
+              {diada1Mode === 'simulated' ? 'Seleccionar diada' : 'Simular diada'}
+            </button>
           </div>
-          
-          {colla1 && (
-            <div className="joc-mocador-sidebar-option">
-              <label className="joc-mocador-option-label">Any</label>
-              <SingleSelect
-                options={anys}
-                selected={any1}
-                onChange={setAny1}
-                placeholder="Selecciona un any"
-                displayTransform={(year) => year.toString()}
-              />
-            </div>
-          )}
-          
-          {colla1 && any1 && (
-            <div className="joc-mocador-sidebar-option">
-              <label className="joc-mocador-option-label">Diada</label>
-              <SingleSelect
-                options={diades1}
-                selected={diada1}
-                onChange={setDiada1}
-                placeholder={diades1.length === 0 ? 'No hi ha diades disponibles' : 'Selecciona una diada'}
-                disabled={diades1.length === 0}
-                displayTransform={(diada) => formatDiadaName(diada)}
-                getOptionKey={(diada) => diada.event_id}
-              />
+          <div className="diada-selector-title-line" aria-hidden="true" />
+
+          {diada1Mode === 'database' ? (
+            <>
+              <div className="joc-mocador-sidebar-option">
+                <div className="comparison-field-header">
+                  <label className="joc-mocador-option-label">Colla</label>
+                  {!colla1 && canMirrorColla(colla2) && colla2 !== colla1 && (
+                    <MirrorButton label="Mateixa colla" onClick={() => setColla1(colla2)} />
+                  )}
+                </div>
+                <SingleSelect
+                  options={colles.map(c => c.name)}
+                  selected={colla1}
+                  onChange={setColla1}
+                  placeholder="Selecciona una colla"
+                />
+              </div>
+
+              {colla1 && (
+                <div className="joc-mocador-sidebar-option">
+                  <div className="comparison-field-header">
+                    <label className="joc-mocador-option-label">Any</label>
+                    {!any1 && canMirrorAny(any2) && any2 !== any1 && (
+                      <MirrorButton label="Mateix any" onClick={() => setAny1(any2)} />
+                    )}
+                  </div>
+                  <SingleSelect
+                    options={anys}
+                    selected={any1}
+                    onChange={setAny1}
+                    placeholder="Selecciona un any"
+                    displayTransform={(year) => year.toString()}
+                  />
+                </div>
+              )}
+
+              {colla1 && any1 && (
+                <div className="joc-mocador-sidebar-option">
+                  <div className="comparison-field-header">
+                    <label className="joc-mocador-option-label">Diada</label>
+                    {!diada1 && canMirrorDiada(diada2, diades1) && (
+                      <MirrorButton label="Mateixa diada" onClick={() => setDiada1(diada2)} />
+                    )}
+                  </div>
+                  <SingleSelect
+                    options={diades1}
+                    selected={diada1}
+                    onChange={setDiada1}
+                    placeholder={diades1.length === 0 ? 'No hi ha diades disponibles' : 'Selecciona una diada'}
+                    disabled={diades1.length === 0}
+                    displayTransform={(diada) => formatDiadaName(diada)}
+                    getOptionKey={(diada) => diada.event_id}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="simulation-mode-panel">
+              <p className="simulation-helper-text">
+                Defineix fins a {castellsCount} castells i {pilarsCount} pilars amb el seu estat per calcular els punts.
+              </p>
+              {castellsCatalog.length > 0 ? (
+                <div className="simulation-builder">
+                  <div className="simulation-builder-section">
+                    <h3 className="simulation-builder-title">Castells</h3>
+                    {simulationCastells1.map((row, index) => (
+                      <SimulationEntryRow
+                        key={`simulation-left-castell-${index}`}
+                        label="Castell"
+                        index={index}
+                        value={row}
+                        options={castellOptions}
+                        emptyPlaceholder="Selecciona un castell"
+                        onChange={(nextValue) => updateSimulationCastell('left', 'castell', index, nextValue)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="simulation-builder-section">
+                    <h3 className="simulation-builder-title">Pilars</h3>
+                    {simulationPilars1.map((row, index) => (
+                      <SimulationEntryRow
+                        key={`simulation-left-pilar-${index}`}
+                        label="Pilar"
+                        index={index}
+                        value={row}
+                        options={pilarOptions}
+                        emptyPlaceholder="Selecciona un pilar"
+                        onChange={(nextValue) => updateSimulationCastell('left', 'pilar', index, nextValue)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-placeholder simulation-empty-placeholder">
+                  <p>No s'ha pogut carregar el catàleg de castells.</p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -521,60 +863,133 @@ const CompararDiades = ({ theme, onBack }) => {
 
         {/* Diada 2 */}
         <div className="diada-selector" style={{ '--colla-color': colla2Theme?.secondary || theme?.secondary }}>
-          <h2>Diada 2</h2>
-          <div className="joc-mocador-sidebar-option">
-            <label className="joc-mocador-option-label">Colla</label>
-            <SingleSelect
-              options={colles.map(c => c.name)}
-              selected={colla2}
-              onChange={setColla2}
-              placeholder="Selecciona una colla"
-            />
+          <div className="diada-selector-title-row">
+            <h2>Diada 2</h2>
+            <button
+              type="button"
+              className={`simulation-mode-button ${diada2Mode === 'simulated' ? 'active' : ''}`}
+              onClick={() => handleModeToggle('right')}
+            >
+              {diada2Mode === 'simulated' ? 'Seleccionar diada' : 'Simular diada'}
+            </button>
           </div>
-          
-          {colla2 && (
-            <div className="joc-mocador-sidebar-option">
-              <label className="joc-mocador-option-label">Any</label>
-              <SingleSelect
-                options={anys}
-                selected={any2}
-                onChange={setAny2}
-                placeholder="Selecciona un any"
-                displayTransform={(year) => year.toString()}
-              />
-            </div>
-          )}
-          
-          {colla2 && any2 && (
-            <div className="joc-mocador-sidebar-option">
-              <label className="joc-mocador-option-label">Diada</label>
-              <SingleSelect
-                options={diades2}
-                selected={diada2}
-                onChange={setDiada2}
-                placeholder={diades2.length === 0 ? 'No hi ha diades disponibles' : 'Selecciona una diada'}
-                disabled={diades2.length === 0}
-                displayTransform={(diada) => formatDiadaName(diada)}
-                getOptionKey={(diada) => diada.event_id}
-              />
+          <div className="diada-selector-title-line" aria-hidden="true" />
+
+          {diada2Mode === 'database' ? (
+            <>
+              <div className="joc-mocador-sidebar-option">
+                <div className="comparison-field-header">
+                  <label className="joc-mocador-option-label">Colla</label>
+                  {!colla2 && canMirrorColla(colla1) && colla1 !== colla2 && (
+                    <MirrorButton label="Mateixa colla" onClick={() => setColla2(colla1)} />
+                  )}
+                </div>
+                <SingleSelect
+                  options={colles.map(c => c.name)}
+                  selected={colla2}
+                  onChange={setColla2}
+                  placeholder="Selecciona una colla"
+                />
+              </div>
+
+              {colla2 && (
+                <div className="joc-mocador-sidebar-option">
+                  <div className="comparison-field-header">
+                    <label className="joc-mocador-option-label">Any</label>
+                    {!any2 && canMirrorAny(any1) && any1 !== any2 && (
+                      <MirrorButton label="Mateix any" onClick={() => setAny2(any1)} />
+                    )}
+                  </div>
+                  <SingleSelect
+                    options={anys}
+                    selected={any2}
+                    onChange={setAny2}
+                    placeholder="Selecciona un any"
+                    displayTransform={(year) => year.toString()}
+                  />
+                </div>
+              )}
+
+              {colla2 && any2 && (
+                <div className="joc-mocador-sidebar-option">
+                  <div className="comparison-field-header">
+                    <label className="joc-mocador-option-label">Diada</label>
+                    {!diada2 && canMirrorDiada(diada1, diades2) && (
+                      <MirrorButton label="Mateixa diada" onClick={() => setDiada2(diada1)} />
+                    )}
+                  </div>
+                  <SingleSelect
+                    options={diades2}
+                    selected={diada2}
+                    onChange={setDiada2}
+                    placeholder={diades2.length === 0 ? 'No hi ha diades disponibles' : 'Selecciona una diada'}
+                    disabled={diades2.length === 0}
+                    displayTransform={(diada) => formatDiadaName(diada)}
+                    getOptionKey={(diada) => diada.event_id}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="simulation-mode-panel">
+              <p className="simulation-helper-text">
+                Defineix fins a {castellsCount} castells i {pilarsCount} pilars amb el seu estat per calcular els punts.
+              </p>
+              {castellsCatalog.length > 0 ? (
+                <div className="simulation-builder">
+                  <div className="simulation-builder-section">
+                    <h3 className="simulation-builder-title">Castells</h3>
+                    {simulationCastells2.map((row, index) => (
+                      <SimulationEntryRow
+                        key={`simulation-right-castell-${index}`}
+                        label="Castell"
+                        index={index}
+                        value={row}
+                        options={castellOptions}
+                        emptyPlaceholder="Selecciona un castell"
+                        onChange={(nextValue) => updateSimulationCastell('right', 'castell', index, nextValue)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="simulation-builder-section">
+                    <h3 className="simulation-builder-title">Pilars</h3>
+                    {simulationPilars2.map((row, index) => (
+                      <SimulationEntryRow
+                        key={`simulation-right-pilar-${index}`}
+                        label="Pilar"
+                        index={index}
+                        value={row}
+                        options={pilarOptions}
+                        emptyPlaceholder="Selecciona un pilar"
+                        onChange={(nextValue) => updateSimulationCastell('right', 'pilar', index, nextValue)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-placeholder simulation-empty-placeholder">
+                  <p>No s'ha pogut carregar el catàleg de castells.</p>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
       {/* Comparison Results */}
-      {(diada1Details || diada2Details) && (
+      {(displayDiada1Details || displayDiada2Details) && (
         <div className="comparison-results">
           <div className="comparison-side">
-            {loadingDiada1 ? (
+            {diada1Mode === 'database' && loadingDiada1 ? (
               <div className="loading-placeholder">
                 <PilarLoader theme={colla1Theme || theme} />
               </div>
-            ) : diada1Details ? (
+            ) : displayDiada1Details ? (
               <DiadaCard 
-                diada={diada1Details} 
+                diada={displayDiada1Details} 
                 theme={colla1Theme || theme}
-                isWinner={diada1Details && diada2Details && diada1Details.total_punts > diada2Details.total_punts}
+                isWinner={displayDiada1Details && displayDiada2Details && displayDiada1Details.total_punts > displayDiada2Details.total_punts}
               />
             ) : (
               <div className="empty-placeholder">
@@ -584,15 +999,15 @@ const CompararDiades = ({ theme, onBack }) => {
           </div>
 
           <div className="comparison-side">
-            {loadingDiada2 ? (
+            {diada2Mode === 'database' && loadingDiada2 ? (
               <div className="loading-placeholder">
                 <PilarLoader theme={colla2Theme || theme} />
               </div>
-            ) : diada2Details ? (
+            ) : displayDiada2Details ? (
               <DiadaCard 
-                diada={diada2Details} 
+                diada={displayDiada2Details} 
                 theme={colla2Theme || theme}
-                isWinner={diada1Details && diada2Details && diada2Details.total_punts > diada1Details.total_punts}
+                isWinner={displayDiada1Details && displayDiada2Details && displayDiada2Details.total_punts > displayDiada1Details.total_punts}
               />
             ) : (
               <div className="empty-placeholder">
@@ -601,6 +1016,40 @@ const CompararDiades = ({ theme, onBack }) => {
             )}
           </div>
         </div>
+      )}
+
+      {showScoreTable && createPortal(
+        <div className="score-table-modal-overlay" onClick={() => setShowScoreTable(false)}>
+          <div className="score-table-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="score-table-modal-header">
+              <h2>Taula de puntuacions</h2>
+              <button type="button" className="score-table-close-button" onClick={() => setShowScoreTable(false)}>
+                ×
+              </button>
+            </div>
+            <div className="score-table-modal-body">
+              <table className="score-table">
+                <thead>
+                  <tr>
+                    <th>Castell / Pilar</th>
+                    <th>Descarregat</th>
+                    <th>Carregat</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scoreTableRows.map((item) => (
+                    <tr key={item.castell_name}>
+                      <td>{item.castell_name}</td>
+                      <td>{item.punts_descarregat ?? '-'}</td>
+                      <td>{item.punts_carregat ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

@@ -518,6 +518,11 @@ export const apiService = {
     return response.data
   },
 
+  async getCastellsCatalog() {
+    const response = await api.get('/api/castells/catalog')
+    return response.data
+  },
+
   async getDiadaDetails(eventId, collaId = null, castells = 3, pilars = 1) {
     const params = { castells, pilars }
     if (collaId) {

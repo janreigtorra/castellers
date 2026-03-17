@@ -1532,11 +1532,11 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                       >
                         {isLastMessage ? (
                           <>
-                            <FeedbackIcon color={feedbackColor} /> Encara estic aprenent. Si la resposta és incorrecta, ajuda'm a millorar →
+                            <FeedbackIcon color={feedbackColor} /> {isMobile ? "Ajuda'm a millorar →" : "Encara estic aprenent. Si la resposta és incorrecta, ajuda'm a millorar →"}
                           </>
                         ) : (
                           <>
-                            <FeedbackIcon color={feedbackColor} /> Feedback
+                            <FeedbackIcon color={feedbackColor} /> Ajuda'm a millorar →
                           </>
                         )}
                       </button>
