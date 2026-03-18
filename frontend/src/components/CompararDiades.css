@@ -431,10 +431,13 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
   margin-bottom: 2rem;
+  padding: 0 0.25rem;
 }
 
 .comparison-side {
   min-height: 400px;
+  min-width: 0;
+  overflow: visible;
 }
 
 .loading-placeholder,
@@ -463,6 +466,9 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   position: relative;
   transition: all 0.3s;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .diada-card::before {
@@ -545,6 +551,9 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   border-radius: 8px;
   color: white;
   font-weight: 700;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .total-punts-label {
@@ -578,6 +587,7 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 1rem;
+  min-width: 0;
 }
 
 .castell-item {
@@ -590,6 +600,8 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   gap: 0.5rem;
   transition: all 0.2s;
   position: relative;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .castell-item.counted {
@@ -632,6 +644,8 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--theme-text, #333);
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .castell-status {
@@ -750,6 +764,7 @@ body > .joc-mocador-multiselect-dropdown.position-above,
 
   .comparar-diades-container {
     padding: 1rem 0.75rem;
+    padding-bottom: 12rem;
   }
 
   .comparar-diades-header h1 {
@@ -795,12 +810,24 @@ body > .joc-mocador-multiselect-dropdown.position-above,
 
   .diada-card {
     padding: 1rem;
+    margin: 0;
   }
 
   .diada-card-header {
     gap: 0.75rem;
     margin-bottom: 1rem;
     padding-bottom: 1rem;
+    min-width: 0;
+  }
+
+  .diada-card-title {
+    min-width: 0;
+  }
+
+  .diada-card-title-text {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   .diada-card-title h3 {
@@ -829,7 +856,7 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   }
 
   .castells-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 0.75rem;
   }
 
@@ -866,6 +893,61 @@ body > .joc-mocador-multiselect-dropdown.position-above,
 
   .winner-name {
     font-size: 1.5rem;
+  }
+}
+
+/* Small phones: prevent card from being cut off */
+@media (max-width: 480px) {
+  .comparar-diades-container {
+    padding: 0.75rem 0.5rem;
+    padding-bottom: 14rem;
+  }
+
+  .comparison-results {
+    gap: 1rem;
+    margin-bottom: 3rem;
+    padding: 0;
+  }
+
+  .comparison-side {
+    min-height: 0;
+  }
+
+  .diada-card {
+    padding: 0.75rem;
+  }
+
+  .diada-card-header .colla-logo {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+  }
+
+  .diada-card-body {
+    gap: 1rem;
+  }
+
+  .castells-grid {
+    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .castell-item {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .total-punts-display {
+    flex-wrap: nowrap;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .total-punts-label {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+
+  .total-punts-value {
+    font-size: 1.1rem;
   }
 }
 

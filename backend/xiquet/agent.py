@@ -30,6 +30,15 @@ from difflib import SequenceMatcher
 from rapidfuzz import fuzz, process
 from datetime import datetime
 
+ENTITY_PLACEHOLDERS = frozenset({"", "?", "null", "none"})
+
+
+def _is_entity_placeholder(val) -> bool:
+    if val is None:
+        return True
+    s = str(val).strip().lower()
+    return s in ENTITY_PLACEHOLDERS
+
 
 def normalize_query_synonyms(query: str) -> str:
     normalized = query
@@ -82,6 +91,8 @@ load_dotenv()
 MODEL_NAME = "sambanova:gpt-oss-120b" 
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
 MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
+# MODEL_NAME_RESPONSE = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
+
 
 # Available options:
 # groq:llama-3.1-8b-instant - Fast and cheap (DEFAULT)
@@ -343,8 +354,9 @@ class Xiquet:
         if self.previous_entities.get("diades") and not self.pre_selected_entities.get("diades"):
             current_diades = to_list(self.diades)
             for diada in self.previous_entities["diades"]:
-                if diada and diada not in current_diades:
+                if not _is_entity_placeholder(diada) and diada not in current_diades:
                     current_diades.append(diada)
+            current_diades = [d for d in current_diades if not _is_entity_placeholder(d)]
             self.diades = list_to_str(current_diades)
 
         # Enrich gamma (string, comma-separated)
@@ -506,13 +518,11 @@ class Xiquet:
                     print(f"Error: Lloc {lloc} no és vàlid")
                     response.llocs.remove(lloc)
 
-        # Validate diada (only if not empty)
+        # Validate diada (only if not empty); also drop LLM placeholders like "?"
         if response.diades:
+            response.diades = [d for d in response.diades if not _is_entity_placeholder(d)]
             valid_diades = get_all_diada_options()
-            for diada in response.diades:
-                if diada not in valid_diades:
-                    print(f"Error: Diada {diada} no és vàlida")
-                    response.diades.remove(diada)
+            response.diades = [d for d in response.diades if d in valid_diades]
         validation_time = (datetime.now() - validation_start).total_seconds() * 1000
         print(f"[TIMING] Entity validation: {validation_time:.2f}ms")
 
@@ -585,12 +595,18 @@ class Xiquet:
         # Handle pre-selected colles
         if self.pre_selected_entities.get("colles"):
             entities_section += f"""
-        - **Colla castellera:** L'usuari ha seleccionat prèviament la següent colla: {', '.join(self.pre_selected_entities['colles'])}. NO cal que l'extreguis de la pregunta.
+        - **Colla o colles castellereres:** L'usuari ha seleccionat prèviament: {', '.join(self.pre_selected_entities['colles'])}. NO cal que l'extreguis de la pregunta.
         \n"""
         elif self.colles_castelleres and not starts_with_quina_colla:
             entities_section += f"""
-        - **Colla castellera:** Nom de la colla castellera.  
+        - **Colla o colles castellereres:** Nom de les colles castellereres.  
         Possibles opcions: {self.colles_castelleres}
+         \n"""
+        elif starts_with_quina_colla:
+            entities_section += f"""
+        - **Colla o colles castellereres:** Nom de les colles castellereres.  
+        Possibles opcions: {self.colles_castelleres}. 
+        la pregunta parla de "quina colla" o "quines colles", per tant només extreu les colles castellereres que apareixen en la pregunta si les menciona explicitament.
          \n"""
         else:
             entities_section += f"""
@@ -617,15 +633,15 @@ class Xiquet:
         # Handle pre-selected anys
         if self.pre_selected_entities.get("anys"):
             entities_section += f"""
-        - **Any:** L'usuari ha seleccionat prèviament l'any: {', '.join(self.pre_selected_entities['anys'])}. NO cal que l'extreguis de la pregunta.
+        - **Any/s:** L'usuari ha seleccionat prèviament: {', '.join(self.pre_selected_entities['anys'])}. NO cal que l'extreguis de la pregunta.
         \n"""
         elif self.anys:
             entities_section += f"""
-        - **Any:** Any concret d'una actuació o d'una referència temporal (per exemple, "2024", "2025", etc.)  
+        - **Any/s:** Any concret d'una actuació o d'una referència temporal (per exemple, "2024", "2025", etc.)  
         \n"""
         else:
             entities_section += f"""
-        - **Any:** No extreguis cap any.  
+        - **Any/s:** No extreguis cap any.  
         \n"""
 
         
@@ -636,10 +652,16 @@ class Xiquet:
         \n"""
         
         # Diades (not in pre-selected options, always extract)
-        if self.diades and self.diades.strip():
+        _diades_list = (
+            [x.strip() for x in self.diades.split(",") if x.strip()]
+            if isinstance(self.diades, str)
+            else (list(self.diades) if self.diades else [])
+        )
+        _diades_clean = [d for d in _diades_list if not _is_entity_placeholder(d)]
+        if _diades_clean:
             entities_section += f"""
-        - **Diada:** Nom de la diada o jornada castellera.  
-        Possibles opcions: {self.diades}
+        - **Diada/es:** Nom de la/les diada/es o jornada/es castellera.  
+        Possibles opcions: {", ".join(_diades_clean)}
         \n"""
 
         if self.gamma:

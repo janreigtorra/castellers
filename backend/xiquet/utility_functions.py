@@ -165,7 +165,7 @@ class Castell:
 
 
 class FirstCallResponseFormat(BaseModel):
-    tools: Literal["direct", "rag", "sql", "hybrid"]
+    tools: Literal["direct", "rag", "sql"]
     sql_query_type: str #Literal["millor_diada", "millor_castell", "castell_historia", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "custom"] = "custom"
     direct_response: str
     colla: list[str]
