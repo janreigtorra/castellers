@@ -614,6 +614,17 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   opacity: 0.6;
 }
 
+.diada-card-edit-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--theme-border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--theme-background, #fff);
+  color: var(--theme-text, #333);
+}
+
 .castell-item.pilar {
   border-left: 4px solid #d0282c;
 }
@@ -856,7 +867,7 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   }
 
   .castells-grid {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.75rem;
   }
 
@@ -928,7 +939,7 @@ body > .joc-mocador-multiselect-dropdown.position-above,
   }
 
   .castells-grid {
-    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
   }
 

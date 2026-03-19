@@ -393,14 +393,15 @@ Aquesta subscripció ajuda a cobrir els costos de funcionament (servidors, ús d
             except Exception as e:
                 print(f"[WARNING] Could not get previous context: {e}")
         
-        # Initialize Xiquet agent with previous context
+        # Initialize Xiquet agent with previous context and subscription (for question length limit)
         init_start = datetime.now()
         xiquet = Xiquet(
             previous_question=previous_question,
             previous_response=previous_response,
             previous_route=previous_route,
             previous_sql_query_type=previous_sql_query_type,
-            previous_entities=previous_entities
+            previous_entities=previous_entities,
+            subscription=subscription
         )
         init_time = (datetime.now() - init_start).total_seconds() * 1000
         print(f"[TIMING] Agent initialization: {init_time:.2f}ms")
@@ -605,13 +606,18 @@ async def get_chat_route(
             except Exception as e:
                 print(f"[WARNING] Could not get previous context for route: {e}")
         
+        # Subscription for question length limit (basic=35 tokens, premium=200)
+        user_profile_route = chat_db.get_user_profile(current_user["id"])
+        subscription_route = user_profile_route.get("subscription", "basic") if user_profile_route else "basic"
+        
         # Initialize Xiquet agent with previous context and run decide_route
         xiquet = Xiquet(
             previous_question=previous_question,
             previous_response=previous_response,
             previous_route=previous_route,
             previous_sql_query_type=previous_sql_query_type,
-            previous_entities=previous_entities
+            previous_entities=previous_entities,
+            subscription=subscription_route
         )
         route_response = await asyncio.to_thread(xiquet.decide_route, message.content)
         
@@ -748,6 +754,10 @@ def _process_message_background(
         else:
             print(f"[BACKGROUND CONTEXT] No context available (no frontend_context and no session_id)")
         
+        # Subscription for question length limit (basic=35 tokens, premium=200)
+        user_profile_bg = chat_db.get_user_profile(user_id)
+        subscription_bg = user_profile_bg.get("subscription", "basic") if user_profile_bg else "basic"
+        
         # Initialize Xiquet agent with previous context and pre-selected entities
         xiquet = Xiquet(
             previous_question=previous_question,
@@ -755,7 +765,8 @@ def _process_message_background(
             previous_route=previous_route,
             previous_sql_query_type=previous_sql_query_type,
             previous_entities=previous_entities,
-            pre_selected_entities=pre_selected_entities
+            pre_selected_entities=pre_selected_entities,
+            subscription=subscription_bg
         )
         
         # ============================================================
@@ -2580,12 +2591,13 @@ async def get_diada_details(
             if len(selected_castells) >= castells:
                 break
         
-        # Select top P pilars (can count multiple with same points)
+        # Select top P pilars (can count multiple with same points). If pilars==0, consider none.
         selected_pilars = []
-        for p in pilars_list:
-            selected_pilars.append(p)
-            if len(selected_pilars) >= pilars:
-                break
+        if pilars > 0:
+            for p in pilars_list:
+                selected_pilars.append(p)
+                if len(selected_pilars) >= pilars:
+                    break
         
         # Combine selected castells and pilars for points calculation
         selected_for_points = selected_castells + selected_pilars

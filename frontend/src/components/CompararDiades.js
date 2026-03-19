@@ -300,6 +300,10 @@ const CompararDiades = ({ theme, onBack }) => {
   const [castellsCount, setCastellsCount] = useState(3);
   const [pilarsCount, setPilarsCount] = useState(1);
 
+  // Edit-mode totals (when user edits a card, we use this for winner comparison)
+  const [editTotal1, setEditTotal1] = useState(null);
+  const [editTotal2, setEditTotal2] = useState(null);
+
   // Fetch colles and anys on mount
   useEffect(() => {
     const fetchData = async () => {
@@ -634,6 +638,13 @@ const CompararDiades = ({ theme, onBack }) => {
 
   const displayDiada1Details = diada1Mode === 'simulated' ? buildSimulatedDiada([...simulationCastells1, ...simulationPilars1]) : diada1Details;
   const displayDiada2Details = diada2Mode === 'simulated' ? buildSimulatedDiada([...simulationCastells2, ...simulationPilars2]) : diada2Details;
+
+  // Clear edit totals when user switches diada so winner uses base totals
+  useEffect(() => {
+    setEditTotal1(null);
+    setEditTotal2(null);
+  }, [displayDiada1Details?.event_id, displayDiada2Details?.event_id]);
+
   const scoreTableRows = [...castellsCatalog].sort((a, b) => {
     const pointsA = Number(a?.punts_descarregat ?? -1);
     const pointsB = Number(b?.punts_descarregat ?? -1);
@@ -987,9 +998,15 @@ const CompararDiades = ({ theme, onBack }) => {
               </div>
             ) : displayDiada1Details ? (
               <DiadaCard 
+                side="left"
                 diada={displayDiada1Details} 
                 theme={colla1Theme || theme}
-                isWinner={displayDiada1Details && displayDiada2Details && displayDiada1Details.total_punts > displayDiada2Details.total_punts}
+                isWinner={displayDiada1Details && displayDiada2Details && (editTotal1 ?? displayDiada1Details.total_punts) > (editTotal2 ?? displayDiada2Details.total_punts)}
+                castellsCatalog={castellsCatalog}
+                getCastellPoints={getCastellPoints}
+                castellsCount={castellsCount}
+                pilarsCount={pilarsCount}
+                onEditTotalChange={(_, total) => setEditTotal1(total)}
               />
             ) : (
               <div className="empty-placeholder">
@@ -1005,9 +1022,15 @@ const CompararDiades = ({ theme, onBack }) => {
               </div>
             ) : displayDiada2Details ? (
               <DiadaCard 
+                side="right"
                 diada={displayDiada2Details} 
                 theme={colla2Theme || theme}
-                isWinner={displayDiada1Details && displayDiada2Details && displayDiada2Details.total_punts > displayDiada1Details.total_punts}
+                isWinner={displayDiada1Details && displayDiada2Details && (editTotal2 ?? displayDiada2Details.total_punts) > (editTotal1 ?? displayDiada1Details.total_punts)}
+                castellsCatalog={castellsCatalog}
+                getCastellPoints={getCastellPoints}
+                castellsCount={castellsCount}
+                pilarsCount={pilarsCount}
+                onEditTotalChange={(_, total) => setEditTotal2(total)}
               />
             ) : (
               <div className="empty-placeholder">
@@ -1057,12 +1080,92 @@ const CompararDiades = ({ theme, onBack }) => {
 };
 
 // Diada Card Component
-const DiadaCard = ({ diada, theme, isWinner = false }) => {
+const DiadaCard = ({ side, diada, theme, isWinner = false, castellsCatalog = [], getCastellPoints, castellsCount = 3, pilarsCount = 1, onEditTotalChange }) => {
   const [showAllCastells, setShowAllCastells] = useState(false);
-  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedCastells, setEditedCastells] = useState([]);
+
   const collaTheme = diada.colla_name ? getCollaTheme(diada.colla_name) : null;
   const cardTheme = collaTheme || theme;
-  
+
+  // When entering edit mode, init edited castells from diada; when diada changes, reset edit state
+  const baseCastells = diada.castells || [];
+  const initEditedCastells = () =>
+    baseCastells.map((c, i) => {
+      const { punts, puntsMissing } = getCastellPoints
+        ? (getCastellPoints(c.castell_name, c.status) || { punts: c.punts || 0, puntsMissing: !!c.punts_missing })
+        : { punts: c.punts || 0, puntsMissing: !!c.punts_missing };
+      return {
+        _idx: i,
+        castell_name: c.castell_name,
+        status: c.status,
+        punts: punts,
+        punts_missing: puntsMissing,
+        tipus: (c.castell_name || '').toLowerCase().startsWith('p') ? 'pilar' : 'castell',
+        is_counted: c.is_counted !== false
+      };
+    });
+
+  const startEditing = () => {
+    setEditedCastells(initEditedCastells());
+    setIsEditing(true);
+  };
+
+  const stopEditing = () => {
+    setIsEditing(false);
+  };
+
+  const updateEditedCastell = (originalIdx, field, value) => {
+    setEditedCastells((prev) => {
+      const idx = prev.findIndex((item) => item._idx === originalIdx);
+      if (idx < 0) return prev;
+      const next = prev.map((item, i) => (i !== idx ? item : { ...item, [field]: value }));
+      const item = next[idx];
+      if (field === 'castell_name' || field === 'status') {
+        const name = field === 'castell_name' ? value : item.castell_name;
+        const status = field === 'status' ? value : item.status;
+        const { punts, puntsMissing } = getCastellPoints ? getCastellPoints(name, status) : { punts: 0, puntsMissing: false };
+        next[idx] = {
+          ...next[idx],
+          punts,
+          punts_missing: puntsMissing && (status === 'Descarregat' || status === 'Carregat'),
+          tipus: (name || '').toLowerCase().startsWith('p') ? 'pilar' : 'castell'
+        };
+      }
+      return next;
+    });
+  };
+
+  // In edit mode: only top castellsCount castells and top pilarsCount pilars count (Paràmetres de comparació)
+  const getCountedInEditMode = (list) => {
+    const castells = list.filter((c) => c.tipus === 'castell').sort((a, b) => (b.punts || 0) - (a.punts || 0));
+    const pilars = list.filter((c) => c.tipus === 'pilar').sort((a, b) => (b.punts || 0) - (a.punts || 0));
+    const countedCastells = castells.slice(0, castellsCount);
+    const countedPilars = pilars.slice(0, pilarsCount);
+    const countedSet = new Set([...countedCastells, ...countedPilars].map((c) => c._idx));
+    const total = [...countedCastells, ...countedPilars].reduce((sum, c) => sum + (c.punts || 0), 0);
+    return { countedSet, total };
+  };
+
+  const editModeCounted = isEditing ? getCountedInEditMode(editedCastells) : null;
+  const castellsToShow = isEditing
+    ? editedCastells.map((c) => ({
+        ...c,
+        is_counted: editModeCounted.countedSet.has(c._idx)
+      }))
+    : baseCastells;
+  const totalPuntsToShow = isEditing ? editModeCounted.total : diada.total_punts;
+
+  // Report edit total to parent so winner (trophy) can update
+  useEffect(() => {
+    if (!onEditTotalChange) return;
+    if (isEditing) {
+      onEditTotalChange(side, totalPuntsToShow);
+    } else {
+      onEditTotalChange(side, null);
+    }
+  }, [isEditing, totalPuntsToShow, side, onEditTotalChange]);
+
   // Helper to get safe color (red if white or null)
   const getSafeColor = (color) => {
     if (!color || color === '#ffffff' || color === 'white' || color === '#fff') {
@@ -1070,19 +1173,21 @@ const DiadaCard = ({ diada, theme, isWinner = false }) => {
     }
     return color;
   };
-  
+
   const safeCollaColor = getSafeColor(cardTheme?.secondary || theme?.secondary);
-  
+
   // Sort castells: counted first, then not counted
-  const sortedCastells = [...(diada.castells || [])].sort((a, b) => {
+  const sortedCastells = [...castellsToShow].sort((a, b) => {
     if (a.is_counted && !b.is_counted) return -1;
     if (!a.is_counted && b.is_counted) return 1;
     return 0;
   });
-  
+
   // Show first 5, or all if showAllCastells is true
   const displayedCastells = showAllCastells ? sortedCastells : sortedCastells.slice(0, 5);
   const hasMoreCastells = sortedCastells.length > 5;
+
+  const catalogOptions = castellsCatalog.map((c) => c.castell_name);
 
   return (
     <div className="diada-card" style={{ '--colla-color': cardTheme?.secondary, '--colla-accent': cardTheme?.accent }}>
@@ -1098,6 +1203,13 @@ const DiadaCard = ({ diada, theme, isWinner = false }) => {
             {diada.event_city && <span> • {diada.event_city}</span>}
           </p>
         </div>
+        <button
+          type="button"
+          className={`simulation-mode-button ${isEditing ? 'active' : ''}`}
+          onClick={() => (isEditing ? stopEditing() : startEditing())}
+        >
+          {isEditing ? 'Deixar d\'editar' : 'Editar'}
+        </button>
       </div>
 
       <div className="diada-card-body">
@@ -1109,7 +1221,7 @@ const DiadaCard = ({ diada, theme, isWinner = false }) => {
                 <path fillRule="evenodd" clipRule="evenodd" d="M4 0H12V2H16V4C16 6.45641 14.2286 8.49909 11.8936 8.92038C11.5537 10.3637 10.432 11.5054 9 11.874V14H12V16H4V14H7V11.874C5.56796 11.5054 4.44628 10.3637 4.1064 8.92038C1.77136 8.49909 0 6.45641 0 4V2H4V0ZM12 6.82929V4H14C14 5.30622 13.1652 6.41746 12 6.82929ZM4 4H2C2 5.30622 2.83481 6.41746 4 6.82929V4Z" fill="currentColor" />
               </svg>
             )}
-            <span className="total-punts-value">{diada.total_punts}</span>
+            <span className="total-punts-value">{totalPuntsToShow}</span>
           </div>
         </div>
 
@@ -1118,11 +1230,38 @@ const DiadaCard = ({ diada, theme, isWinner = false }) => {
           <div className="castells-grid">
             {displayedCastells.map((castell, idx) => (
               <div
-                key={idx}
+                key={isEditing && castell._idx != null ? castell._idx : `c-${idx}-${castell.castell_name}`}
                 className={`castell-item ${castell.is_counted ? 'counted' : 'not-counted'} ${castell.tipus}`}
               >
-                <div className="castell-name">{castell.castell_name}</div>
-                <div className="castell-status">{castell.status}</div>
+                {isEditing ? (
+                  <>
+                    <select
+                      className="diada-card-edit-select"
+                      value={castell.castell_name}
+                      onChange={(e) => updateEditedCastell(castell._idx, 'castell_name', e.target.value)}
+                      aria-label="Castell"
+                    >
+                      {catalogOptions.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="diada-card-edit-select"
+                      value={castell.status}
+                      onChange={(e) => updateEditedCastell(castell._idx, 'status', e.target.value)}
+                      aria-label="Estat"
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <div className="castell-name">{castell.castell_name}</div>
+                    <div className="castell-status">{castell.status}</div>
+                  </>
+                )}
                 <div className="castell-punts">
                   {castell.punts_missing ? '? punts' : `${castell.punts} punts`}
                 </div>

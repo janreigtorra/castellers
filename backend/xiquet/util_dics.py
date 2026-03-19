@@ -74,6 +74,7 @@ IS_SQL_QUERY_PATTERNS = {
         "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
         "quines colles han fet", "quines colles van participar", "quines colles han participat",
         "quines colles van actuar", "quines colles han actuat","primera colla", "primeres colles",
+        "quina colla", "quines colles",
     ],
     
     # Castell història - retorna: comptatge de vegades, dates (primera/última), llocs, estat

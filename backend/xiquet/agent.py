@@ -32,6 +32,9 @@ from datetime import datetime
 
 ENTITY_PLACEHOLDERS = frozenset({"", "?", "null", "none"})
 
+# Question length limit (tokens): basic plan = shorter limit, paid subscription = longer
+LARGE_QUESTION_TOKEN_LIMIT_BASIC = 35
+LARGE_QUESTION_TOKEN_LIMIT_PREMIUM = 200
 
 def _is_entity_placeholder(val) -> bool:
     if val is None:
@@ -124,7 +127,8 @@ class Xiquet:
         previous_route: str = None,
         previous_sql_query_type: str = None,
         previous_entities: dict = None,
-        pre_selected_entities: dict = None
+        pre_selected_entities: dict = None,
+        subscription: str = "basic"
     ):
         self.question = ""
         self.response = None
@@ -146,6 +150,7 @@ class Xiquet:
         self.previous_entities = previous_entities or {}
         # Pre-selected entities from UI (user selected before asking question)
         self.pre_selected_entities = pre_selected_entities or {}
+        self.subscription = subscription
     
     def _get_previous_context_section(self) -> str:
 
@@ -411,9 +416,10 @@ class Xiquet:
             print(f"Error en la detecció de l'idioma")
             pass
         
-        # 3. Analitza si la pregunta té més de 25 tokens
+        # 3. Analitza si la pregunta supera el límit de tokens (segons pla: basic=35, premium=200)
+        limit = LARGE_QUESTION_TOKEN_LIMIT_BASIC if self.subscription == "basic" else LARGE_QUESTION_TOKEN_LIMIT_PREMIUM
         tokens = re.findall(r'\b\w+\b', question)
-        if len(tokens) > 25:
+        if len(tokens) > limit:
             return FirstCallResponseFormat(
                 tools="direct",
                 sql_query_type="",
@@ -591,7 +597,13 @@ class Xiquet:
         # Build dynamic entities section
         # If entities are pre-selected, inform LLM but don't ask to extract them
         entities_section = ""
-        
+        # colles_castelleres can be str or list; count actual colles for "more than one" check
+        _colles_list = (
+            self.colles_castelleres
+            if isinstance(self.colles_castelleres, list)
+            else [x.strip() for x in str(self.colles_castelleres or "").split(",") if x.strip()]
+        )
+
         # Handle pre-selected colles
         if self.pre_selected_entities.get("colles"):
             entities_section += f"""
@@ -602,11 +614,11 @@ class Xiquet:
         - **Colla o colles castellereres:** Nom de les colles castellereres.  
         Possibles opcions: {self.colles_castelleres}
          \n"""
-        elif starts_with_quina_colla:
+        elif starts_with_quina_colla and len(_colles_list) > 1:
             entities_section += f"""
         - **Colla o colles castellereres:** Nom de les colles castellereres.  
         Possibles opcions: {self.colles_castelleres}. 
-        la pregunta parla de "quina colla" o "quines colles", per tant només extreu les colles castellereres que apareixen en la pregunta si les menciona explicitament.
+        IMPORTANT: Només extreu les colles castellereres que apareixen en la pregunta si són rellevants per triar entre diferents opcions.
          \n"""
         else:
             entities_section += f"""
