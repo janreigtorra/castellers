@@ -219,6 +219,7 @@
     max-height: calc(100vh - 4rem);
     margin: 0;
   }
+
 }
 
 /* Login Modal Overlay */
@@ -253,6 +254,7 @@
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-x: hidden;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
   animation: modalSlideIn 0.3s ease-out;
 }

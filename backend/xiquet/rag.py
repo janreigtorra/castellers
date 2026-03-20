@@ -8,15 +8,7 @@ from difflib import SequenceMatcher
 
 
 def expand_decade_to_years(question: str) -> List[int]:
-    """
-    Expand decade references in a question to a list of years.
-    
-    Args:
-        question: The question text to analyze
-        
-    Returns:
-        List of years that match the decade patterns found in the question
-    """
+
     decade_patterns = {
         r'\bany[s]?\s*80\b|\bdècada.*80\b|anys\s*vuitanta': range(1980, 1990),
         r'\bany[s]?\s*70\b|\bdècada.*70\b|anys\s*setanta': range(1970, 1980),
@@ -37,17 +29,7 @@ def expand_decade_to_years(question: str) -> List[int]:
 
 
 def rerank_rag_results(results: list, entities: dict, question: str) -> list:
-    """
-    Rerank RAG search results based on entity matches and relevance.
-    
-    Args:
-        results: List of (doc_info, base_score) tuples from vector search
-        entities: Dictionary of detected entities (colla, anys, llocs, etc.)
-        question: The original question text
-        
-    Returns:
-        Reranked list of (doc_info, final_score) tuples, with colla matches prioritized
-    """
+
     if not results:
         return results
     

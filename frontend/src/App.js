@@ -164,6 +164,35 @@ function App() {
     root.style.setProperty('--theme-highlight', theme.highlight);
   }, [theme]);
 
+  // SEO: document title and meta description per page (resets when leaving colla so tab no longer shows colla name)
+  useEffect(() => {
+    if (currentPage === 'auth-callback' || currentPage === 'colla-detail') return; // colla-detail sets its own; auth-callback is transient
+    const metaDescription = document.querySelector('meta[name="description"]');
+    let title = 'Xiquet.cat';
+    let description = 'Xiquet - Assistent expert en el món casteller';
+    if (currentPage === 'chat') {
+      title = 'Xat - Xiquet.cat';
+      description = 'Xat amb Xiquet: l\'assistent d\'intel·ligència artificial expert en castells. Fes preguntes sobre colles, diades i castells en català.';
+    } else if (currentPage === 'joc-del-mocador') {
+      title = 'El Joc del Mocador - Xiquet.cat';
+      description = 'Juga al Joc del Mocador amb Xiquet.cat: el joc de preguntes sobre el món casteller. Posar les mans al mocador i demostra el que saps.';
+    } else if (currentPage === 'about') {
+      title = 'Sobre Xiquet.cat';
+      description = 'Coneix Xiquet: l\'assistent IA expert en el món casteller. Informació sobre el projecte i les dades castelleres.';
+    } else if (currentPage === 'contact') {
+      title = 'Contacte - Xiquet.cat';
+      description = 'Contacta amb l\'equip de Xiquet.cat. Suggeriments, errors o col·laboracions sobre el món casteller.';
+    } else if (currentPage === 'colles-castelleres') {
+      title = 'Colles Castelleres - Xiquet.cat';
+      description = 'Descobreix totes les colles castelleres de Catalunya amb informació detallada sobre les seves millors diades i castells.';
+    } else if (currentPage === 'comparar-diades') {
+      title = 'Comparar Diades - Xiquet.cat';
+      description = 'Compara diades castelleres: resultats, castells i estadístiques entre diferents actuacions.';
+    }
+    document.title = title;
+    if (metaDescription) metaDescription.setAttribute('content', description);
+  }, [currentPage]);
+
   const handleColorChange = (color) => {
     setSelectedColor(color);
   };

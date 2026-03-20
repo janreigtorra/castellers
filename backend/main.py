@@ -1337,6 +1337,98 @@ async def create_checkout_session(
             detail=f"Error creating checkout session: {str(e)}"
         )
 
+
+@app.post("/api/subscription/create-portal-session")
+async def create_portal_session(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a Stripe Customer Billing Portal session.
+    Users can cancel their subscription, update payment method, view invoices.
+    """
+    try:
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        stripe_customer_id = user_profile.get("stripe_customer_id") if user_profile else None
+
+        if not stripe_customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No tens cap subscripció activa per gestionar."
+            )
+
+        portal_session = stripe.billing_portal.Session.create(
+            customer=stripe_customer_id,
+            return_url=f"{FRONTEND_URL}/profile"
+        )
+
+        return {
+            "url": portal_session.url
+        }
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stripe error: {str(e)}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating portal session: {str(e)}"
+        )
+
+
+@app.post("/api/subscription/cancel")
+async def cancel_subscription_at_period_end(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Cancel the user's premium subscription at the end of the current billing period.
+    They keep access until then; no further charges after that.
+    """
+    try:
+        user_profile = chat_db.get_user_profile(current_user["id"])
+        stripe_customer_id = user_profile.get("stripe_customer_id") if user_profile else None
+
+        if not stripe_customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No tens cap subscripció activa per cancel·lar."
+            )
+
+        subscriptions = stripe.Subscription.list(
+            customer=stripe_customer_id,
+            status="active",
+            limit=1
+        )
+
+        if not subscriptions.data:
+            raise HTTPException(
+                status_code=400,
+                detail="No s'ha trobat cap subscripció activa."
+            )
+
+        sub = subscriptions.data[0]
+        if sub.cancel_at_period_end:
+            return {"message": "La subscripció ja està programada per cancel·lar-se al final del període."}
+
+        stripe.Subscription.modify(sub.id, cancel_at_period_end=True)
+
+        return {"message": "La subscripció es cancel·larà al final del període de facturació. Fins llavors continuaràs tenint accés Premium."}
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stripe error: {str(e)}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error cancel·lant la subscripció: {str(e)}"
+        )
+
+
 @app.post("/api/subscription/webhook")
 async def stripe_webhook(request: Request):
     """

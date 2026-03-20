@@ -373,6 +373,16 @@ export const apiService = {
     return response.data
   },
 
+  async createPortalSession() {
+    const response = await api.post('/api/subscription/create-portal-session')
+    return response.data
+  },
+
+  async cancelSubscription() {
+    const response = await api.post('/api/subscription/cancel')
+    return response.data
+  },
+
   // Auth endpoints (these use our backend, not Supabase directly)
   async login(email, password) {
     const response = await api.post('/api/auth/login', {

@@ -19,14 +19,15 @@ const getRedirectUrl = () => {
 // Auth helper functions
 export const authHelpers = {
   // Sign up with email and password
-  async signUp(email, password, username = null) {
+  async signUp(email, password, username = null, collaCastellers = null) {
     try {
       const redirectUrl = getRedirectUrl()
+      const metadata = { ...(username && { username }), ...(collaCastellers && { colla_castellers: collaCastellers }) }
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: username ? { username } : {},
+          data: metadata,
           emailRedirectTo: redirectUrl
         }
       })

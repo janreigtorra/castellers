@@ -191,6 +191,39 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
     }
   };
 
+  const handleManageSubscription = async () => {
+    setIsLoadingSubscription(true);
+    setError('');
+    
+    try {
+      const { url } = await apiService.createPortalSession();
+      window.location.href = url;
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Error en obrir la gestió de la subscripció. Torna-ho a intentar.');
+      console.error('Error creating portal session:', err);
+      setIsLoadingSubscription(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    setIsLoadingSubscription(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      const { message } = await apiService.cancelSubscription();
+      setSuccess(message);
+      const status = await apiService.getSubscriptionStatus();
+      setSubscription(status);
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Error en cancel·lar la subscripció. Torna-ho a intentar.');
+      console.error('Error canceling subscription:', err);
+    } finally {
+      setIsLoadingSubscription(false);
+    }
+  };
+
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
@@ -369,10 +402,40 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
                     </div>
                   )}
                   
-                  {subscription.subscription === 'premium' && subscription.stripe_subscription && (
-                    <p className="subscription-info">
-                      La teva subscripció està activa. Gràcies pel teu suport!
-                    </p>
+                  {subscription.subscription === 'premium' && (
+                    <div className="subscription-premium-actions">
+                      <p className="subscription-active-message">
+                        La teva subscripció està activa. Gràcies pel teu suport!
+                      </p>
+                      {subscription.stripe_subscription?.cancel_at_period_end && (
+                        <p className="subscription-info subscription-cancel-scheduled">
+                          La subscripció es cancel·larà al final del període de facturació.
+                        </p>
+                      )}
+                      <div className="subscription-buttons-row">
+                        {!subscription.stripe_subscription?.cancel_at_period_end && (
+                          <button
+                            type="button"
+                            className="subscription-cancel-btn"
+                            onClick={handleCancelSubscription}
+                            disabled={isLoadingSubscription}
+                          >
+                            {isLoadingSubscription ? 'Carregant...' : 'Cancel·lar subscripció'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="subscription-manage-btn"
+                          onClick={handleManageSubscription}
+                          disabled={isLoadingSubscription}
+                        >
+                          {isLoadingSubscription ? 'Carregant...' : 'Gestionar subscripció'}
+                        </button>
+                      </div>
+                      <span className="subscription-manage-hint">
+                        La cancel·lació fa que la subscripció acabi al final del període. Pots canviar el mètode de pagament des de Gestionar subscripció.
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

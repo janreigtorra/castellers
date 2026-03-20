@@ -1078,7 +1078,7 @@ Sempre respons exclusivament en català."""
 - Text narratiu en paràgrafs (1-3 paràgrafs màxim)
 - Usa **negreta** per destacar fets clau
 - NO inventes informació que no apareix als documents
-- Si els documents NO contenen informació rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema." 
+- Si els documents NO contenen informació rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema. Pots reformular la pregunta?" 
 - NO mencions ni facis referència a documents que no siguin rellevants per la pregunta 
 - Només utilitza informació que respongui directament a la pregunta de l'usuari"""
 
