@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiService } from '../apiService';
 import { COLOR_THEMES } from '../colorTheme';
+import { AVAILABLE_COLLES } from '../data/availableColles';
+import { DIADES_AUTOCOMPLETE } from '../data/diadesAutocomplete';
 import WelcomeMessage from './WelcomeMessage';
 import CastellLoader from './CastellLoader';
 import PilarLoader from './PilarLoader';
@@ -381,6 +383,52 @@ const hasEntities = (entities) => {
   );
 };
 
+/** Colla from profile (user prop after save, else same localStorage as ProfileModal). */
+function getProfileCollaName(user) {
+  let name = (user?.colla && String(user.colla).trim()) || '';
+  if (!name && user?.id) {
+    try {
+      const raw = localStorage.getItem(`user_profile_${user.id}`);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p?.colla) name = String(p.colla).trim();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  return name;
+}
+
+/** AVAILABLE_COLLES order for autocomplete: user's colla first when it is in the list. */
+function autocompleteCollesWithProfileFirst(user) {
+  const profile = getProfileCollaName(user);
+  if (!profile) return AVAILABLE_COLLES;
+  const canonical = AVAILABLE_COLLES.find(
+    (c) => c.toLowerCase() === profile.toLowerCase()
+  );
+  if (!canonical) return AVAILABLE_COLLES;
+  return [canonical, ...AVAILABLE_COLLES.filter((c) => c !== canonical)];
+}
+
+const NBSP = '\u00a0';
+
+/**
+ * Text after the typed prefix in the canonical full name. If that remainder starts with a
+ * normal space (new word after the typed segment), use NBSP so flex mirror layout does not
+ * collapse "diada" + " Nacional" into "diadaNacional". Do not insert NBSP for mid-word
+ * continuations (e.g. "caste" + "llers" for Castellers).
+ */
+function completionGhostSuffix(full, prefix) {
+  if (!full || prefix == null || prefix === '') return '';
+  const rest = full.slice(prefix.length);
+  if (!rest) return '';
+  if (rest.startsWith(' ')) {
+    return `${NBSP}${rest.slice(1)}`;
+  }
+  return rest;
+}
+
 const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, onMessagesChange, onCollaIdentified, onInputFocusChange, onOpenProfile }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -415,9 +463,110 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
   const [entityOptions, setEntityOptions] = useState({
     colles: [],
     castells: [],
-    anys: []
+    anys: [],
+    diades: []
   });
   const [isLoadingEntityOptions, setIsLoadingEntityOptions] = useState(false);
+  /** Caret position for autocomplete (must update on select/click/keyup). */
+  const [inputCursorPos, setInputCursorPos] = useState(0);
+  const pendingInputSelectionRef = useRef(null);
+  /** Latest value/cursor from onChange so Tab keydown sees current text (controlled input DOM can lag). */
+  const inputValueRef = useRef('');
+  const inputCursorRef = useRef(0);
+
+  const autocompleteColles = useMemo(
+    () => autocompleteCollesWithProfileFirst(user),
+    [user?.id, user?.colla]
+  );
+
+  /** Colles (profile first) then diades from diades.json — colles win on same prefix. */
+  const autocompleteEntities = useMemo(
+    () => [...autocompleteColles, ...DIADES_AUTOCOMPLETE],
+    [autocompleteColles]
+  );
+
+  /**
+   * Match colla or diada names that can span several words (e.g. "castellers de sab" → Castellers de Sabadell).
+   * Tries every substring that starts after whitespace or at line start; picks the longest matching prefix
+   * so multi-word typing wins over the last word alone ("sab").
+   */
+  const findChatAutocompleteMatch = useCallback(
+    (value, cursorPos) => {
+      if (cursorPos !== value.length) return null;
+      const before = value.slice(0, cursorPos);
+      const starts = new Set([0]);
+      for (let i = 0; i < before.length; i += 1) {
+        if (/\s/.test(before[i])) starts.add(i + 1);
+      }
+      let best = null;
+      for (const start of starts) {
+        const prefix = before.slice(start, cursorPos).replace(/\s+$/u, '');
+        if (prefix.length < 3) continue;
+        const lower = prefix.toLowerCase();
+        let full = null;
+        for (const c of autocompleteEntities) {
+          if (c.length <= prefix.length) continue;
+          if (c.toLowerCase().startsWith(lower)) {
+            full = c;
+            break;
+          }
+        }
+        if (!full) continue;
+        if (
+          !best ||
+          prefix.length > best.prefix.length ||
+          (prefix.length === best.prefix.length && start > best.start)
+        ) {
+          best = { start, prefix, full, replaceEnd: cursorPos };
+        }
+      }
+      if (!best) return null;
+      return {
+        full: best.full,
+        ghostSuffix: completionGhostSuffix(best.full, best.prefix),
+        replaceStart: best.start,
+        replaceEnd: best.replaceEnd
+      };
+    },
+    [autocompleteEntities]
+  );
+
+  const chatInputCompletion = useMemo(() => {
+    if (isLoading) return null;
+    return findChatAutocompleteMatch(inputMessage, inputCursorPos);
+  }, [inputMessage, inputCursorPos, isLoading, findChatAutocompleteMatch]);
+
+  /** Compute completion from current value/cursor (used in keydown so we don't rely on stale state). */
+  const computeCompletionFromInput = useCallback(
+    (value, cursorPos) => findChatAutocompleteMatch(value, cursorPos),
+    [findChatAutocompleteMatch]
+  );
+
+  const applyChatInputCompletion = useCallback(
+    (comp, value) => {
+      if (!comp) return;
+      const { full, replaceStart, replaceEnd } = comp;
+      const next =
+        value.slice(0, replaceStart) + full + value.slice(replaceEnd);
+      const newPos = replaceStart + full.length;
+      pendingInputSelectionRef.current = newPos;
+      inputValueRef.current = next;
+      inputCursorRef.current = newPos;
+      setInputMessage(next);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    const pos = pendingInputSelectionRef.current;
+    if (pos == null) return;
+    pendingInputSelectionRef.current = null;
+    const el = inputRef.current;
+    if (el) {
+      el.setSelectionRange(pos, pos);
+      setInputCursorPos(pos);
+    }
+  }, [inputMessage]);
 
   // Helper functions for localStorage persistence
   const getUnsavedChatKey = useCallback(() => {
@@ -630,6 +779,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             clearUnsavedChatFromStorage();
             setMessages([]);
             setInputMessage(''); // Clear input field
+            inputValueRef.current = '';
+            inputCursorRef.current = 0;
             setError(''); // Clear any errors
           } else {
             // First load or returning to unsaved chat - try to load from localStorage
@@ -858,6 +1009,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     if (!inputMessage.trim()) return;
     const messageContent = inputMessage.trim();
     setInputMessage('');
+    setInputCursorPos(0);
+    inputValueRef.current = '';
+    inputCursorRef.current = 0;
     // Close entity selector section
     setShowEntitySelector(false);
     // Clear pre-selected entities after sending (user can select new ones for next question)
@@ -885,10 +1039,15 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
           .map(year => year.toString())
           .sort((a, b) => parseInt(b) - parseInt(a));
         
+        const sortedDiades = (options.diades || []).slice().sort((a, b) =>
+          String(a).localeCompare(String(b), 'ca', { sensitivity: 'base' })
+        );
+
         setEntityOptions({
           colles: filteredColles,
           castells: filteredCastells,
-          anys: sortedAnys
+          anys: sortedAnys,
+          diades: sortedDiades
         });
       } catch (error) {
         console.error('Error loading entity options:', error);
@@ -1752,24 +1911,92 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
           >
             {showEntitySelector ? '−' : '+'}
           </button>
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onFocus={() => {
-              if (onInputFocusChange && isMobile) {
-                onInputFocusChange(true);
+          <div className="chat-input-mirror-wrap">
+            <div className="chat-input-mirror" aria-hidden>
+              {inputMessage ? (
+                <>
+                  <span className="chat-input-mirror-typed">{inputMessage}</span>
+                  {chatInputCompletion ? (
+                    <span className="chat-input-mirror-ghost">
+                      {chatInputCompletion.ghostSuffix}
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="chat-input-mirror-placeholder">
+                  Fes una pregunta sobre castells...
+                </span>
+              )}
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              className="chat-input-mirror-field"
+              value={inputMessage}
+              onChange={(e) => {
+                const v = e.target.value;
+                const pos = e.target.selectionStart ?? v.length;
+                inputValueRef.current = v;
+                inputCursorRef.current = pos;
+                setInputMessage(v);
+                setInputCursorPos(pos);
+              }}
+              onSelect={(e) => {
+                const pos = e.target.selectionStart ?? inputMessage.length;
+                inputCursorRef.current = pos;
+                setInputCursorPos(pos);
+              }}
+              onClick={(e) => {
+                const pos = e.target.selectionStart ?? inputMessage.length;
+                inputCursorRef.current = pos;
+                setInputCursorPos(pos);
+              }}
+              onKeyUp={(e) => {
+                if (e.target.selectionStart != null) {
+                  const pos = e.target.selectionStart;
+                  inputCursorRef.current = pos;
+                  setInputCursorPos(pos);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Tab' && !e.shiftKey) {
+                  e.preventDefault();
+                  const value = inputValueRef.current;
+                  const cursorPos = inputCursorRef.current;
+                  const comp = computeCompletionFromInput(value, cursorPos);
+                  if (comp) {
+                    applyChatInputCompletion(comp, value);
+                  }
+                }
+              }}
+              onFocus={() => {
+                const el = inputRef.current;
+                if (el) {
+                  const pos = el.selectionStart ?? el.value.length;
+                  inputValueRef.current = el.value;
+                  inputCursorRef.current = pos;
+                  setInputCursorPos(pos);
+                }
+                if (onInputFocusChange && isMobile) {
+                  onInputFocusChange(true);
+                }
+              }}
+              onBlur={() => {
+                if (onInputFocusChange && isMobile) {
+                  onInputFocusChange(false);
+                }
+              }}
+              placeholder="Fes una pregunta sobre castells..."
+              disabled={isLoading}
+              autoComplete="off"
+              spellCheck
+              title={
+                chatInputCompletion
+                  ? `Prem Tab: ${chatInputCompletion.full}`
+                  : undefined
               }
-            }}
-            onBlur={() => {
-              if (onInputFocusChange && isMobile) {
-                onInputFocusChange(false);
-              }
-            }}
-            placeholder="Fes una pregunta sobre castells..."
-            disabled={isLoading}
-          />
+            />
+          </div>
           <button type="submit" disabled={isLoading || !inputMessage.trim()}>
             Enviar
           </button>

@@ -2690,6 +2690,90 @@
   border-color: var(--theme-color, var(--theme-secondary));
 }
 
+/* Chat input: mirror + transparent field — ghost on same line as typed text (Tab to accept) */
+.input-group .chat-input-mirror-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background: white;
+  box-sizing: border-box;
+}
+
+.input-group .chat-input-mirror-wrap:focus-within {
+  border-color: var(--theme-color, var(--theme-secondary));
+}
+
+.input-group .chat-input-mirror {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  font-size: 1rem;
+  line-height: 1.25;
+  font-family: inherit;
+  font-weight: 400;
+  z-index: 0;
+}
+
+.input-group .chat-input-mirror-typed {
+  color: var(--theme-text, #222);
+}
+
+.input-group .chat-input-mirror-ghost {
+  color: rgba(0, 0, 0, 0.38);
+  flex-shrink: 0;
+}
+
+.input-group .chat-input-mirror-placeholder {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.input-group .chat-input-mirror-field {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin: 0;
+  border: none !important;
+  outline: none;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  font-size: 1rem;
+  line-height: 1.25;
+  font-family: inherit;
+  font-weight: 400;
+  height: auto;
+  box-sizing: border-box;
+  background: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--theme-text, #222);
+  flex: unset !important;
+  box-shadow: none !important;
+}
+
+.input-group .chat-input-mirror-field:focus {
+  outline: none;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.input-group .chat-input-mirror-field::placeholder {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 .input-group button {
   background: var(--theme-secondary);
   color: white;
@@ -3872,6 +3956,16 @@
     font-size: 0.9rem;
   }
 
+  .input-group .chat-input-mirror {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .input-group .chat-input-mirror-field {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
   .input-group button {
     padding: 0.75rem 1rem;
     font-size: 0.85rem;
@@ -4044,6 +4138,16 @@
   }
 
   .input-group input {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .input-group .chat-input-mirror {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .input-group .chat-input-mirror-field {
     padding: 0.6rem 0.8rem;
     font-size: 0.85rem;
   }

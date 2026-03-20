@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentTheme } from '../../../colorTheme';
+import { AVAILABLE_COLLES } from '../../../data/availableColles';
 
 // Mapping of colla names to their color_codes (from colles_fundacio.json)
 const COLLA_COLORS = {
@@ -41,47 +42,6 @@ const COLLA_COLORS = {
   "Xiquets de Tarragona": "ralles",
   "Xiquets del Serrallo": "darkblue"
 };
-
-// Colles with boost >= 2 from json_colles.json
-const AVAILABLE_COLLES = [
-  "Castellers de Vilafranca",
-  "Colla Jove Xiquets de Tarragona",
-  "Colla Joves Xiquets de Valls",
-  "Colla Vella dels Xiquets de Valls",
-  "Minyons de Terrassa",
-  "Capgrossos de Mataró",
-  "Marrecs de Salt",
-  "Moixiganguers d'Igualada",
-  "Nens del Vendrell",
-  "Xiquets de Reus",
-  "Xiquets de Tarragona",
-  "Xiquets del Serrallo",
-  "Bordegassos de Vilanova",
-  "Castellers d'Altafulla",
-  "Castellers d'Esparreguera",
-  "Castellers d'Esplugues",
-  "Castellers de Badalona",
-  "Castellers de Barcelona",
-  "Castellers de Berga",
-  "Castellers de Castelldefels",
-  "Castellers de la Sagrada Família",
-  "Castellers de la Vila de Gràcia",
-  "Castellers de Lleida",
-  "Castellers de Sabadell",
-  "Castellers de Sant Cugat",
-  "Castellers de Sants",
-  "Castellers de Sarrià",
-  "Castellers de Terrassa",
-  "Colla Castellera Jove de Barcelona",
-  "Colla Castellera Sant Pere i Sant Pau",
-  "Colla Jove de Castellers de Sitges",
-  "Nois de la Torre",
-  "Sagals d'Osona",
-  "Xicots de Vilafranca",
-  "Xics de Granollers",
-  "Al·lots de Llevant",
-  "Arreplegats de la Zona Universitària"
-];
 
 // Years 2000-2025 excluding 2020 and 2021
 const AVAILABLE_YEARS = Array.from({ length: 26 }, (_, i) => 2000 + i)
