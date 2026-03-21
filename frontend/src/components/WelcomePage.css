@@ -107,7 +107,7 @@
 }
 
 .welcome-btn-container {
-  height: 58px;
+  min-height: 58px;
   display: flex;
   align-items: center;
 }
@@ -162,12 +162,21 @@
 
 /* Hide scrolling banners on mobile - they're barely visible */
 @media (max-width: 768px) {
+  .welcome-page {
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+  }
+
   .welcome-page > .scrolling-banner {
     display: none;
   }
 
   .welcome-content {
     padding: 1.5rem 1rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    min-height: min-content;
   }
 
   .welcome-xiquet-icon {
@@ -198,6 +207,7 @@
 
   .welcome-btn-container {
     justify-content: center;
+    margin-top: 0.25rem;
   }
 
   .welcome-login-btn {

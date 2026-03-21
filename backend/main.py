@@ -36,7 +36,7 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 PREMIUM_PRICE_ID = os.getenv("STRIPE_PREMIUM_PRICE_ID")  # Price ID for 1.99€/month subscription
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://xiquet.vercel.app")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://xiquet.cat")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -53,6 +53,8 @@ DEFAULT_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
     "https://xiquet.vercel.app",
+    "https://xiquet.cat",
+    "https://www.xiquet.cat",
     "https://xiquet-frontend.vercel.app",
     "https://castellers.vercel.app",
     "https://castellers-t9nc.vercel.app",  # Production Vercel deployment

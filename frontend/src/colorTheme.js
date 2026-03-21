@@ -331,3 +331,19 @@ export const getThemeForColor = (colorKey) => {
   return COLOR_THEMES[colorKey] || COLOR_THEMES['white'];
 };
 
+/** Hex #RRGGBB — true if all channels > 240 (white / very light shirt themes). */
+export const isLightThemeSecondary = (hex) => {
+  if (!hex || typeof hex !== 'string' || hex.length < 7) return false;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return false;
+  return r > 240 && g > 240 && b > 240;
+};
+
+/** Accent for buttons/focus rings when theme secondary would vanish on white (e.g. login inputs). */
+export const getThemeActionColor = (theme) => {
+  if (!theme?.secondary) return '#d0282c';
+  return isLightThemeSecondary(theme.secondary) ? '#d0282c' : theme.secondary;
+};
+

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { authHelpers } from '../supabaseClient';
 import { apiService } from '../apiService';
-import { COLOR_THEMES } from '../colorTheme';
+import { COLOR_THEMES, isLightThemeSecondary } from '../colorTheme';
 import collesData from '../data/colles_fundacio.json';
 
 // Filter active colles (without year ranges in name)
@@ -237,7 +237,9 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
     ? getCollaColor(formData.collaColorCode)
     : null;
 
-  const isWhiteTheme = theme?.secondary === '#ffffff';
+  const lightThemeSecondary = theme?.secondary && isLightThemeSecondary(theme.secondary);
+  const profilePrimaryBg = lightThemeSecondary ? '#d0282c' : (theme?.secondary || '#d0282c');
+  const profilePrimaryFg = '#ffffff';
 
   return (
     <div className="profile-modal-overlay" onClick={onClose}>
@@ -253,7 +255,7 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
             className="profile-avatar-large"
             style={{ 
               backgroundColor: theme?.secondary || '#d0282c',
-              color: isWhiteTheme ? '#000000' : '#ffffff'
+              color: lightThemeSecondary ? '#000000' : '#ffffff'
             }}
           >
             {getInitials(formData.username || user?.username)}
@@ -371,7 +373,7 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
                       {subscription.subscription === 'premium' ? 'Premium' : 'Bàsic'}
                     </span>
                     {subscription.subscription === 'basic' && (
-                      <span className="subscription-limitation"> (7 consultes per hora)</span>
+                      <span className="subscription-limitation"> (10 consultes per hora)</span>
                     )}
                   </div>
                   
@@ -384,7 +386,7 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
                       >
                         {isLoadingSubscription ? 'Carregant...' : 'Actualitzar a Premium - 1,99€/mes'}
                       </button>
-                      <span className="subscription-limitation"> Tantes consultes com vulguis</span>
+                      <span className="subscription-limitation"> Tantes consultes com vulguis i preguntes més llargues.</span>
 
                       <div className="subscription-explanation">
                         <p className="subscription-reason-short">
@@ -458,8 +460,8 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
                 onClick={handleSave}
                 disabled={isLoading}
                 style={{ 
-                  backgroundColor: theme?.secondary || '#d0282c',
-                  color: isWhiteTheme ? '#000000' : '#ffffff'
+                  backgroundColor: profilePrimaryBg,
+                  color: profilePrimaryFg
                 }}
               >
                 {isLoading ? <span className="spinner"></span> : 'Guardar'}
@@ -470,11 +472,11 @@ const ProfileModal = ({ user, onClose, onProfileUpdate, theme, onCollaChange }) 
               className="profile-btn profile-btn-primary"
               onClick={() => setIsEditing(true)}
               style={{ 
-                backgroundColor: theme?.secondary || '#d0282c',
-                color: isWhiteTheme ? '#000000' : '#ffffff'
+                backgroundColor: profilePrimaryBg,
+                color: profilePrimaryFg
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isWhiteTheme ? '#000000' : 'currentColor'} strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>

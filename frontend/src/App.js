@@ -15,7 +15,7 @@ import CompararDiades from './components/CompararDiades';
 import PilarLoader from './components/PilarLoader';
 import AuthCallback from './components/AuthCallback';
 import { authHelpers } from './supabaseClient';
-import { getColorPreference, saveColorPreference, getCurrentTheme, getUserDefaultColor, getThemeForColor } from './colorTheme';
+import { getColorPreference, saveColorPreference, getCurrentTheme, getUserDefaultColor, getThemeForColor, getThemeActionColor } from './colorTheme';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -162,6 +162,8 @@ function App() {
     root.style.setProperty('--theme-text-secondary', theme.textSecondary);
     root.style.setProperty('--theme-border', theme.border);
     root.style.setProperty('--theme-highlight', theme.highlight);
+    // Focus rings / CTAs: red when shirt color is white so borders stay visible (login form, etc.)
+    root.style.setProperty('--chat-action-color', getThemeActionColor(theme));
   }, [theme]);
 
   // SEO: document title and meta description per page (resets when leaving colla so tab no longer shows colla name)

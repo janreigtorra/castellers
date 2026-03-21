@@ -35,6 +35,9 @@ ENTITY_PLACEHOLDERS = frozenset({"", "?", "null", "none"})
 # Question length limit (tokens): basic plan = shorter limit, paid subscription = longer
 LARGE_QUESTION_TOKEN_LIMIT_BASIC = 35
 LARGE_QUESTION_TOKEN_LIMIT_PREMIUM = 200
+PREVIOUS_CONTEXT_MAX_CHARS = 100
+MAX_QUESTIONS_BASIC = 10  # Maximum questions per time window
+TIME_BASIC = 3600  # Time window in seconds (1 hour = 3600 seconds) 
 
 def _is_entity_placeholder(val) -> bool:
     if val is None:
@@ -110,13 +113,7 @@ MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
 # cerebras:qwen-3-32b - High-performance large model
 # cerebras:gpt-oss-120b - Massive 120B parameter model
 
-DEBUG = True
-
-PREVIOUS_CONTEXT_MAX_CHARS = 100
-
-# Rate limiting configuration for basic subscription
-MAX_QUESTIONS_BASIC = 7  # Maximum questions per time window
-TIME_BASIC = 3600  # Time window in seconds (1 hour = 3600 seconds) 
+DEBUG = False
 
 # ---- Xiquet Class ----
 class Xiquet:
@@ -530,27 +527,29 @@ class Xiquet:
             valid_diades = get_all_diada_options()
             response.diades = [d for d in response.diades if d in valid_diades]
         validation_time = (datetime.now() - validation_start).total_seconds() * 1000
-        print(f"[TIMING] Entity validation: {validation_time:.2f}ms")
+        if DEBUG:
+            print(f"DEBUG ENTITY VALIDATION TIME: {validation_time:.2f}ms")
 
         # When gamma is detected, clear individual castells to avoid redundant chips
         # The gamma filter will handle the castell filtering in SQL
         if self.gamma:
             response.castells = []
-            print(f"[Gamma] Clearing individual castells - gamma filter will handle: {self.gamma}")
+            if DEBUG:
+                print(f"DEBUG GAMMA: {self.gamma} - Clearing individual castells")
 
-        # if DEBUG:
-        print(f"DEBUG ENTITIES FOR QUESTION")
-        print(f"castells: {response.castells}")
-        print(f"anys: {response.anys}")
-        print(f"llocs: {response.llocs}")
-        print(f"diades: {response.diades}")
-        print(f"colles: {response.colla}")
-        print(f"editions: {response.editions}")
-        print(f"jornades: {response.jornades}")
-        print(f"positions: {response.positions}")
-        print(f"gamma: {self.gamma}")
-        print(f"tools: {response.tools}")
-        print(f"sql_query_type: {response.sql_query_type}")
+        if DEBUG:
+            print(f"DEBUG ENTITIES FOR QUESTION")
+            print(f"castells: {response.castells}")
+            print(f"anys: {response.anys}")
+            print(f"llocs: {response.llocs}")
+            print(f"diades: {response.diades}")
+            print(f"colles: {response.colla}")
+            print(f"editions: {response.editions}")
+            print(f"jornades: {response.jornades}")
+            print(f"positions: {response.positions}")
+            print(f"gamma: {self.gamma}")
+            print(f"tools: {response.tools}")
+            print(f"sql_query_type: {response.sql_query_type}")
 
         return None  # Validation succeeded
 
@@ -568,7 +567,8 @@ class Xiquet:
                 self.anys = self.pre_selected_entities["anys"]
             if self.pre_selected_entities.get("diades"):
                 self.diades = self.pre_selected_entities["diades"]
-            print(f"[PRE-SELECTED] Using pre-selected entities: colles={self.colles_castelleres}, castells={[c.castell_code for c in self.castells]}, anys={self.anys}, diades={self.diades}")
+            if DEBUG:
+                print(f"DEBUG PRE-SELECTED: Using pre-selected entities: colles={self.colles_castelleres}, castells={[c.castell_code for c in self.castells]}, anys={self.anys}, diades={self.diades}")
         
         # Extract entities from question (heuristics) - but skip types that are pre-selected
         entity_start = datetime.now()
@@ -587,7 +587,9 @@ class Xiquet:
         self._enrich_entities_from_previous_context()
         
         entity_time = (datetime.now() - entity_start).total_seconds() * 1000
-        print(f"[TIMING] Entity extraction: {entity_time:.2f}ms")
+        
+        if DEBUG:
+            print(f"DEBUG ENTITY EXTRACTION TIME: {entity_time:.2f}ms")
 
         # Check if pregunta starts with 'quina colla' or 'quines colles'
         starts_with_quina_colla = False
@@ -624,7 +626,8 @@ class Xiquet:
             entities_section += f"""
         - **Colla castellera:** NO extreguis cap colla. La pregunta no menciona cap colla específica.
         \n"""
-        print(f"DEBUG 1 colles_castelleres: {self.colles_castelleres}")
+        if DEBUG:
+            print(f"DEBUG 1 colles_castelleres: {self.colles_castelleres}")
         
         # Handle pre-selected castells
         if self.pre_selected_entities.get("castells"):
@@ -706,7 +709,8 @@ class Xiquet:
         
         if pre_selected_parts:
             enhanced_question = f"{question} ({', '.join(pre_selected_parts)})"
-            print(f"[ENHANCED QUESTION] {enhanced_question}")
+            if DEBUG:
+                print(f"DEBUG ENHANCED QUESTION: {enhanced_question}")
         
         route_prompt = f"""
         Ets el Xiquet, un assistent expert en el món casteller. 
@@ -767,7 +771,8 @@ class Xiquet:
         direct_response = self.abans_de_res(question)
         precheck_time = (datetime.now() - precheck_start).total_seconds() * 1000
         if precheck_time > 1:
-            print(f"[TIMING] abans_de_res(): {precheck_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG ANTES DE RES TIME: {precheck_time:.2f}ms")
         
         if direct_response is not None:
             return direct_response
@@ -775,15 +780,18 @@ class Xiquet:
         # Generate route prompt (extracts entities and builds prompt)
         llm_start = datetime.now()
         route_prompt = self.generate_prompt_decide_route(question)
-        print(f"[ROUTE PROMPT] {route_prompt}")
+        if DEBUG:
+            print(f"DEBUG ROUTE PROMPT: {route_prompt}")
 
         response = llm_call(route_prompt, model=MODEL_NAME_ROUTE, response_format=FirstCallResponseFormat)
         llm_time = (datetime.now() - llm_start).total_seconds() * 1000
-        print(f"[TIMING] decide_route() LLM call: {llm_time:.2f}ms")
+        if DEBUG:
+            print(f"DEBUG DECIDEROUTE LLM CALL TIME: {llm_time:.2f}ms")
         
         # Handle case where provider returns dict instead of Pydantic model
         if isinstance(response, dict):
-            print(f"[WARNING] LLM returned dict instead of FirstCallResponseFormat, converting...")
+            if DEBUG:
+                print(f"DEBUG WARNING: LLM returned dict instead of FirstCallResponseFormat, converting...")
             try:
                 response = FirstCallResponseFormat(**response)
             except Exception as e:
@@ -839,7 +847,8 @@ class Xiquet:
                 if response.sql_query_type != "custom":
                     response.tools = "sql"
                     skip_sql_check = True
-                    print(f"[SQL ROUTE] Detected SQL query type '{response.sql_query_type}' from enhanced question with pre-selected entities")
+                    if DEBUG:
+                        print(f"DEBUG SQL ROUTE: Detected SQL query type '{response.sql_query_type}' from enhanced question with pre-selected entities")
 
         
         # If SQL or hybrid, determine the specific query type
@@ -853,11 +862,13 @@ class Xiquet:
                 valid_types = ["millor_diada", "millor_castell", "castell_historia", "castells_list", "location_actuations", 
                               "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "colles"]
                 if self.previous_sql_query_type in valid_types:
-                    print(f"[SQL TYPE INHERIT] Inheriting '{self.previous_sql_query_type}' from previous question (current was 'custom')")
+                    if DEBUG:
+                        print(f"DEBUG SQL TYPE INHERIT: Inheriting '{self.previous_sql_query_type}' from previous question (current was 'custom')")
                     response.sql_query_type = self.previous_sql_query_type
         
         sql_type_time = (datetime.now() - sql_type_start).total_seconds() * 1000
-        print(f"[TIMING] SQL query type determination: {sql_type_time:.2f}ms")
+        if DEBUG:
+            print(f"DEBUG SQL TYPE DETERMINATION TIME: {sql_type_time:.2f}ms")
 
         # Validate all entities and tools
         validation_result = self._validate_response_entities(response)
@@ -1013,8 +1024,9 @@ class Xiquet:
 
 
     def handle_rag(self) -> str:
-        print(f"[RAG] === Starting handle_rag() ===", flush=True)
-        print(f"[RAG] Question: {self.question[:50]}...", flush=True)
+        if DEBUG:
+            print(f"DEBUG RAG: Starting handle_rag()")
+            print(f"DEBUG RAG: Question: {self.question[:50]}...")
         
         # Configuration
         INITIAL_K = 350          # Get top K from vector search
@@ -1023,11 +1035,13 @@ class Xiquet:
         
         try:
             # Step 1: Semantic search on castellers_info_chunks
-            print(f"[RAG] Step 1: Calling search_castellers_info(k={INITIAL_K})...", flush=True)
+            if DEBUG:
+                print(f"DEBUG RAG: Step 1: Calling search_castellers_info(k={INITIAL_K})...")
             rag_search_start = datetime.now()
             results = search_castellers_info(self.question, k=INITIAL_K)
             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
-            print(f"[TIMING] RAG search: {rag_search_time:.2f}ms ({len(results)} results)", flush=True)
+            if DEBUG:
+                print(f"DEBUG RAG: RAG search: {rag_search_time:.2f}ms ({len(results)} results)")
             
             if not results:
                 return "No he trobat informació rellevant per respondre la teva pregunta."
@@ -1045,21 +1059,25 @@ class Xiquet:
             rerank_start = datetime.now()
             reranked = rerank_rag_results(results, entities, self.question)
             rerank_time = (datetime.now() - rerank_start).total_seconds() * 1000
-            print(f"[TIMING] Reranking: {rerank_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG RERANKING TIME: {rerank_time:.2f}ms")
             
             # Step 3: Filter by minimum similarity AFTER boosting
             # Documents with low embedding score but high entity match can now pass
             filtered = [(doc, score) for doc, score in reranked if score >= MIN_SIMILARITY]
-            print(f"[RAG] Filtered after boost: {len(reranked)} -> {len(filtered)} (threshold: {MIN_SIMILARITY})")
+            if DEBUG:
+                print(f"DEBUG RAG: Filtered after boost: {len(reranked)} -> {len(filtered)} (threshold: {MIN_SIMILARITY})")
             
             if not filtered:
                 return "No he trobat informació prou rellevant per respondre la teva pregunta."
             
             # Step 4: Take top K results
             top_results = reranked[:FINAL_TOP_K]
-            print(f"[RAG] Final top {len(top_results)} results:")
+            if DEBUG:
+                print(f"DEBUG RAG: Final top {len(top_results)} results:")
             for i, (doc, score) in enumerate(top_results):
-                print(f"  {i+1}. [{score:.3f}] {doc['meta'].get('title', 'No title')}")
+                if DEBUG:
+                    print(f"DEBUG RAG: {i+1}. [{score:.3f}] {doc['meta'].get('title', 'No title')}")
             
             # Step 5: Build context for LLM
             context_parts = []
@@ -1111,7 +1129,8 @@ Respon basant-te en els documents."""
                 developer_message=rag_developer
             )
             rag_llm_time = (datetime.now() - rag_llm_start).total_seconds() * 1000
-            print(f"[TIMING] handle_rag() LLM call: {rag_llm_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG RAG: LLM call: {rag_llm_time:.2f}ms")
             
             answer = sanitize_llm_response(answer)
             
@@ -1315,7 +1334,8 @@ Respon basant-te en els documents."""
             sql_gen_start = datetime.now()
             sql_query, params = self.create_sql_query()
             sql_gen_time = (datetime.now() - sql_gen_start).total_seconds() * 1000
-            print(f"[TIMING] create_sql_query(): {sql_gen_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG SQL: create_sql_query(): {sql_gen_time:.2f}ms")
             
             # Execute the query
             sql_exec_start = datetime.now()
@@ -1328,13 +1348,15 @@ Respon basant-te en els documents."""
                 self.table_data = None
                 return e.message
             sql_exec_time = (datetime.now() - sql_exec_start).total_seconds() * 1000
-            print(f"[TIMING] execute_sql_query(): {sql_exec_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG SQL: execute_sql_query(): {sql_exec_time:.2f}ms")
             
             # Organize results based on query type (V2 approach)
             organize_start = datetime.now()
             rows = self.organize_sql_results(raw_rows, sql_query_type)
             organize_time = (datetime.now() - organize_start).total_seconds() * 1000
-            print(f"[TIMING] organize_results(): {organize_time:.2f}ms")
+            if DEBUG:
+                print(f"DEBUG SQL: organize_results(): {organize_time:.2f}ms")
 
             # Summarize results into a readable answer
             
@@ -1353,7 +1375,8 @@ Respon basant-te en els documents."""
                 # Convert top_results to compact column-header format for LLM (only top 10, no IDs)
                 if top_results_for_llm:
                     table_str = self._format_results_for_llm(top_results_for_llm, max_rows=llm_context_limit)
-                    print(f"[SQL Results for LLM] (showing {min(len(top_results_for_llm), llm_context_limit)}/{len(top_results_for_llm)} rows from top_results table)\n", table_str)
+                    if DEBUG:
+                        print(f"DEBUG SQL: Results for LLM (showing {min(len(top_results_for_llm), llm_context_limit)}/{len(top_results_for_llm)} rows from top_results table)\n", table_str)
                 else:
                     table_str = "columns=[]\nrows=[]"
                 
@@ -1362,7 +1385,8 @@ Respon basant-te en els documents."""
             else:
                 # Convert rows to compact column-header format for LLM (limited for LLM context)
                 table_str = self._format_results_for_llm(rows, max_rows=llm_context_limit) if rows else "columns=[]\nrows=[]"
-                print(f"[SQL Results for LLM] (showing {min(len(rows), llm_context_limit)}/{len(rows)} rows)\n", table_str)
+                if DEBUG:
+                    print(f"DEBUG SQL: Results for LLM (showing {min(len(rows), llm_context_limit)}/{len(rows)} rows)\n", table_str)
                 
                 # Store table data for frontend display (full results up to SQL_RESULT_LIMIT)
                 # Create a nice table structure with proper column titles
@@ -1387,7 +1411,8 @@ Respon basant-te en els documents."""
                     developer_message=structured_prompt.developer_message
                 )
                 sql_llm_time = (datetime.now() - sql_llm_start).total_seconds() * 1000
-                print(f"[TIMING] handle_sql() LLM summary call: {sql_llm_time:.2f}ms")
+                if DEBUG:
+                    print(f"DEBUG SQL: LLM summary call: {sql_llm_time:.2f}ms")
                 
                 # Sanitize response to remove any tables the LLM might have added
                 final_answer = sanitize_llm_response(final_answer)
@@ -1411,11 +1436,13 @@ Respon basant-te en els documents."""
         route_start = datetime.now()
         response = self.decide_route(question)
         route_time = (datetime.now() - route_start).total_seconds() * 1000
-        print(f"[TIMING] decide_route(): {route_time:.2f}ms")
+        if DEBUG:
+            print(f"DEBUG DECIDEROUTE TIME: {route_time:.2f}ms")
         
         # Store response for later access (e.g., getting route_used)
         self.response = response
-        print(f"[Router] Ruta escollida: {response.tools}, {response.sql_query_type}")
+        if DEBUG:
+            print(f"DEBUG ROUTER: Ruta escollida: {response.tools}, {response.sql_query_type}")
         
         # Step 2: Handle based on route
         handler_start = datetime.now()
@@ -1431,7 +1458,8 @@ Respon basant-te en els documents."""
             result = "No estic segur de com respondre això, però ho estic intentant!"
         
         handler_time = (datetime.now() - handler_start).total_seconds() * 1000
-        print(f"[TIMING] handle_{response.tools}(): {handler_time:.2f}ms")
+        if DEBUG:
+            print(f"DEBUG HANDLER: handle_{response.tools}(): {handler_time:.2f}ms")
         
         return result
 
@@ -1463,7 +1491,7 @@ if __name__ == "__main__":
         q = input("Pregunta (en català, 'sortir' per acabar): ")
         if q.lower() == "sortir":
             break
-        print("Xiquet:", xiquet.process_question(q))
+        print("Xiquet.cat:", xiquet.process_question(q))
         print("-" * 50)
 
 

@@ -202,7 +202,7 @@ const LoginForm = ({ onLogin, onClose }) => {
         {!isLogin ? (
           <>
             <div className="form-group">
-              <label htmlFor="username">Nom d\'usuari:</label>
+              <label htmlFor="username">Nom d'usuari:</label>
               <input
                 type="text"
                 id="username"

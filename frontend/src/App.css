@@ -2307,7 +2307,7 @@
 }
 
 .entity-selector-button-inline.selected {
-  border: 2px solid var(--theme-color, #d0282c) !important;
+  border: 2px solid var(--chat-action-color, var(--theme-color, #d0282c)) !important;
   background: white !important;
 }
 
@@ -2473,7 +2473,7 @@
 }
 
 .save-dialog-actions button[type="submit"] {
-  background: var(--theme-secondary, #d0282c);
+  background: var(--chat-action-color, var(--theme-secondary, #d0282c));
   color: white;
 }
 
@@ -2626,7 +2626,7 @@
 }
 
 .feedback-submit-btn {
-  background: var(--theme-secondary, #d0282c);
+  background: var(--chat-action-color, var(--theme-secondary, #d0282c));
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
@@ -2702,7 +2702,7 @@
 }
 
 .input-group .chat-input-mirror-wrap:focus-within {
-  border-color: var(--theme-color, var(--theme-secondary));
+  border-color: var(--chat-action-color, var(--theme-color, var(--theme-secondary)));
 }
 
 .input-group .chat-input-mirror {
@@ -2775,7 +2775,7 @@
 }
 
 .input-group button {
-  background: var(--theme-secondary);
+  background: var(--chat-action-color, var(--theme-secondary));
   color: white;
   border: none;
   padding: 1rem 2rem;
@@ -2784,6 +2784,19 @@
   font-size: 1rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.input-group button.chat-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.15rem;
+  min-width: 3.25rem;
+}
+
+.input-group button.chat-send-btn svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Keep red send button red when theme is red */
@@ -2847,7 +2860,7 @@
 
 .login-form input:focus {
   outline: none;
-  border-color: var(--theme-color, var(--theme-secondary));
+  border-color: var(--chat-action-color, var(--theme-color, var(--theme-secondary)));
 }
 
 .login-form button {
@@ -2907,13 +2920,13 @@
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-trigger:hover:not(:disabled) {
-  border-color: var(--theme-color, #2563eb);
+  border-color: var(--chat-action-color, var(--theme-color, #d0282c));
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-trigger.open {
-  border-color: var(--theme-color, #2563eb);
+  border-color: var(--chat-action-color, var(--theme-color, #d0282c));
   border-radius: 8px 8px 0 0;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chat-action-color, var(--theme-color, #d0282c)) 18%, transparent);
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-arrow {
@@ -2948,7 +2961,7 @@
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-search-input:focus {
   outline: none;
-  border-color: var(--theme-color, #2563eb);
+  border-color: var(--chat-action-color, var(--theme-color, #d0282c));
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-actions {
@@ -2967,8 +2980,8 @@
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-action:hover {
   background: var(--theme-background);
-  border-color: var(--theme-color, #2563eb);
-  color: var(--theme-color, #2563eb);
+  border-color: var(--chat-action-color, var(--theme-color, #d0282c));
+  color: var(--chat-action-color, var(--theme-color, #d0282c));
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-options {
@@ -2984,7 +2997,7 @@
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-option:hover,
 .login-form .login-form-collaselect .joc-mocador-multiselect-option.selected {
-  background: color-mix(in srgb, var(--theme-color, #2563eb) 10%, transparent);
+  background: color-mix(in srgb, var(--chat-action-color, var(--theme-color, #d0282c)) 10%, transparent);
 }
 
 .login-form .login-form-collaselect .joc-mocador-multiselect-option span {
@@ -2995,7 +3008,7 @@
 .login-form .login-form-collaselect .joc-mocador-multiselect-option input[type="radio"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--theme-color, #2563eb);
+  accent-color: var(--chat-action-color, var(--theme-color, #d0282c));
   flex-shrink: 0;
 }
 
@@ -3971,6 +3984,16 @@
     font-size: 0.85rem;
   }
 
+  .input-group button.chat-send-btn {
+    padding: 0.75rem 0.9rem;
+    min-width: 2.85rem;
+  }
+
+  .input-group button.chat-send-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
   /* Save dialog mobile */
   .save-dialog {
     min-width: 90%;
@@ -4155,6 +4178,16 @@
   .input-group button {
     padding: 0.6rem 0.8rem;
     font-size: 0.8rem;
+  }
+
+  .input-group button.chat-send-btn {
+    padding: 0.6rem 0.75rem;
+    min-width: 2.6rem;
+  }
+
+  .input-group button.chat-send-btn svg {
+    width: 18px;
+    height: 18px;
   }
 
   /* Ensure tables use full width on extra small screens */

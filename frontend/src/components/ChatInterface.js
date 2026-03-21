@@ -253,6 +253,24 @@ const FeedbackIcon = ({ color = "currentColor" }) => (
   </svg>
 );
 
+// Send (paper plane) — chat submit
+const SendIcon = ({ color = "currentColor" }) => (
+  <svg
+    width="22"
+    height="22"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </svg>
+);
+
 // Multi-select dropdown component with search (copied from Menu.js)
 const MultiSelect = ({ options, selected, onChange, placeholder, disabled, displayTransform, maxSelections = 2 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -1544,8 +1562,15 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
 
 
 
+  // Input focus border + Enviar button: red when theme is white so visible on white background
+  const chatActionColor = theme?.secondary && isWhiteColor(theme.secondary) ? '#d0282c' : (theme?.secondary ?? undefined);
+
   return (
-    <div className="chat-container" style={{ '--theme-color': theme?.secondary, '--theme-accent': theme?.accent }}>
+    <div className="chat-container" style={{
+      '--theme-color': theme?.secondary,
+      '--theme-accent': theme?.accent,
+      ...(chatActionColor !== undefined && { '--chat-action-color': chatActionColor })
+    }}>
       {/* Fixed Xiquet icon at bottom left - only on desktop */}
       {messages.length > 0 && !isMobile && (
         <div className="xiquet-fixed-icon">
@@ -1907,7 +1932,6 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             onClick={() => setShowEntitySelector(!showEntitySelector)}
             disabled={isLoading}
             title="Filtrar per colla, any o castell"
-            style={showEntitySelector && theme?.secondary ? { '--theme-color': theme.secondary } : {}}
           >
             {showEntitySelector ? '−' : '+'}
           </button>
@@ -1997,8 +2021,14 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
               }
             />
           </div>
-          <button type="submit" disabled={isLoading || !inputMessage.trim()}>
-            Enviar
+          <button
+            type="submit"
+            disabled={isLoading || !inputMessage.trim()}
+            className="chat-send-btn"
+            aria-label="Enviar missatge"
+            title="Enviar"
+          >
+            <SendIcon />
           </button>
         </form>
       </div>
