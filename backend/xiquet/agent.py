@@ -98,6 +98,7 @@ MODEL_NAME = "sambanova:gpt-oss-120b"
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
 MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
+# MODEL_NAME_RESPONSE = "sambanova:llama3-8b"
 
 
 # Available options:

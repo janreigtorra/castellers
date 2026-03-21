@@ -1320,6 +1320,25 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
     );
   };
 
+  // Helper: theme secondary is white / near-white (used for links, borders, buttons on white chat bg)
+  const isWhiteColor = (hex) => {
+    if (!hex) return false;
+    const h = String(hex).trim().toLowerCase();
+    if (h === '#ffffff' || h === '#fff' || h === 'white') return true;
+    if (h.startsWith('#') && h.length === 4) {
+      const r = parseInt(h[1] + h[1], 16);
+      const g = parseInt(h[2] + h[2], 16);
+      const b = parseInt(h[3] + h[3], 16);
+      return !Number.isNaN(r) && r > 240 && g > 240 && b > 240;
+    }
+    if (!h.startsWith('#') || h.length < 7) return false;
+    const r = parseInt(h.slice(1, 3), 16);
+    const g = parseInt(h.slice(3, 5), 16);
+    const b = parseInt(h.slice(5, 7), 16);
+    if (Number.isNaN(r)) return false;
+    return r > 240 && g > 240 && b > 240;
+  };
+
   // Collapsible table component for tables with more than 2 rows
   // Must be defined before any early returns to satisfy React Hooks rules
   const CollapsibleTable = React.useMemo(() => {
@@ -1486,7 +1505,14 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
               e.preventDefault();
               onOpenProfile();
             }}
-            style={{ color: theme?.secondary || '#d0282c', textDecoration: 'underline', cursor: 'pointer' }}
+            style={{
+              color:
+                theme?.secondary && !isWhiteColor(theme.secondary)
+                  ? theme.secondary
+                  : '#d0282c',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+            }}
           >
             {children}
           </a>
@@ -1526,16 +1552,6 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
 
   const chatBackgroundColor = 'white';
   const inputBackgroundColor = theme?.secondary ? hexToRgba(theme.secondary, 0.10) : 'rgba(208, 40, 44, 0.05)';
-  
-  // Helper to check if a color is white (or very close to white)
-  const isWhiteColor = (hex) => {
-    if (!hex) return false;
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    // Consider it white if all RGB values are above 240 (very light)
-    return r > 240 && g > 240 && b > 240;
-  };
   
   // Border color: theme color if not white, gray if white
   const messageBorderColor = theme?.secondary 
