@@ -23,6 +23,10 @@ GAMMA_CASTELLS = {
         "specific": ["4d9f", "3d9f", "5d9f", "2d9fm", "4d9af", "3d9af", "7d9f", "3d9", "4d9", "5d9"],
         "description": "Castells de 9 pisos principals"
     },
+    "castells de 10": {
+        "specific": ["4d10fm", "3d10fm","2d10fmp"],
+        "description": "Castells de 10 pisos"
+    },
     "gamma extra": {
         "specific": ["2d9fm", "4d9af", "3d9af", "5d9f", "9d8", "9d9f", "3d10fm", "4d10fm", 
                      "pd8fm","pde8fm", "Pde8fm","Pd8fm", "pd9fmp", "pde9fmp", "Pde9fmp", "Pd9fmp", "4d9", "7d9f", "2d9f", "3d9"],
@@ -32,10 +36,11 @@ GAMMA_CASTELLS = {
 
 # Keywords to detect gamma questions
 GAMMA_KEYWORDS = {
-    "castells de 6": ["castells de 6", "sis pisos", "gamma de 6", "castell de 6" ],
-    "castells de 7": ["castells de 7", "set pisos", "gamma de 7", "castell de 7"],
-    "castells de 8": ["castells de 8", "vuit pisos", "gamma de 8", "castell de 8" ],
-    "castells de 9": ["castells de 9", "nou pisos", "gamma de 9", "castell de 9" ],
+    "castells de 6": ["castells de 6", "sis pisos", "gamma de 6", "castell de 6", "colles de 6"],
+    "castells de 7": ["castells de 7", "set pisos", "gamma de 7", "castell de 7", "colles de 7"],
+    "castells de 8": ["castells de 8", "vuit pisos", "gamma de 8", "castell de 8", "colles de 8"],
+    "castells de 9": ["castells de 9", "nou pisos", "gamma de 9", "castell de 9", "colles de 9"],
+    "castells de 10": ["castells de 10", "deu pisos", "gamma de 10", "castell de 10", "colles de 10", "de 10" ],
     "gamma extra": ["castells de gamma extra", "gamma extra", "màxima dificultat", "maxima dificultat"]
 }
 
@@ -74,7 +79,7 @@ IS_SQL_QUERY_PATTERNS = {
         "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
         "quines colles han fet", "quines colles van participar", "quines colles han participat",
         "quines colles van actuar", "quines colles han actuat","primera colla", "primeres colles",
-        "quina colla", "quines colles",
+        "quina colla", "quines colles", "quines són les colles", "quines son les colles", 
     ],
     
     # Castell història - retorna: comptatge de vegades, dates (primera/última), llocs, estat
@@ -136,6 +141,7 @@ IS_SQL_QUERY_PATTERNS = {
     ],
     
     # Concurs ranking - retorna: classificació, posicions, punts, rondes d'un concurs
+    # Només s'usa si la pregunta conté "concurs"/"concursos" (filtre a agent._determine_sql_query_type).
     # Exemples: "Quina classificació va tenir la Colla Vella al concurs de Tarragona 2024?"
     "concurs_ranking": [
         "classificació concurs", "classificació al concurs",
@@ -145,6 +151,7 @@ IS_SQL_QUERY_PATTERNS = {
     ],
     
     # Concurs history - retorna: història de concursos (guanyadors, edicions, estadístiques)
+    # Només s'usa si la pregunta conté "concurs"/"concursos" (filtre a agent._determine_sql_query_type).
     # Exemples: "Quants cops han guanyat el concurs els Castellers de Vilafranca?"
     "concurs_history": [
         "història del concurs", "història del concurs de castells",
@@ -155,6 +162,9 @@ IS_SQL_QUERY_PATTERNS = {
 }
 
 SQL_QUERY_PATTERNS = IS_SQL_QUERY_PATTERNS
+
+# Tipus SQL que només han de competir al matching si la pregunta menciona concurs (evita confondre amb RAG, p. ex. "història dels castellers").
+SQL_QUERY_TYPES_REQUIRING_CONCURS_IN_QUERY = frozenset({"concurs_ranking", "concurs_history"})
 
 META_LLM_KEYWORDS = [
     # Plataformes i productes
@@ -389,11 +399,85 @@ MAP_QUERY_CHANGE = {
 "pd4ps":"Pd4s",
 "Pd5ps":"Pde5s",
 "Pd6ps":"Pde6s",
+# Castells
 "carro gros": "4d8", 
 "super caterdal": "5d9f", 
-# "colla vella": "Colla Vella dels Xiquets de Valls",
-# "colla joves": "Colla Joves Xiquets de Valls",
-# "els verds": "castellers de Vilafranca", 
+"tres de deu amb folre i manilles": "3d10fm",
+"tres de deu": "3d10fm",
+"tres de nou amb folre": "3d9f",
+"tres de nou sense folre": "3d9",
+"tres de nou net": "3d9",
+"tres de nou": "3d9f",
+"quatre de nou amb folre": "4d9f",
+"quatre de nou sense folre": "4d9",
+"quatre de nou net": "4d9",
+"quatre de nou": "4d9f",
+"quatre de nou amb folre i agulla": "4d9fp",
+"tres de nou amb folre i agulla": "3d9fp",
+"dos de nou amb folre i manilles": "2d9fm",
+"dos de nou sense manilles": "2d9f",
+"dos de nou amb folre": "2d9f",
+"dos de nou": "2d9fm",
+"dossos de nou": "2d9fm",
+"dosos de nou": "2d9fm",
+"torre de nou amb folre i manilles": "2d9fm",
+"torre de nou amb folre": "2d9f",
+"torre de nou sense manilles": "2d9f",
+"torre de nou": "2d9fm",
+"dos de vuit sense folre": "2d8",
+"dos de vuit net": "2d8",
+"dos de vuit amb folre": "2d8f",
+"dos de vuit": "2d8",
+"dossos de vuit": "2d8f",
+"torre de vuit amb folre": "2d8f",
+"torre de vuit sense folre": "2d8",
+"torre de vuit": "2d8",
+
+"tres de vuit amb agulla": "3d8a",
+"tres de vuit amb pilar": "3d8a",
+"tres de vuit amb el pilar": "3d8a",
+"quatre de vuit amb agulla": "4d8a",
+"quatre de vuit amb pilar": "4d8a",
+"quatre de vuit amb el pilar": "4d8a",
+
+"tres de vuit": "3d8",
+"quatre de vuit": "4d8",
+"cinc de vuit": "5d8",
+"set de vuit": "7d8",
+"nou de vuit": "9d8",
+
+"tres de set amb agulla": "3d7a",
+"tres de set amb pilar": "3d7a",
+"tres de set amb el pilar": "3d7a",
+"quatre de set amb agulla": "4d7a",
+"quatre de set amb pilar": "4d7a",
+"quatre de set amb el pilar": "4d7a",
+"cinc de set amb agulla": "5d7a",
+"cinc de set amb pilar": "5d7a",
+"cinc de set amb el pilar": "5d7a",
+
+"set de set amb agulla": "7d7a",
+"tres de vuit amb el pilar": "3d8a",
+"quatre de vuit amb agulla": "4d8a",
+"quatre de vuit amb pilar": "4d8a",
+"quatre de vuit amb el pilar": "4d8a",
+
+"torre de set": "2d7",
+"dos de set": "2d7",
+"tres de set": "3d7",
+"quatre de set": "4d7",
+"cinc de set": "5d7",
+"set de set": "7d7",
+"nou de set": "9d7",
+
+
+
+
+
+
+
+
+
 }
 
 

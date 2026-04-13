@@ -3,8 +3,77 @@ RAG (Retrieval-Augmented Generation) utilities for reranking and processing sear
 """
 
 import re
-from typing import List
+from typing import Dict, List, Set, Tuple
 from difflib import SequenceMatcher
+
+
+def _normalized_year_set(values) -> Set[int]:
+    out: Set[int] = set()
+    for y in values or []:
+        try:
+            out.add(int(y))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _chunk_matches_extracted_colla(meta: Dict, detected_colles: List[str]) -> bool:
+    chunk_colles = [c.lower() for c in (meta.get("colles") or []) if c]
+    if not chunk_colles:
+        return False
+    for colla in detected_colles:
+        colla_lower = colla.lower()
+        for chunk_colla in chunk_colles:
+            if colla_lower in chunk_colla or chunk_colla in colla_lower:
+                return True
+    return False
+
+
+def _chunk_matches_extracted_years(meta: Dict, all_years: Set[int]) -> bool:
+    if not all_years:
+        return True
+    chunk_years = _normalized_year_set(meta.get("years") or [])
+    if chunk_years & all_years:
+        return True
+    for yr in meta.get("year_ranges") or []:
+        yr_l = str(yr).lower()
+        if any(str(y) in yr_l for y in all_years):
+            return True
+    return False
+
+
+def filter_rag_results_by_chunk_metadata(
+    results: List[Tuple[dict, float]],
+    entities: dict,
+) -> List[Tuple[dict, float]]:
+    """
+    Drop vector hits whose castellers_info_chunks metadata does not align with
+    extracted colles / years from the agent (hard filter; reranking still uses
+    extra cues like decades in the question text).
+    If nothing would remain, returns the original list (metadata often sparse).
+    """
+    if not results:
+        return results
+
+    detected_colles = [c for c in (entities.get("colla") or []) if c]
+    detected_anys = entities.get("anys", []) or []
+    all_years = _normalized_year_set(detected_anys)
+
+    need_colla = bool(detected_colles)
+    need_year = bool(all_years)
+    if not need_colla and not need_year:
+        return results
+
+    filtered = []
+    for doc_info, base_score in results:
+        meta = doc_info.get("meta", {}) or {}
+        if need_colla and not _chunk_matches_extracted_colla(meta, detected_colles):
+            continue
+        if need_year and not _chunk_matches_extracted_years(meta, all_years):
+            continue
+        filtered.append((doc_info, base_score))
+
+    return filtered if filtered else results
 
 
 def expand_decade_to_years(question: str) -> List[int]:
@@ -32,14 +101,16 @@ def rerank_rag_results(results: list, entities: dict, question: str) -> list:
 
     if not results:
         return results
-    
+
+    results = filter_rag_results_by_chunk_metadata(results, entities)
+
     question_lower = question.lower()
     detected_colles = entities.get("colla", []) or []
     detected_anys = entities.get("anys", []) or []
     
     # Expand decade references to years
     expanded_years = expand_decade_to_years(question)
-    all_years = set(detected_anys + expanded_years)
+    all_years = _normalized_year_set(list(detected_anys) + list(expanded_years))
     
     # Extract query words for keyword matching (remove common words)
     stop_words = {'el', 'la', 'els', 'les', 'un', 'una', 'de', 'del', 'a', 'amb', 'per', 'que', 'és', 'i', 'o'}
@@ -55,13 +126,6 @@ def rerank_rag_results(results: list, entities: dict, question: str) -> list:
         boost_reasons = []
         is_colla_match = False
         
-        # Debug: Check if title contains any detected colla name (to find potential matches)
-        title = meta.get("title", "")
-        for colla in detected_colles:
-            if colla.lower() in title.lower():
-                chunk_colles_debug = meta.get("colles") or []
-
-        
         # 1. Colla boost (highest priority)
         chunk_colles = [c.lower() for c in (meta.get("colles") or [])]
         for colla in detected_colles:
@@ -75,8 +139,8 @@ def rerank_rag_results(results: list, entities: dict, question: str) -> list:
                     break
         
         # 2. Year boost
-        chunk_years = set(meta.get("years") or [])
-        chunk_year_ranges = [yr.lower() for yr in (meta.get("year_ranges") or [])]
+        chunk_years = _normalized_year_set(meta.get("years") or [])
+        chunk_year_ranges = [str(yr).lower() for yr in (meta.get("year_ranges") or [])]
         
         # Check direct year matches
         year_matches = chunk_years & all_years

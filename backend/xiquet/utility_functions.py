@@ -826,6 +826,18 @@ castell_code_name_mapping = {
     "Pd9fmp": "Pde9fmp"
 }
 
+
+def castell_code_may_alias_agulla_pilar(castell_code: str) -> bool:
+    """
+    True if the code may appear in the DB under an equivalent a/p notation
+    (amb agulla vs amb pilar), e.g. 3d8a ↔ 3de8p.
+    """
+    if not castell_code:
+        return False
+    c = str(castell_code).strip().lower()
+    return len(c) >= 2 and c[-1] in ("a", "p")
+
+
 def code_to_name(code: str) -> str:
     """
     Convert a castell code to a castell name.

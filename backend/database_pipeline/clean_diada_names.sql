@@ -130,7 +130,7 @@ SET castell_code_external = LEFT(castell_code_external, LENGTH(castell_code_exte
 WHERE castell_code_external LIKE '%a';
 
 UPDATE public.puntuacions
-SET castell_code_external = LEFT(castell_code_external, LENGTH(castell_code_external) - 1) || 'fp'
+SET castell_code_external = LEFT(castell_code_external, LENGTH(castell_code_external) - 2) || 'fp'
 WHERE castell_code_external LIKE '%af';
 
 

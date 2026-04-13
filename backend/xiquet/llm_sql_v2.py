@@ -636,12 +636,26 @@ class LLMSQLGeneratorV2:
             if entities.get('gamma'):
                 result['gamma_filtrada'] = entities['gamma']
             
-            aggregated_results.append(result)
+            max_punts = 0.0
+            for row in group['occurrences']:
+                p = row.get('punts')
+                try:
+                    max_punts = max(max_punts, float(p if p is not None else 0))
+                except (TypeError, ValueError):
+                    pass
+            aggregated_results.append((result, max_punts))
         
-        # Sort by count_occurrences DESC, castell_name, status
-        aggregated_results.sort(key=lambda r: (-r['count_occurrences'], r['castell_name'], r['status']))
-        
-        return aggregated_results[:SQL_RESULT_LIMIT]
+        single_colla = has_colla_filter and len(entities.get('colla', [])) == 1
+        if single_colla:
+            aggregated_results.sort(
+                key=lambda t: (-t[1], -t[0]['count_occurrences'], t[0]['castell_name'], t[0]['status'])
+            )
+        else:
+            aggregated_results.sort(
+                key=lambda t: (-t[0]['count_occurrences'], t[0]['castell_name'], t[0]['status'])
+            )
+
+        return [t[0] for t in aggregated_results[:SQL_RESULT_LIMIT]]
     
     def _organize_castells_list(self, raw_results: List[Dict], entities: Dict) -> List[Dict]:
         """
@@ -1488,7 +1502,9 @@ def get_sql_summary_prompt(
     table_str: str,
     previous_question: str = None,
     previous_response: str = None,
-    previous_context_max_chars: int = 200
+    previous_context_max_chars: int = 200,
+    castell_ap_notation_hint: bool = False,
+    auxiliary_rag_chunk: Optional[str] = None,
 ) -> StructuredPrompt:
     
     # Query-type specific developer instructions
@@ -1513,7 +1529,13 @@ def get_sql_summary_prompt(
     
     # Get developer message for this query type, or use default
     developer_message = developer_instructions.get(query_type, SHARED_DEVELOPER_RULES)
-    
+
+    if castell_ap_notation_hint:
+        developer_message += """
+
+NOTACIÓ a/p (OBLIGATORI si aplica als resultats o a la pregunta):
+Els castells **amb agulla** i **amb pilar** són el **mateix** tipus; sovint es noten amb sufix **a** (ex. 3d8a) o **p** (ex. 3de8p). La base de dades pot usar un dels dos codis."""
+
     # Build previous context section
     previous_context_str = ""
     if previous_question and previous_response:
@@ -1535,6 +1557,13 @@ def get_sql_summary_prompt(
 
 Resultats:
 {table_str}"""
+
+    if auxiliary_rag_chunk:
+        user_prompt += f"""
+
+Si els resultats de la base de dades són irrellevants per respondre la pregunta, pots utilitzar la informació següent:
+
+{auxiliary_rag_chunk}"""
 
     print(f"DEBUG User prompt: {user_prompt}")
     print(f"DEBUG Developer message: {developer_message}")

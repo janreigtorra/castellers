@@ -94,14 +94,7 @@ async def startup_event():
         print(f"Warning: Failed to warm entity cache: {e}")
         print("Entity cache will be populated on first query (slower)")
     
-    # Pre-load RAG models to avoid delay on first request
-    try:
-        from database_pipeline.rag_index_supabase import preload_rag_model
-        preload_rag_model()
-    except Exception as e:
-        print(f"Warning: Failed to preload RAG model: {e}")
-    
-    # Pre-load multilingual model for castellers_info_chunks
+    # OpenAI / embedding check for castellers_info_chunks RAG (load_castellers_info_chunks)
     try:
         from database_pipeline.load_castellers_info_chunks import preload_multilingual_model
         preload_multilingual_model()

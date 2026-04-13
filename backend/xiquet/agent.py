@@ -3,7 +3,6 @@ import json
 import unicodedata
 from typing import List, Optional
 from langdetect import detect
-from database_pipeline.rag_index_supabase import search_query_supabase
 from database_pipeline.load_castellers_info_chunks import search_castellers_info
 from dotenv import load_dotenv
 from .utility_functions import (
@@ -19,12 +18,21 @@ from .utility_functions import (
     get_all_castell_options,
     get_all_any_options,
     get_all_lloc_options,
-    get_all_diada_options
-
+    get_all_diada_options,
+    castell_code_may_alias_agulla_pilar,
 )
 from .llm_sql_v2 import LLMSQLGeneratorV2 as LLMSQLGenerator, get_sql_summary_prompt, NoResultsFoundError, SQLExecutionError, NO_RESULTS_MESSAGE, SQL_RESULT_LIMIT
 from .llm_function import llm_call, is_guardrail_violation
-from .util_dics import SQL_QUERY_PATTERNS, IS_SQL_QUERY_PATTERNS, COLUMN_MAPPINGS, TITLE_MAPPINGS, GAMMA_CASTELLS, GAMMA_KEYWORDS, MAP_QUERY_CHANGE
+from .util_dics import (
+    SQL_QUERY_PATTERNS,
+    IS_SQL_QUERY_PATTERNS,
+    SQL_QUERY_TYPES_REQUIRING_CONCURS_IN_QUERY,
+    COLUMN_MAPPINGS,
+    TITLE_MAPPINGS,
+    GAMMA_CASTELLS,
+    GAMMA_KEYWORDS,
+    MAP_QUERY_CHANGE,
+)
 from .rag import rerank_rag_results
 from difflib import SequenceMatcher
 from rapidfuzz import fuzz, process
@@ -114,7 +122,7 @@ MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
 # cerebras:qwen-3-32b - High-performance large model
 # cerebras:gpt-oss-120b - Massive 120B parameter model
 
-DEBUG = False
+DEBUG = True
 
 # ---- Xiquet Class ----
 class Xiquet:
@@ -226,6 +234,20 @@ class Xiquet:
             response.llocs = [lloc for lloc in response.llocs if lloc not in llocs_to_remove]
             print(f"[ENTITY_FIX] Removed llocs that are part of colla names: {llocs_to_remove}")
     
+    def _has_sql_grounding_entities(self, response: FirstCallResponseFormat) -> bool:
+        """True if we have any DB-oriented filter the SQL path can use (incl. gamma heuristic)."""
+        return bool(
+            response.colla
+            or response.castells
+            or response.anys
+            or response.llocs
+            or response.diades
+            or response.editions
+            or response.jornades
+            or response.positions
+            or self.gamma
+        )
+
     def _handle_follow_up_detection(self, question: str, response: FirstCallResponseFormat) -> bool:
         if not (self.previous_route == "sql" and self.previous_sql_query_type):
             return False
@@ -823,12 +845,14 @@ class Xiquet:
                 threshold = 0.75
             else:
                 threshold = 0.65
-            # Check if entities exist (either from LLM extraction or pre-selected)
+            # Check if entities exist (LLM extraction, pre-selected chips, or heuristic gamma).
+            # Gamma is set in generate_prompt_decide_route via _detect_gamma but is not in FirstCallResponseFormat.
             has_entities = (
                 response.colla or response.castells or response.anys or response.llocs or response.diades or
-                self.pre_selected_entities.get("colles") or 
-                self.pre_selected_entities.get("castells") or 
-                self.pre_selected_entities.get("anys")
+                self.pre_selected_entities.get("colles") or
+                self.pre_selected_entities.get("castells") or
+                self.pre_selected_entities.get("anys") or
+                bool(self.gamma)
             )
             # Only attempt SQL determination if entities exist
             if has_entities:
@@ -841,6 +865,8 @@ class Xiquet:
                     pre_selected_parts.append(f"anys: {', '.join(self.pre_selected_entities['anys'])}")
                 if self.pre_selected_entities.get("castells"):
                     pre_selected_parts.append(f"castells: {', '.join(self.pre_selected_entities['castells'])}")
+                if self.gamma:
+                    pre_selected_parts.append(f"gamma: {self.gamma}")
                 if pre_selected_parts:
                     enhanced_question = f"{question} ({', '.join(pre_selected_parts)})"
                 
@@ -896,6 +922,14 @@ class Xiquet:
         self.editions = response.editions
         self.jornades = response.jornades
         self.positions = response.positions
+
+        # Phrases like "quines colles ..." fuzzy-match the `colles` SQL pattern but often have no
+        # extracted colles/years/etc.; SQL then misbehaves. Prefer RAG when there is nothing to ground on.
+        if response.tools == "sql" and not self._has_sql_grounding_entities(response):
+            if DEBUG:
+                print("DEBUG ROUTE OVERRIDE: SQL route but no grounded entities -> rag")
+            response.tools = "rag"
+            response.sql_query_type = "custom"
 
         return response
 
@@ -955,6 +989,11 @@ class Xiquet:
                 max_similarity = max(max_similarity, fuzzy_match_score)
             
             scores[query_type] = max_similarity
+        
+        # Concurs: no barrejar amb preguntes narratives (p. ex. història d'una colla) per fuzzy match
+        if "concurs" not in question_lower:
+            for qt in SQL_QUERY_TYPES_REQUIRING_CONCURS_IN_QUERY:
+                scores[qt] = 0.0
         
         # Find the best match
         best_match = max(scores.items(), key=lambda x: x[1])
@@ -1024,14 +1063,13 @@ class Xiquet:
         return self.sql_generator.organize_results(raw_results, sql_query_type, entities)
 
 
-    def handle_rag(self) -> str:
+    def handle_rag(self, final_top_k: int = 3) -> str:
         if DEBUG:
             print(f"DEBUG RAG: Starting handle_rag()")
             print(f"DEBUG RAG: Question: {self.question[:50]}...")
         
         # Configuration
-        INITIAL_K = 350          # Get top K from vector search
-        FINAL_TOP_K = 2         # Pass top K to LLM
+        INITIAL_K = 100          # Vector candidates before rerank (was 350; tune 50–120 vs latency)
         MIN_SIMILARITY = 0.005   # Minimum similarity threshold
         
         try:
@@ -1073,7 +1111,7 @@ class Xiquet:
                 return "No he trobat informació prou rellevant per respondre la teva pregunta."
             
             # Step 4: Take top K results
-            top_results = reranked[:FINAL_TOP_K]
+            top_results = filtered[:final_top_k]
             if DEBUG:
                 print(f"DEBUG RAG: Final top {len(top_results)} results:")
             for i, (doc, score) in enumerate(top_results):
@@ -1096,10 +1134,10 @@ Sempre respons exclusivament en català."""
             rag_developer = """INSTRUCCIONS:
 - Text narratiu en paràgrafs (1-3 paràgrafs màxim)
 - Usa **negreta** per destacar fets clau
-- NO inventes informació que no apareix als documents
-- Si els documents NO contenen informació rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema. Pots reformular la pregunta?" 
-- NO mencions ni facis referència a documents que no siguin rellevants per la pregunta 
-- Només utilitza informació que respongui directament a la pregunta de l'usuari"""
+- NO inventes informació que no apareix en la informació proporcionada
+- Si la Informació de consulta proporcionada no és rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema. Pots reformular la pregunta?" - 
+- NO mencions ni facis referència a informació que no siguin rellevants per la pregunta 
+- Si la informació no és rellevant, no mencionis que et proporcionem informació de la consulta i que no està especificada"""
 
             # Build previous context section for user prompt
             previous_context_str = ""
@@ -1117,10 +1155,10 @@ CONTEXT ANTERIOR DEL MISSATGE ANTERIOR:
             rag_user = f"""{previous_context_str}Pregunta actual:
 {self.question}
 
-Documents:
+Informació de consulta:
 {context}
 
-Respon basant-te en els documents."""
+Respon basant-te en la informació. Si la informació no és suficient per respondre la pregunta, digues que no ho saps - sense mencionar que et passo informació"""
             
             rag_llm_start = datetime.now()
             answer = llm_call(
@@ -1326,6 +1364,68 @@ Respon basant-te en els documents."""
         
         return formatted_tables
 
+    def _count_extracted_entities(self) -> int:
+        n = 0
+        cc = self.colles_castelleres
+        if cc:
+            if isinstance(cc, list):
+                n += sum(1 for x in cc if x and str(x).strip())
+            else:
+                n += sum(1 for x in str(cc).split(",") if x.strip())
+        n += len(self.castells or [])
+        if self.anys:
+            n += sum(1 for x in self.anys if x and str(x).strip())
+        for l in self.llocs or []:
+            if l and str(l).strip():
+                n += 1
+        d = self.diades
+        if d:
+            if isinstance(d, list):
+                n += sum(1 for x in d if x and not _is_entity_placeholder(str(x)))
+            else:
+                n += sum(
+                    1
+                    for x in str(d).split(",")
+                    if x.strip() and not _is_entity_placeholder(x.strip())
+                )
+        n += len([e for e in (self.editions or []) if e])
+        n += len([j for j in (self.jornades or []) if j])
+        n += len(self.positions or [])
+        g = self.gamma
+        if g:
+            if isinstance(g, str) and g.strip():
+                n += 1
+            elif isinstance(g, list):
+                n += sum(1 for x in g if x)
+        return n
+
+    def _fetch_top_rag_chunk_for_sql_hint(self) -> Optional[str]:
+        min_sim = 0.10
+        try:
+            results = search_castellers_info(self.question, k=50)
+        except Exception as e:
+            if DEBUG:
+                print(f"DEBUG SQL: auxiliary RAG fetch failed: {e}")
+            return None
+        if not results:
+            return None
+        entities = {
+            "colla": self.colles_castelleres,
+            "anys": self.anys,
+            "llocs": self.llocs,
+            "castells": self.castells,
+            "diades": self.diades,
+        }
+        reranked = rerank_rag_results(results, entities, self.question)
+        filtered = [(doc, score) for doc, score in reranked if score >= min_sim]
+        pick = filtered[0] if filtered else (reranked[0] if reranked else None)
+        if not pick:
+            return None
+        doc, _ = pick
+        title = doc["meta"].get("title", "") or "Sense títol"
+        text = doc.get("text", "") or ""
+        return f"[{title}]\n{text}"
+
     def handle_sql(self) -> str:
         try:
             # Get the SQL query type
@@ -1344,7 +1444,12 @@ Respon basant-te en els documents."""
                 raw_rows = self.execute_sql_query(sql_query, params)
             except NoResultsFoundError:
                 self.table_data = None
-                return NO_RESULTS_MESSAGE
+                if DEBUG:
+                    print("DEBUG SQL: NoResultsFoundError -> falling back to RAG")
+                if self.response is not None:
+                    self.response.tools = "rag"
+                    self.response.sql_query_type = "custom"
+                return self.handle_rag(final_top_k=2)
             except SQLExecutionError as e:
                 self.table_data = None
                 return e.message
@@ -1393,6 +1498,20 @@ Respon basant-te en els documents."""
                 # Create a nice table structure with proper column titles
                 self.table_data = self._format_table_for_frontend(rows[:SQL_RESULT_LIMIT], sql_query_type)
             
+            castell_ap_notation_hint = False
+            if self.castells:
+                for c in self.castells:
+                    code = getattr(c, "castell_code", None) or ""
+                    if castell_code_may_alias_agulla_pilar(code):
+                        castell_ap_notation_hint = True
+                        break
+
+            auxiliary_rag_chunk = None
+            if self._count_extracted_entities() == 1:
+                auxiliary_rag_chunk = self._fetch_top_rag_chunk_for_sql_hint()
+                if DEBUG and auxiliary_rag_chunk:
+                    print("DEBUG SQL: single-entity query -> appended 1 RAG chunk to summary prompt")
+
             # Use structured prompt with system/developer/user separation (including previous context)
             structured_prompt = get_sql_summary_prompt(
                 sql_query_type, 
@@ -1400,7 +1519,9 @@ Respon basant-te en els documents."""
                 table_str,
                 previous_question=self.previous_question,
                 previous_response=self.previous_response,
-                previous_context_max_chars=PREVIOUS_CONTEXT_MAX_CHARS
+                previous_context_max_chars=PREVIOUS_CONTEXT_MAX_CHARS,
+                castell_ap_notation_hint=castell_ap_notation_hint,
+                auxiliary_rag_chunk=auxiliary_rag_chunk,
             )
 
             try:
@@ -1526,9 +1647,9 @@ if __name__ == "__main__":
             
 #             # Step 2: Get RAG context
 #             rag_search_start = datetime.now()
-#             rag_results = search_query_supabase(self.question, k=3)
+#             rag_results = search_castellers_info(self.question, k=3)
 #             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
-#             print(f"[TIMING] hybrid RAG search_query_supabase(): {rag_search_time:.2f}ms")
+#             print(f"[TIMING] hybrid RAG search_castellers_info(): {rag_search_time:.2f}ms")
             
 #             # Step 3: Prepare SQL context
 #             sql_context = ""

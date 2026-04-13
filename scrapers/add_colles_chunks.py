@@ -1,6 +1,6 @@
 """
 Script to add chunks for each colla from colles_castelleres.json
-to castellers_info_chunks.json
+to data_basic/data_to_embed/castellers_info_chunks.json
 """
 
 import json
@@ -10,7 +10,7 @@ from datetime import datetime
 
 SCRIPT_DIR = Path(__file__).parent
 COLLES_PATH = SCRIPT_DIR / "../backend/data_basic/colles_castelleres.json"
-CHUNKS_PATH = SCRIPT_DIR / "../backend/data_basic/castellers_info_chunks.json"
+CHUNKS_PATH = SCRIPT_DIR / "../backend/data_basic/data_to_embed/castellers_info_chunks.json"
 
 
 def clean_text(text):

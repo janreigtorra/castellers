@@ -104,11 +104,6 @@ def update_colles(colles_file_path: str):
     from database_pipeline.update_database_idempotent import update_colles as _update_colles
     return _update_colles(colles_file_path)
 
-def update_puntuacions(puntuacions_file_path: str):
-    """Update puntuacions data idempotently"""
-    from database_pipeline.update_database_idempotent import update_puntuacions as _update_puntuacions
-    return _update_puntuacions(puntuacions_file_path)
-
 def update_concurs(concurs_ranking_file_path: str, concurs_editions_file_path: str):
     """Update concurs data idempotently"""
     from database_pipeline.update_database_idempotent import update_concurs as _update_concurs
@@ -394,7 +389,6 @@ def main():
     local_files = {
         "colles_castelleres.json": DATA_DIR / "colles_castelleres.json",
         "castellers_data.json": DATA_DIR / "castellers_data.json",
-        "puntuacions.json": DATA_DIR / "puntuacions.json",
         "concurs/concurs_ranking_clean.json": DATA_DIR / "concurs" / "concurs_ranking_clean.json",
         "concurs_de_castells_editions.json": DATA_DIR / "concurs_de_castells_editions.json",
         "castellers_info_basic.txt": DATA_DIR / "castellers_info_basic.txt"
@@ -422,20 +416,17 @@ def main():
         # 1. Update colles first (referenced by other tables)
         update_colles(str(local_files["colles_castelleres.json"]))
         
-        # 2. Update puntuacions (independent)
-        update_puntuacions(str(local_files["puntuacions.json"]))
-        
-        # 3. Update actuacions - NEW EVENTS ONLY (references colles)
+        # 2. Update actuacions - NEW EVENTS ONLY (references colles)
         # Pass FROM_DATE as parameter (or None to use global variable)
         update_actuacions_new_only(str(local_files["castellers_data.json"]), from_date=FROM_DATE)
         
-        # 4. Update concurs data (references colles)
+        # 3. Update concurs data (references colles)
         update_concurs(
             str(local_files["concurs/concurs_ranking_clean.json"]),
             str(local_files["concurs_de_castells_editions.json"])
         )
         
-        # 5. Update general info (independent)
+        # 4. Update general info (independent)
         update_general_info(str(local_files["castellers_info_basic.txt"]))
         
         print("\n✅ Database update completed successfully!")

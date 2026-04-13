@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
 load_castellers_info_chunks.py
-Carrega els chunks de castellers_info_chunks.json a Supabase amb embeddings optimitzats.
+Carrega els chunks des de:
+  - data_basic/data_to_embed/castellers_info_chunks.json
+  - data_basic/data_to_embed/revista_castells_scraper.json
+a la mateixa taula Supabase amb embeddings optimitzats.
 
 Utilitza:
-- OpenAI text-embedding-3-small (512 dimensions) - lightweight, no local model needed
+- OpenAI text-embedding-3-small (dimensions configurables, veure EMBEDDING_DIM)
 - Embeddings combinats: 0.2 * title + 0.8 * text (ponderat)
-- Taula dedicada amb estructura optimitzada per cerca híbrida
+- Per defecte només indexa chunks nous (chunk_id = camp "id" del JSON). Usa --rebuild per recrear la taula i reincrustar-ho tot.
 """
 
+import argparse
 import os
 import json
+import re
+import threading
 import psycopg2
-from typing import List, Dict, Any, Tuple
+from psycopg2 import pool as pg_pool
+from typing import List, Dict, Any, Tuple, Set, Optional
 from openai import OpenAI
 import numpy as np
 from tqdm import tqdm
@@ -52,13 +59,30 @@ def convert_to_pooler_url(database_url: str) -> str:
 
 _raw_database_url = os.getenv("DATABASE_URL")
 DATABASE_URL = convert_to_pooler_url(_raw_database_url) if _raw_database_url else None
+# IVFFlat index is built with lists=100; lower probes = faster search, slightly lower recall (tune via env)
+try:
+    RAG_IVFFLAT_PROBES = max(1, min(100, int(os.getenv("RAG_IVFFLAT_PROBES", "25"))))
+except ValueError:
+    RAG_IVFFLAT_PROBES = 25
+try:
+    RAG_DB_POOL_MIN = max(1, int(os.getenv("RAG_DB_POOL_MIN", "1")))
+    RAG_DB_POOL_MAX = max(RAG_DB_POOL_MIN, int(os.getenv("RAG_DB_POOL_MAX", "8")))
+except ValueError:
+    RAG_DB_POOL_MIN, RAG_DB_POOL_MAX = 1, 8
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI's fast & cheap model
-EMBEDDING_DIM = 512  # Reduced dimensions for faster search
-TITLE_WEIGHT = 0.2
-TEXT_WEIGHT = 0.8
-BATCH_SIZE = 64  # Smaller batches for stability
-JSON_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data_basic", "castellers_info_chunks.json")
+# text-embedding-3-small admet dimensions entre 1 i 1536 (API ``dimensions``)
+EMBEDDING_DIM = 1024
+TITLE_WEIGHT = 0.15
+TEXT_WEIGHT = 0.85
+BATCH_SIZE = 64  # Chunks per DB batch (cada chunk = 2 texts a l'API d'embeddings)
+_DATA_EMBED = os.path.join(
+    os.path.dirname(__file__), "..", "data_basic", "data_to_embed"
+)
+CASTELLERS_CHUNKS_JSON = os.path.join(_DATA_EMBED, "castellers_info_chunks.json")
+REVISTA_CHUNKS_JSON = os.path.join(_DATA_EMBED, "revista_castells_scraper.json")
+# Compatibilitat amb codi antic que només referenciava un fitxer
+JSON_FILE_PATH = CASTELLERS_CHUNKS_JSON
 
 # ---------- OPENAI CLIENT ----------
 _openai_client = None
@@ -147,6 +171,29 @@ def get_supabase_connection():
         raise
 
 
+_rag_search_pool: Optional[pg_pool.ThreadedConnectionPool] = None
+_rag_search_pool_lock = threading.Lock()
+
+
+def _get_rag_search_pool() -> pg_pool.ThreadedConnectionPool:
+    """Lazy pool for RAG vector search only (indexing scripts use get_supabase_connection)."""
+    global _rag_search_pool
+    if _rag_search_pool is not None:
+        return _rag_search_pool
+    with _rag_search_pool_lock:
+        if _rag_search_pool is not None:
+            return _rag_search_pool
+        if not DATABASE_URL:
+            raise ValueError("DATABASE_URL not set in .env file")
+        _rag_search_pool = pg_pool.ThreadedConnectionPool(
+            RAG_DB_POOL_MIN,
+            RAG_DB_POOL_MAX,
+            dsn=DATABASE_URL,
+            connect_timeout=10,
+        )
+        return _rag_search_pool
+
+
 def enable_pgvector(conn):
     """Habilita l'extensió pgvector si no està habilitada"""
     cur = conn.cursor()
@@ -160,101 +207,185 @@ def enable_pgvector(conn):
         cur.close()
 
 
-def create_castellers_info_chunks_table(conn):
-    """
-    Crea la taula dedicada per castellers_info_chunks amb estructura optimitzada.
-    Inclou columnes per metadata i embeddings.
-    """
-    cur = conn.cursor()
-    
-    # Drop existing table if exists (clean slate)
-    cur.execute("DROP TABLE IF EXISTS castellers_info_chunks CASCADE;")
-    print("✓ Dropped existing castellers_info_chunks table (if any)")
-    
-    # Create dedicated table matching JSON structure
-    cur.execute(f"""
+def _parse_vector_dim(format_type: Optional[str]) -> Optional[int]:
+    if not format_type:
+        return None
+    m = re.search(r"vector\((\d+)\)", format_type, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _create_castellers_info_chunks_indexes(cur) -> None:
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cic_combined_embedding
+        ON castellers_info_chunks
+        USING ivfflat (combined_embedding vector_cosine_ops)
+        WITH (lists = 100);
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cic_title_embedding
+        ON castellers_info_chunks
+        USING ivfflat (title_embedding vector_cosine_ops)
+        WITH (lists = 100);
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cic_text_embedding
+        ON castellers_info_chunks
+        USING ivfflat (text_embedding vector_cosine_ops)
+        WITH (lists = 100);
+    """)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_years ON castellers_info_chunks USING GIN (years);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_year_ranges ON castellers_info_chunks USING GIN (year_ranges);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_colles ON castellers_info_chunks USING GIN (colles);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_places ON castellers_info_chunks USING GIN (places);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_keywords ON castellers_info_chunks USING GIN (keywords);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_castells ON castellers_info_chunks USING GIN (castells);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_category ON castellers_info_chunks(category);"
+    )
+
+
+def _create_castellers_info_chunks_table(cur) -> None:
+    cur.execute(
+        f"""
         CREATE TABLE castellers_info_chunks (
-            -- Primary key from JSON
             chunk_id TEXT PRIMARY KEY,
-            
-            -- Core content
             title TEXT NOT NULL,
             text TEXT NOT NULL,
             category TEXT NOT NULL,
-            
-            -- Arrays for filtering (stored as PostgreSQL arrays)
             years INTEGER[],
             year_ranges TEXT[],
             colles TEXT[],
             places TEXT[],
             keywords TEXT[],
             castells TEXT[],
-            
-            -- Embeddings (384 dimensions for multilingual MiniLM)
             title_embedding vector({EMBEDDING_DIM}),
             text_embedding vector({EMBEDDING_DIM}),
             combined_embedding vector({EMBEDDING_DIM}),
-            
-            -- Metadata
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-    """)
-    print(f"✓ Created castellers_info_chunks table with vector({EMBEDDING_DIM})")
-    
-    # Create IVFFlat index for fast vector similarity search
-    # Note: For small datasets (<1000 rows), lists=50 is reasonable
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_cic_combined_embedding 
-        ON castellers_info_chunks 
-        USING ivfflat (combined_embedding vector_cosine_ops) 
-        WITH (lists = 50);
-    """)
-    
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_cic_title_embedding 
-        ON castellers_info_chunks 
-        USING ivfflat (title_embedding vector_cosine_ops) 
-        WITH (lists = 50);
-    """)
-    
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_cic_text_embedding 
-        ON castellers_info_chunks 
-        USING ivfflat (text_embedding vector_cosine_ops) 
-        WITH (lists = 50);
-    """)
-    print("✓ Created IVFFlat indexes for vector search")
-    
-    # GIN indexes for array filtering (hybrid search)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_years ON castellers_info_chunks USING GIN (years);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_year_ranges ON castellers_info_chunks USING GIN (year_ranges);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_colles ON castellers_info_chunks USING GIN (colles);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_places ON castellers_info_chunks USING GIN (places);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_keywords ON castellers_info_chunks USING GIN (keywords);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_castells ON castellers_info_chunks USING GIN (castells);")
-    print("✓ Created GIN indexes for array filtering")
-    
-    # B-tree index for category filtering
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_cic_category ON castellers_info_chunks(category);")
-    print("✓ Created B-tree index for category")
-    
+    """
+    )
+    _create_castellers_info_chunks_indexes(cur)
+    print(f"✓ Created castellers_info_chunks with vector({EMBEDDING_DIM})")
+
+
+def ensure_castellers_info_chunks_table(conn, rebuild: bool) -> None:
+    """
+    Crea la taula si no existeix. Si rebuild=True, fa DROP i torna a crear.
+    Si la taula existeix i la dimensió del vector no coincideix amb EMBEDDING_DIM, llença error (cal --rebuild).
+    """
+    cur = conn.cursor()
+    if rebuild:
+        cur.execute("DROP TABLE IF EXISTS castellers_info_chunks CASCADE;")
+        conn.commit()
+        print("✓ Dropped castellers_info_chunks (--rebuild)")
+
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'castellers_info_chunks'
+        );
+    """
+    )
+    exists = cur.fetchone()[0]
+
+    if not exists:
+        _create_castellers_info_chunks_table(cur)
+        conn.commit()
+        cur.close()
+        return
+
+    cur.execute(
+        """
+        SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+        WHERE c.relname = 'castellers_info_chunks'
+          AND a.attname = 'combined_embedding'
+          AND a.attnum > 0 AND NOT a.attisdropped
+    """
+    )
+    row = cur.fetchone()
+    dim = _parse_vector_dim(row[0] if row else None)
+    if dim is not None and dim != EMBEDDING_DIM:
+        cur.close()
+        raise ValueError(
+            f"La taula usa vector({dim}) però EMBEDDING_DIM={EMBEDDING_DIM}. "
+            "Executa amb --rebuild per eliminar la taula i tornar a generar tots els embeddings."
+        )
+
+    _create_castellers_info_chunks_indexes(cur)
     conn.commit()
     cur.close()
+    print("✓ Taula castellers_info_chunks ja existeix (dimensions OK)")
+
+
+def get_existing_chunk_ids(conn) -> Set[str]:
+    cur = conn.cursor()
+    cur.execute("SELECT chunk_id FROM castellers_info_chunks;")
+    ids = {r[0] for r in cur.fetchall() if r[0]}
+    cur.close()
+    return ids
 
 
 def load_json_chunks(json_path: str) -> List[Dict[str, Any]]:
     """Carrega els chunks del fitxer JSON"""
-    with open(json_path, 'r', encoding='utf-8') as f:
+    with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     chunks = data.get("chunks", [])
     metadata = data.get("metadata", {})
-    
-    print(f"✓ Loaded {len(chunks)} chunks from JSON")
+
+    print(f"✓ Loaded {len(chunks)} chunks from {os.path.basename(json_path)}")
     print(f"  Source: {metadata.get('source', 'unknown')}")
     print(f"  Description: {metadata.get('description', 'N/A')}")
-    
+
     return chunks
+
+
+def load_all_embedding_chunks(
+    castellers_path: str = CASTELLERS_CHUNKS_JSON,
+    revista_path: str = REVISTA_CHUNKS_JSON,
+) -> List[Dict[str, Any]]:
+    """
+    Combina castellers + revista. Ordre: primer castellers, després revista.
+    Els ``id`` han de ser únics; si hi ha duplicat, es conserva el primer.
+    """
+    seen_ids: Set[str] = set()
+    combined: List[Dict[str, Any]] = []
+
+    def ingest(path: str, label: str) -> None:
+        if not os.path.isfile(path):
+            print(f"⚠️  Fitxer absent, s'omet [{label}]: {path}")
+            return
+        for c in load_json_chunks(path):
+            cid = c.get("id")
+            if not cid or not isinstance(cid, str):
+                print(f"⚠️  Chunk sense 'id' vàlid a {label}, s'omet (title={c.get('title', '')[:40]!r})")
+                continue
+            if cid in seen_ids:
+                print(f"⚠️  id duplicat '{cid}' a {label}, es manté el primer")
+                continue
+            seen_ids.add(cid)
+            combined.append(c)
+
+    ingest(castellers_path, "castellers")
+    ingest(revista_path, "revista")
+    print(f"✓ Total chunks únics per indexar (unió): {len(combined)}")
+    return combined
 
 
 def create_weighted_embedding(
@@ -283,60 +414,90 @@ def create_weighted_embedding(
     return title_emb, text_emb, combined_emb
 
 
-def index_chunks_to_supabase(chunks: List[Dict[str, Any]]):
+def _prepare_chunks_for_index(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Només chunks amb id i text no buit."""
+    out: List[Dict[str, Any]] = []
+    for c in chunks:
+        cid = c.get("id")
+        text = (c.get("text") or "").strip()
+        if not cid or not isinstance(cid, str):
+            continue
+        if not text:
+            continue
+        out.append(c)
+    return out
+
+
+def index_chunks_to_supabase(chunks: List[Dict[str, Any]], rebuild: bool = False) -> None:
     """
-    Indexa els chunks a Supabase amb embeddings ponderats using OpenAI.
+    Indexa chunks a Supabase. Per defecte només afegeix ``chunk_id`` encara no presents
+    (idempotent respecte al scraper de revista). Usa rebuild=True per DROP + tot de nou.
     """
-    # Setup connection
     conn = get_supabase_connection()
     enable_pgvector(conn)
-    create_castellers_info_chunks_table(conn)
-    
-    # Verify OpenAI API key
-    print(f"\n📥 Using OpenAI embeddings: {EMBEDDING_MODEL}")
+    ensure_castellers_info_chunks_table(conn, rebuild=rebuild)
+
+    print(f"\n📥 OpenAI embeddings: {EMBEDDING_MODEL} ({EMBEDDING_DIM}d)")
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY not set in .env file")
-    print(f"✓ OpenAI configured (embedding dimension: {EMBEDDING_DIM})")
-    
+
+    prepared = _prepare_chunks_for_index(chunks)
+    if rebuild:
+        to_process = prepared
+        print(f"\n🔄 Mode --rebuild: embedding {len(to_process)} chunks (tots els vàlids).")
+    else:
+        existing = get_existing_chunk_ids(conn)
+        to_process = [c for c in prepared if c["id"] not in existing]
+        skipped = len(prepared) - len(to_process)
+        print(
+            f"\n🔄 Incremental: {skipped} ja a la BD, {len(to_process)} nous a embedding+insert."
+        )
+
+    if not to_process:
+        conn.close()
+        print("✅ Res a fer.")
+        return
+
     cur = conn.cursor()
-    
-    # Process chunks in batches
-    print(f"\n🔄 Processing {len(chunks)} chunks...")
-    
     inserted = 0
     errors = 0
-    chunk_counter = 0  # Use numeric ID to avoid duplicates
-    
-    for i in tqdm(range(0, len(chunks), BATCH_SIZE), desc="Indexing batches"):
-        batch = chunks[i:i+BATCH_SIZE]
-        
-        for chunk in batch:
+
+    for i in tqdm(range(0, len(to_process), BATCH_SIZE), desc="Embedding batches"):
+        batch = to_process[i : i + BATCH_SIZE]
+        flat_inputs: List[str] = []
+        for c in batch:
+            flat_inputs.append(c.get("title") or "")
+            flat_inputs.append((c.get("text") or "").strip())
+
+        try:
+            embs = get_embeddings_batch(flat_inputs)
+        except Exception as e:
+            errors += len(batch)
+            print(f"\n⚠️  Error API embeddings (batch starting {i}): {e}")
+            continue
+
+        for j, chunk in enumerate(batch):
+            title_emb = embs[2 * j]
+            text_emb = embs[2 * j + 1]
+            combined_emb = TITLE_WEIGHT * title_emb + TEXT_WEIGHT * text_emb
+            nrm = np.linalg.norm(combined_emb)
+            if nrm > 0:
+                combined_emb = combined_emb / nrm
+
+            chunk_id = chunk["id"]
+            title = chunk.get("title") or ""
+            text = (chunk.get("text") or "").strip()
+            category = chunk.get("category") or ""
+            years = chunk.get("years", []) or []
+            year_ranges = chunk.get("year_ranges", []) or []
+            colles = chunk.get("colles", []) or []
+            places = chunk.get("places", []) or []
+            keywords = chunk.get("keywords", []) or []
+            castells = chunk.get("castells", []) or []
+
             try:
-                chunk_counter += 1
-                chunk_id = str(chunk_counter)  # Simple numeric ID
-                title = chunk.get("title", "")
-                text = chunk.get("text", "")
-                category = chunk.get("category", "")
-                
-                # Skip empty chunks (but still increment counter)
-                if not text:
-                    continue
-                
-                # Get arrays (use empty list if not present)
-                years = chunk.get("years", []) or []
-                year_ranges = chunk.get("year_ranges", []) or []
-                colles = chunk.get("colles", []) or []
-                places = chunk.get("places", []) or []
-                keywords = chunk.get("keywords", []) or []
-                castells = chunk.get("castells", []) or []
-                
-                # Generate embeddings with OpenAI
-                title_emb, text_emb, combined_emb = create_weighted_embedding(
-                    title, text, TITLE_WEIGHT, TEXT_WEIGHT
-                )
-                
-                # Insert into database (using numeric ID, no conflicts possible)
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO castellers_info_chunks (
                         chunk_id, title, text, category,
                         years, year_ranges, colles, places, keywords, castells,
@@ -346,46 +507,41 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]]):
                         %s, %s, %s, %s, %s, %s,
                         %s, %s, %s
                     )
-                """, (
-                    chunk_id,
-                    title,
-                    text,
-                    category,
-                    years,
-                    year_ranges,
-                    colles,
-                    places,
-                    keywords,
-                    castells,
-                    title_emb.tolist(),
-                    text_emb.tolist(),
-                    combined_emb.tolist()
-                ))
-                
-                inserted += 1
-                
+                    ON CONFLICT (chunk_id) DO NOTHING
+                    """,
+                    (
+                        chunk_id,
+                        title,
+                        text,
+                        category,
+                        years,
+                        year_ranges,
+                        colles,
+                        places,
+                        keywords,
+                        castells,
+                        title_emb.tolist(),
+                        text_emb.tolist(),
+                        combined_emb.tolist(),
+                    ),
+                )
+                if cur.rowcount:
+                    inserted += 1
             except Exception as e:
                 errors += 1
-                print(f"\n⚠️  Error inserting chunk #{chunk_counter} '{title[:30]}...': {e}")
-                continue
-        
-        # Commit each batch
+                print(f"\n⚠️  Error insert '{chunk_id[:48]}...': {e}")
+
         conn.commit()
-    
-    # Verify actual count in database
+
     cur.execute("SELECT COUNT(*) FROM castellers_info_chunks;")
     actual_count = cur.fetchone()[0]
-    
     cur.close()
     conn.close()
-    
-    print(f"\n✅ Indexing complete!")
-    print(f"   Inserted: {inserted} chunks")
+
+    print(f"\n✅ Indexació finalitzada")
+    print(f"   Files noves inserides (aquesta execució): {inserted}")
     print(f"   Errors: {errors}")
-    print(f"   🔍 Verified DB count: {actual_count} rows")
-    
-    if actual_count != inserted:
-        print(f"   ⚠️  MISMATCH! Script counted {inserted} but DB has {actual_count}")
+    print(f"   Files totals a la BD: {actual_count}")
 
 
 def search_castellers_info(
@@ -414,23 +570,24 @@ def search_castellers_info(
     embed_time = (datetime.now() - embed_start).total_seconds() * 1000
     print(f"[TIMING] Query embedding (OpenAI API): {embed_time:.2f}ms", flush=True)
     
-    # Connect to database
-    print(f"[RAG Search] Step 3: Connecting to database...", flush=True)
-    print(f"[RAG Search] DATABASE_URL: {DATABASE_URL[:50] if DATABASE_URL else 'None'}...", flush=True)
+    conn = None
+    cur = None
+    pool_obj = None
     conn_start = datetime.now()
-    conn = get_supabase_connection()
-    conn_time = (datetime.now() - conn_start).total_seconds() * 1000
-    print(f"[RAG Search] Database connected in {conn_time:.2f}ms", flush=True)
-    cur = conn.cursor()
-    
     try:
+        print(f"[RAG Search] Step 3: Acquiring pooled DB connection...", flush=True)
+        pool_obj = _get_rag_search_pool()
+        conn = pool_obj.getconn()
+        conn_time = (datetime.now() - conn_start).total_seconds() * 1000
+        host = urlparse(DATABASE_URL).hostname if DATABASE_URL else "?"
+        print(f"[RAG Search] Pooled connection in {conn_time:.2f}ms ({host})", flush=True)
+        cur = conn.cursor()
+        
         # Format embedding for pgvector
         embedding_str = '[' + ','.join(str(x) for x in q_emb.tolist()) + ']'
         
-        # Set IVFFlat probes to search more clusters for better recall
-        # With 314 chunks and 50 lists, we need high probes to find all relevant results
-        # For small datasets, set probes = lists to get exact results
-        cur.execute("SET ivfflat.probes = 50;")
+        # IVFFlat: lists=100 on index; probes trades speed vs recall (see RAG_IVFFLAT_PROBES)
+        cur.execute(f"SET ivfflat.probes = {RAG_IVFFLAT_PROBES};")
         
         # Execute search query - get all metadata for reranking
         db_start = datetime.now()
@@ -476,10 +633,17 @@ def search_castellers_info(
         
     except Exception as e:
         print(f"Error searching castellers_info_chunks: {e}")
+        if conn is not None and not conn.closed:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return []
     finally:
-        cur.close()
-        conn.close()
+        if cur is not None:
+            cur.close()
+        if conn is not None and pool_obj is not None:
+            pool_obj.putconn(conn)
 
 
 def test_search():
@@ -507,34 +671,54 @@ def test_search():
             print(f"     Text preview: {doc['text'][:100]}...")
 
 
-def main():
-    print("="*60)
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Indexa castellers + revista a castellers_info_chunks (OpenAI embeddings)."
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Elimina la taula castellers_info_chunks i torna a crear-la; re-embedeix tots els chunks dels dos JSON.",
+    )
+    parser.add_argument(
+        "--skip-test-search",
+        action="store_true",
+        help="No executar la cerca de prova al final.",
+    )
+    parser.add_argument(
+        "--castellers-json",
+        default=CASTELLERS_CHUNKS_JSON,
+        help="Ruta al castellers_info_chunks.json",
+    )
+    parser.add_argument(
+        "--revista-json",
+        default=REVISTA_CHUNKS_JSON,
+        help="Ruta al revista_castells_scraper.json",
+    )
+    args = parser.parse_args()
+
+    print("=" * 60)
     print("🏰 Castellers Info Chunks - Embedding Indexer")
-    print("="*60)
-    print(f"\n📊 Configuration:")
+    print("=" * 60)
+    print("\n📊 Configuration:")
     print(f"   Model: {EMBEDDING_MODEL}")
     print(f"   Embedding dimensions: {EMBEDDING_DIM}")
     print(f"   Weights: title={TITLE_WEIGHT}, text={TEXT_WEIGHT}")
-    print(f"   JSON file: {JSON_FILE_PATH}")
-    
+    print(f"   Castellers JSON: {args.castellers_json}")
+    print(f"   Revista JSON: {args.revista_json}")
+
     if not DATABASE_URL:
         print("\n❌ DATABASE_URL not set in .env file")
         return
-    
+
     try:
-        # Load chunks from JSON
-        chunks = load_json_chunks(JSON_FILE_PATH)
-        
-        # Index to Supabase
-        index_chunks_to_supabase(chunks)
-        
-        # Test search
-        test_search()
-        
-        print("\n" + "="*60)
-        print("✅ All done! Table 'castellers_info_chunks' ready for queries.")
-        print("="*60)
-        
+        chunks = load_all_embedding_chunks(args.castellers_json, args.revista_json)
+        index_chunks_to_supabase(chunks, rebuild=args.rebuild)
+        if not args.skip_test_search:
+            test_search()
+        print("\n" + "=" * 60)
+        print("✅ Fet. Taula 'castellers_info_chunks' a punt.")
+        print("=" * 60)
     except Exception as e:
         print(f"\n❌ Error: {e}")
         raise
