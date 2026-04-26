@@ -1364,67 +1364,6 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
         
         return formatted_tables
 
-    def _count_extracted_entities(self) -> int:
-        n = 0
-        cc = self.colles_castelleres
-        if cc:
-            if isinstance(cc, list):
-                n += sum(1 for x in cc if x and str(x).strip())
-            else:
-                n += sum(1 for x in str(cc).split(",") if x.strip())
-        n += len(self.castells or [])
-        if self.anys:
-            n += sum(1 for x in self.anys if x and str(x).strip())
-        for l in self.llocs or []:
-            if l and str(l).strip():
-                n += 1
-        d = self.diades
-        if d:
-            if isinstance(d, list):
-                n += sum(1 for x in d if x and not _is_entity_placeholder(str(x)))
-            else:
-                n += sum(
-                    1
-                    for x in str(d).split(",")
-                    if x.strip() and not _is_entity_placeholder(x.strip())
-                )
-        n += len([e for e in (self.editions or []) if e])
-        n += len([j for j in (self.jornades or []) if j])
-        n += len(self.positions or [])
-        g = self.gamma
-        if g:
-            if isinstance(g, str) and g.strip():
-                n += 1
-            elif isinstance(g, list):
-                n += sum(1 for x in g if x)
-        return n
-
-    def _fetch_top_rag_chunk_for_sql_hint(self) -> Optional[str]:
-        min_sim = 0.10
-        try:
-            results = search_castellers_info(self.question, k=50)
-        except Exception as e:
-            if DEBUG:
-                print(f"DEBUG SQL: auxiliary RAG fetch failed: {e}")
-            return None
-        if not results:
-            return None
-        entities = {
-            "colla": self.colles_castelleres,
-            "anys": self.anys,
-            "llocs": self.llocs,
-            "castells": self.castells,
-            "diades": self.diades,
-        }
-        reranked = rerank_rag_results(results, entities, self.question)
-        filtered = [(doc, score) for doc, score in reranked if score >= min_sim]
-        pick = filtered[0] if filtered else (reranked[0] if reranked else None)
-        if not pick:
-            return None
-        doc, _ = pick
-        title = doc["meta"].get("title", "") or "Sense títol"
-        text = doc.get("text", "") or ""
-        return f"[{title}]\n{text}"
 
     def handle_sql(self) -> str:
         try:
@@ -1506,12 +1445,6 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
                         castell_ap_notation_hint = True
                         break
 
-            auxiliary_rag_chunk = None
-            if self._count_extracted_entities() == 1:
-                auxiliary_rag_chunk = self._fetch_top_rag_chunk_for_sql_hint()
-                if DEBUG and auxiliary_rag_chunk:
-                    print("DEBUG SQL: single-entity query -> appended 1 RAG chunk to summary prompt")
-
             # Use structured prompt with system/developer/user separation (including previous context)
             structured_prompt = get_sql_summary_prompt(
                 sql_query_type, 
@@ -1521,7 +1454,6 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
                 previous_response=self.previous_response,
                 previous_context_max_chars=PREVIOUS_CONTEXT_MAX_CHARS,
                 castell_ap_notation_hint=castell_ap_notation_hint,
-                auxiliary_rag_chunk=auxiliary_rag_chunk,
             )
 
             try:

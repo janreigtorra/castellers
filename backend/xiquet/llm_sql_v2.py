@@ -5,7 +5,7 @@ This module uses a general query to fetch all relevant data, then organizes it
 based on the query type through post-processing.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from dataclasses import dataclass
 import psycopg2
 import os
@@ -1504,7 +1504,6 @@ def get_sql_summary_prompt(
     previous_response: str = None,
     previous_context_max_chars: int = 200,
     castell_ap_notation_hint: bool = False,
-    auxiliary_rag_chunk: Optional[str] = None,
 ) -> StructuredPrompt:
     
     # Query-type specific developer instructions
@@ -1557,13 +1556,6 @@ Els castells **amb agulla** i **amb pilar** són el **mateix** tipus; sovint es 
 
 Resultats:
 {table_str}"""
-
-    if auxiliary_rag_chunk:
-        user_prompt += f"""
-
-Si els resultats de la base de dades són irrellevants per respondre la pregunta, pots utilitzar la informació següent:
-
-{auxiliary_rag_chunk}"""
 
     print(f"DEBUG User prompt: {user_prompt}")
     print(f"DEBUG Developer message: {developer_message}")
