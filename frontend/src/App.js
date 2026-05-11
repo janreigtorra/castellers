@@ -12,6 +12,7 @@ import ContactPage from './components/ContactPage';
 import CollesCastelleres from './components/CollesCastelleres';
 import CollaDetail from './components/CollaDetail';
 import CompararDiades from './components/CompararDiades';
+import AdminPendingQueriesPage from './components/AdminPendingQueriesPage';
 import PilarLoader from './components/PilarLoader';
 import AuthCallback from './components/AuthCallback';
 import { authHelpers } from './supabaseClient';
@@ -39,6 +40,7 @@ function App() {
     if (path === '/contacte') return 'contact';
     if (path === '/colles-castelleres') return 'colles-castelleres';
     if (path === '/comparar-diades') return 'comparar-diades';
+    if (path === '/admin/consultes-usuaris') return 'admin-pending-queries';
     if (path.startsWith('/colles/')) {
       return 'colla-detail';
     }
@@ -67,6 +69,7 @@ function App() {
     else if (page === 'contact') path = '/contacte';
     else if (page === 'colles-castelleres') path = '/colles-castelleres';
     else if (page === 'comparar-diades') path = '/comparar-diades';
+    else if (page === 'admin-pending-queries') path = '/admin/consultes-usuaris';
     else if (page === 'colla-detail' && collaId) {
       path = `/colles/${collaId}`;
       setSelectedCollaId(collaId);
@@ -190,6 +193,9 @@ function App() {
     } else if (currentPage === 'comparar-diades') {
       title = 'Comparar Diades - Xiquet.cat';
       description = 'Compara diades castelleres: resultats, castells i estadístiques entre diferents actuacions.';
+    } else if (currentPage === 'admin-pending-queries') {
+      title = 'Seguiment consultes - Xiquet.cat';
+      description = 'Panell d\'administració per al seguiment de consultes d\'usuaris.';
     }
     document.title = title;
     if (metaDescription) metaDescription.setAttribute('content', description);
@@ -350,6 +356,13 @@ function App() {
             <main className="main-content-with-sessions">
               <CompararDiades 
                 theme={theme} 
+                onBack={() => setCurrentPage('chat')}
+              />
+            </main>
+          ) : currentPage === 'admin-pending-queries' ? (
+            <main className="main-content-with-sessions">
+              <AdminPendingQueriesPage
+                theme={theme}
                 onBack={() => setCurrentPage('chat')}
               />
             </main>

@@ -866,7 +866,7 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
       const immediateEntities = {
         colles: preSelectedEntitiesToSend.colles || [],
         castells: (preSelectedEntitiesToSend.castells || []).map(c => ({ castell_code: c, status: null })),
-        anys: (preSelectedEntitiesToSend.anys || []).map(a => parseInt(a)),
+        anys: (preSelectedEntitiesToSend.anys || []).map((a) => String(a)),
         llocs: [],
         diades: []
       };
@@ -906,8 +906,8 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
             ? (preSelectedEntitiesToSend.castells.map(c => ({ castell_code: c, status: null })))
             : (entities.castells || []),
           anys: preSelectedEntitiesToSend.anys 
-            ? (preSelectedEntitiesToSend.anys.map(a => parseInt(a)))
-            : (entities.anys || []),
+            ? (preSelectedEntitiesToSend.anys.map((a) => String(a)))
+            : (entities.anys || []).map((a) => String(a)),
           llocs: entities.llocs || [],
           diades: entities.diades || [],
           gamma: entities.gamma || null

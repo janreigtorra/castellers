@@ -18,7 +18,7 @@ from collections import defaultdict
 from itertools import groupby
 
 # Limits for SQL queries and LLM context
-SQL_RESULT_LIMIT = 20      # Results shown in frontend table
+SQL_RESULT_LIMIT = 40      # Results shown in frontend table
 LLM_CONTEXT_LIMIT = 10     # Results fed to LLM for summarization
 
 # Placeholder message for no results found
@@ -461,6 +461,7 @@ class LLMSQLGeneratorV2:
             "castell_statistics": self._organize_castell_statistics,
             "year_summary": self._organize_year_summary,
             "colles": self._organize_colles,
+            "punts": self._organize_punts,
             "concurs_ranking": self._organize_concurs_ranking,
             "concurs_history": self._organize_concurs_history,
         }
@@ -818,7 +819,25 @@ class LLMSQLGeneratorV2:
         
         Expected output: castell_name, cops_descarregat, cops_carregat, cops_intent_desmuntat, cops_intent, 
                         primera_data_descarregat, primera_data_carregat, colles_descarregat, colles_carregat, etc.
+
+        Notes:
+        - Les llistes de colles (`primeres_colles_*`) es construeixen agafant les
+          TOP 10 colles MÉS RECENTS (ordenades per la data més recent en què van
+          executar el castell amb aquell estat, descendent), no per ordre alfabètic.
+        - Si a `entities['colla']` només hi ha una colla, no incloem els camps
+          `colles_*` ni `primeres_colles_*` perquè serien sempre la mateixa colla
+          i no aporten informació.
         """
+        # Determinem si l'usuari ha filtrat per una sola colla.
+        colla_entity = entities.get("colla") if entities else None
+        if isinstance(colla_entity, list):
+            colles_filtered = [str(c).strip() for c in colla_entity if c and str(c).strip()]
+        elif isinstance(colla_entity, str):
+            colles_filtered = [s.strip() for s in colla_entity.split(",") if s.strip()]
+        else:
+            colles_filtered = []
+        single_colla_filter = len(colles_filtered) == 1
+
         # Group by castell_name
         groups = defaultdict(lambda: {
             'castell_name': None,
@@ -852,39 +871,47 @@ class LLMSQLGeneratorV2:
             elif status == 'Intent':
                 group['intent'].append(row)
         
+        def parse_date(d):
+            try:
+                day, month, year = d.split('/')
+                return (int(year), int(month), int(day))
+            except Exception:
+                return (0, 0, 0)
+
+        def colla_to_latest_date(rows_list):
+            """Per cada colla, retorna la data més recent en què va executar el castell."""
+            latest = {}
+            for r in rows_list:
+                colla = r.get('colla_name')
+                date = r.get('event_date')
+                if not colla or not date:
+                    continue
+                date_key = parse_date(date)
+                if colla not in latest or date_key > latest[colla][0]:
+                    latest[colla] = (date_key, date)
+            return latest
+
+        def top_recent_colles(latest_map, top_n=10):
+            """Top N colles ordenades per data més recent (DESC)."""
+            if not latest_map:
+                return ''
+            sorted_colles = sorted(latest_map.items(), key=lambda x: x[1][0], reverse=True)
+            top = sorted_colles[:top_n]
+            formatted = ', '.join(colla for colla, _ in top)
+            extra = len(sorted_colles) - top_n
+            if extra > 0:
+                formatted += f", +{extra} més"
+            return formatted
+
         # Convert to results
         results = []
         for castell_name, group in groups.items():
-            def parse_date(d):
-                try:
-                    day, month, year = d.split('/')
-                    return (int(year), int(month), int(day))
-                except:
-                    return (9999, 12, 31)
-            
             # Get first dates per status
             desc_dates = sorted([r['event_date'] for r in group['descarregat'] if r.get('event_date')], key=parse_date)
             carr_dates = sorted([r['event_date'] for r in group['carregat'] if r.get('event_date')], key=parse_date)
             
-            # Get distinct colles per status
-            colles_desc = set(r['colla_name'] for r in group['descarregat'] if r.get('colla_name'))
-            colles_carr = set(r['colla_name'] for r in group['carregat'] if r.get('colla_name'))
-            colles_intent = set(r['colla_name'] for r in group['intent_desmuntat'] + group['intent'] if r.get('colla_name'))
-            
-            # Aggregate colles lists (truncate to 400 chars like SQL SUBSTR)
-            def truncate_colles(colles_set, max_chars=400):
-                colles_list = sorted(colles_set)
-                result = ', '.join(colles_list)
-                if len(result) > max_chars:
-                    # Find last complete colla name that fits
-                    truncated = result[:max_chars]
-                    last_comma = truncated.rfind(',')
-                    if last_comma > 0:
-                        return truncated[:last_comma]
-                    return truncated
-                return result
-            
-            results.append({
+            # Build base record (sense els camps de colles, que afegim després si toca)
+            record = {
                 'castell_name': castell_name,
                 'cops_descarregat': len(group['descarregat']),
                 'cops_carregat': len(group['carregat']),
@@ -892,16 +919,25 @@ class LLMSQLGeneratorV2:
                 'cops_intent': len(group['intent']),
                 'primera_data_descarregat': desc_dates[0] if desc_dates else None,
                 'primera_data_carregat': carr_dates[0] if carr_dates else None,
-                'colles_descarregat': len(colles_desc),
-                'colles_carregat': len(colles_carr),
-                'colles_intentat': len(colles_intent),
-                'total_colles_carregat_o_descarregat': len(colles_desc | colles_carr),
-                'primeres_colles_descarregat': truncate_colles(colles_desc),
-                'primeres_colles_carregat': truncate_colles(colles_carr),
-                'primeres_colles_intentat': truncate_colles(colles_intent),
                 'punts_descarregat': group['punts_descarregat'],
-                'punts_carregat': group['punts_carregat']
-            })
+                'punts_carregat': group['punts_carregat'],
+            }
+
+            if not single_colla_filter:
+                desc_latest = colla_to_latest_date(group['descarregat'])
+                carr_latest = colla_to_latest_date(group['carregat'])
+                intent_latest = colla_to_latest_date(group['intent_desmuntat'] + group['intent'])
+                record.update({
+                    'colles_descarregat': len(desc_latest),
+                    'colles_carregat': len(carr_latest),
+                    'colles_intentat': len(intent_latest),
+                    'total_colles_carregat_o_descarregat': len(set(desc_latest) | set(carr_latest)),
+                    'primeres_colles_descarregat': top_recent_colles(desc_latest),
+                    'primeres_colles_carregat': top_recent_colles(carr_latest),
+                    'primeres_colles_intentat': top_recent_colles(intent_latest),
+                })
+
+            results.append(record)
         
         return results[:SQL_RESULT_LIMIT]
     
@@ -1094,6 +1130,94 @@ class LLMSQLGeneratorV2:
         # Fallback (shouldn't happen)
         return raw_results[:SQL_RESULT_LIMIT]
     
+    def _organize_punts(self, raw_results: List[Dict], entities: Dict) -> List[Dict]:
+        """
+        Organize results for 'punts' query type.
+
+        Two modes depending on entities:
+        - Event/actuació mode: if any of diades/llocs/anys/colla is set, group by
+          (event, colla) and compute total_punts (top 3 castells + top 1 pilar).
+          Output: event_name, event_date, colla_name, event_city, castells_fets, total_punts
+        - Castell mode: aggregate by castell_name to expose punts_descarregat
+          and punts_carregat from puntuacions.
+          Output: castell_name, punts_descarregat, punts_carregat
+        """
+        has_event_filter = bool(
+            entities.get("diades") or entities.get("llocs") or entities.get("anys")
+        )
+        has_colla_filter = bool(entities.get("colla"))
+        has_castell_filter = bool(entities.get("castells") or entities.get("gamma"))
+
+        # Event/actuació view when there is a non-castell filter that scopes the question
+        # to one or more performances (e.g. colla + year, diada, lloc...).
+        use_event_view = has_event_filter or (has_colla_filter and not has_castell_filter)
+
+        if use_event_view:
+            raw_results.sort(
+                key=lambda r: (r['event_id'], r['colla_id'], r.get('tipus', ''), -r.get('punts', 0))
+            )
+
+            aggregated_results = []
+            for (event_id, colla_id), group in groupby(
+                raw_results, key=lambda r: (r['event_id'], r['colla_id'])
+            ):
+                group_list = list(group)
+                if not group_list:
+                    continue
+
+                first_row = group_list[0]
+                castells = [r for r in group_list if r.get('tipus') == 'castell']
+                pilars = [r for r in group_list if r.get('tipus') == 'pilar']
+
+                # Total points: top 3 castells + top 1 pilar (same logic as millor_diada)
+                selected_for_points = castells[:3] + (pilars[:1] if pilars else [])
+                if not selected_for_points:
+                    continue
+
+                total_punts = sum(r.get('punts', 0) for r in selected_for_points)
+
+                all_castells = castells + pilars
+                castells_fets = format_castells_fets(all_castells)
+
+                aggregated_results.append({
+                    'event_name': first_row['event_name'],
+                    'event_date': first_row['event_date'],
+                    'colla_name': first_row['colla_name'],
+                    'event_city': first_row['event_city'],
+                    'castells_fets': castells_fets,
+                    'total_punts': total_punts,
+                })
+
+            aggregated_results.sort(key=lambda x: x['total_punts'], reverse=True)
+            return aggregated_results[:SQL_RESULT_LIMIT]
+
+        # Castell view: aggregate by castell_name to expose its static punctuation
+        castell_groups = {}
+        for row in raw_results:
+            castell_name = row.get('castell_name')
+            if not castell_name:
+                continue
+
+            if castell_name not in castell_groups:
+                castell_groups[castell_name] = {
+                    'castell_name': castell_name,
+                    'punts_descarregat': row.get('punts_descarregat') or 0,
+                    'punts_carregat': row.get('punts_carregat') or 0,
+                }
+            else:
+                # Keep the highest non-zero value seen (data should be consistent per castell)
+                group = castell_groups[castell_name]
+                pd = row.get('punts_descarregat')
+                pc = row.get('punts_carregat')
+                if pd and (not group['punts_descarregat'] or pd > group['punts_descarregat']):
+                    group['punts_descarregat'] = pd
+                if pc and (not group['punts_carregat'] or pc > group['punts_carregat']):
+                    group['punts_carregat'] = pc
+
+        results = list(castell_groups.values())
+        results.sort(key=lambda r: -float(r.get('punts_descarregat') or 0))
+        return results[:SQL_RESULT_LIMIT]
+
     def _organize_concurs_ranking(self, raw_results: List[Dict], entities: Dict) -> List[Dict]:
         """
         Organize results for 'concurs_ranking' query type.
@@ -1447,14 +1571,15 @@ class LLMSQLGeneratorV2:
             "millor_diada": 5,
             "millor_castell": 10,
             "castell_historia": 15,
-            "castells_list": 20,
+            "castells_list": 30,
             "location_actuations": 8,
             "first_castell": 15,
             "castell_statistics": 5,
             "year_summary": 15,
             "concurs_ranking": 24,
             "concurs_history": 24,
-            "colles": 20,
+            "colles": 40,
+            "punts": 10,
             "custom": LLM_CONTEXT_LIMIT,
         }
         return limits.get(sql_query_type, LLM_CONTEXT_LIMIT)
@@ -1492,7 +1617,7 @@ PROHIBIT (MAI escriure això a la resposta):
 FORMAT:
 - Màxim 1-2 paràgrafs curts
 - **negreta** només per destacar noms i dates
-- Estil telegràfic i objectiu
+- Estil dens i objectiu, però llegible (no bullets ni telegrama fet de retalls apil·lats)
 - Respon de manera breu i directa"""
 
 
@@ -1504,6 +1629,7 @@ def get_sql_summary_prompt(
     previous_response: str = None,
     previous_context_max_chars: int = 200,
     castell_ap_notation_hint: bool = False,
+    results_context: str = None,
 ) -> StructuredPrompt:
     
     # Query-type specific developer instructions
@@ -1524,6 +1650,25 @@ def get_sql_summary_prompt(
         "concurs_ranking": f"""{SHARED_DEVELOPER_RULES}""",
         "concurs_history": f"""{SHARED_DEVELOPER_RULES}""",
         "colles": f"""{SHARED_DEVELOPER_RULES}""",
+
+        # IMPORTANT: per a 'punts' la pregunta de l'usuari és sobre punts/puntuació,
+        # per tant SÍ que cal mencionar el valor numèric (sobreescrivim la regla de
+        # SHARED_DEVELOPER_RULES que normalment ho prohibeix).
+        "punts": """INSTRUCCIONS ESTRICTES (OBLIGATÒRIES):
+
+PROHIBIT (MAI escriure això a la resposta):
+- Taules
+- Llistes amb guions o punts
+- Referencia a Pde4
+- Notes finals o comentaris addicionals
+- Donar opinions o valoracions personals
+- Farciment, valoracions finals o conclusions innecesaries (res de "reeixida", "destacada", "impressionant", etc.)
+
+FORMAT:
+- Màxim 1-2 paràgrafs curts
+- **negreta** només per destacar noms i dates
+- Estil telegràfic i objectiu
+- Respon de manera breu i directa""",
     }
     
     # Get developer message for this query type, or use default
@@ -1532,7 +1677,7 @@ def get_sql_summary_prompt(
     if castell_ap_notation_hint:
         developer_message += """
 
-NOTACIÓ a/p (OBLIGATORI si aplica als resultats o a la pregunta):
+NOTACIÓ (pel teu coneixament intern, no ho mencionis a la resposta):
 Els castells **amb agulla** i **amb pilar** són el **mateix** tipus; sovint es noten amb sufix **a** (ex. 3d8a) o **p** (ex. 3de8p). La base de dades pot usar un dels dos codis."""
 
     # Build previous context section
@@ -1550,12 +1695,16 @@ Els castells **amb agulla** i **amb pilar** són el **mateix** tipus; sovint es 
 
 """
     
+    results_context_block = ""
+    if results_context and str(results_context).strip():
+        results_context_block = f"{results_context.strip()}\n\n"
+
     # User prompt with the actual question and data
     user_prompt = f"""{previous_context_str}Pregunta actual:
 {question}
 
 Resultats:
-{table_str}"""
+{results_context_block}{table_str}"""
 
     print(f"DEBUG User prompt: {user_prompt}")
     print(f"DEBUG Developer message: {developer_message}")

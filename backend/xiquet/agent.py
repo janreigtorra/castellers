@@ -20,6 +20,10 @@ from .utility_functions import (
     get_all_lloc_options,
     get_all_diada_options,
     castell_code_may_alias_agulla_pilar,
+    is_placeholder_diada_name,
+    expand_anys_for_sql_query,
+    is_valid_any_entity_token,
+    normalize_any_display_token,
 )
 from .llm_sql_v2 import LLMSQLGeneratorV2 as LLMSQLGenerator, get_sql_summary_prompt, NoResultsFoundError, SQLExecutionError, NO_RESULTS_MESSAGE, SQL_RESULT_LIMIT
 from .llm_function import llm_call, is_guardrail_violation
@@ -32,6 +36,7 @@ from .util_dics import (
     GAMMA_CASTELLS,
     GAMMA_KEYWORDS,
     MAP_QUERY_CHANGE,
+    sql_results_description_for_query_type,
 )
 from .rag import rerank_rag_results
 from difflib import SequenceMatcher
@@ -104,7 +109,8 @@ load_dotenv()
 
 MODEL_NAME = "sambanova:gpt-oss-120b" 
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
-MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct"
+MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct" #"sambanova:gpt-oss-120b"
+MODEL_NAME_RESPONSE_RAG = "sambanova:Meta-Llama-3.3-70B-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:llama3-8b"
 
@@ -248,6 +254,29 @@ class Xiquet:
             or self.gamma
         )
 
+    def _count_distinct_entity_field_groups(self, response: FirstCallResponseFormat) -> int:
+        """Count how many entity dimensions are non-empty (for indirect RAG→hybrid)."""
+        n = 0
+        if response.colla:
+            n += 1
+        if response.castells:
+            n += 1
+        if response.anys:
+            n += 1
+        if response.llocs:
+            n += 1
+        if response.diades:
+            n += 1
+        if response.editions:
+            n += 1
+        if response.jornades:
+            n += 1
+        if response.positions:
+            n += 1
+        if self.gamma:
+            n += 1
+        return n
+
     def _handle_follow_up_detection(self, question: str, response: FirstCallResponseFormat) -> bool:
         if not (self.previous_route == "sql" and self.previous_sql_query_type):
             return False
@@ -379,9 +408,17 @@ class Xiquet:
         if self.previous_entities.get("diades") and not self.pre_selected_entities.get("diades"):
             current_diades = to_list(self.diades)
             for diada in self.previous_entities["diades"]:
-                if not _is_entity_placeholder(diada) and diada not in current_diades:
+                if (
+                    not _is_entity_placeholder(diada)
+                    and not is_placeholder_diada_name(diada)
+                    and diada not in current_diades
+                ):
                     current_diades.append(diada)
-            current_diades = [d for d in current_diades if not _is_entity_placeholder(d)]
+            current_diades = [
+                d
+                for d in current_diades
+                if not _is_entity_placeholder(d) and not is_placeholder_diada_name(d)
+            ]
             self.diades = list_to_str(current_diades)
 
         # Enrich gamma (string, comma-separated)
@@ -452,6 +489,10 @@ class Xiquet:
 
     def _validate_response_entities(self, response: FirstCallResponseFormat) -> Optional[FirstCallResponseFormat]:
 
+        # Router must never choose hybrid; if the model emits it, treat as RAG.
+        if response.tools == "hybrid":
+            response = response.model_copy(update={"tools": "rag"})
+
         # Validate tool
         if response.tools not in ["direct", "rag", "sql"]:
             return FirstCallResponseFormat(
@@ -467,7 +508,7 @@ class Xiquet:
         
         # If response.tools is "sql" or "hybrid", validate sql_query_type
         if response.tools in ["sql", "hybrid"]:
-            if response.sql_query_type not in ["millor_diada", "millor_castell", "castell_historia", "castells_list", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "colles", "custom"]:
+            if response.sql_query_type not in ["millor_diada", "millor_castell", "castell_historia", "castells_list", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "colles", "punts", "custom"]:
                 response.sql_query_type = "custom"
 
         validation_start = datetime.now()
@@ -528,13 +569,19 @@ class Xiquet:
                     print(f"Warning: Status {castell.status} no és vàlid per castell {castell.castell_code}")
                     castell.status = None
 
-        # Validate any (only if not empty)
+        # Validate any (only if not empty); allow single-year DB tokens and closed ranges
         if response.anys:
             valid_anys = get_all_any_options()
-            for yr in response.anys:
-                if yr not in valid_anys:
-                    print(f"Error: Any {yr} no és vàlid")
-                    response.anys.remove(yr)
+            kept_anys: list[str] = []
+            for yr in list(response.anys):
+                token = str(yr).strip()
+                if not token:
+                    continue
+                if is_valid_any_entity_token(token, valid_anys):
+                    kept_anys.append(normalize_any_display_token(token))
+                else:
+                    print(f"Error: Any {token} no és vàlid")
+            response.anys = kept_anys
 
         # Validate lloc (only if not empty)
         if response.llocs:
@@ -546,9 +593,51 @@ class Xiquet:
 
         # Validate diada (only if not empty); also drop LLM placeholders like "?"
         if response.diades:
-            response.diades = [d for d in response.diades if not _is_entity_placeholder(d)]
+            response.diades = [
+                d
+                for d in response.diades
+                if not _is_entity_placeholder(d) and not is_placeholder_diada_name(d)
+            ]
             valid_diades = get_all_diada_options()
-            response.diades = [d for d in response.diades if d in valid_diades]
+            if not valid_diades:
+                response.diades = []
+            else:
+                normalized_diada_to_original = {
+                    normalize_accents(d).lower(): d for d in valid_diades
+                }
+                for i, diada in enumerate(list(response.diades)):
+                    if diada in valid_diades:
+                        continue
+                    diada_str = str(diada).strip()
+                    normalized_diada = normalize_accents(diada_str).lower()
+                    if normalized_diada in normalized_diada_to_original:
+                        matched = normalized_diada_to_original[normalized_diada]
+                        print(f"[Accent Match] Diada '{diada}' -> '{matched}'")
+                        response.diades[i] = matched
+                    else:
+                        fuzzy_matches = process.extractOne(
+                            diada_str,
+                            valid_diades,
+                            scorer=fuzz.token_set_ratio,
+                            score_cutoff=90,
+                        )
+                        if fuzzy_matches:
+                            matched = fuzzy_matches[0]
+                            print(
+                                f"[Fuzzy Match] Diada '{diada}' -> '{matched}' (score: {fuzzy_matches[1]})"
+                            )
+                            response.diades[i] = matched
+                        else:
+                            print(f"Error: Diada {diada} no és vàlida")
+                            response.diades[i] = None
+                response.diades = [d for d in response.diades if d is not None]
+                seen_diades: set[str] = set()
+                deduped: list[str] = []
+                for d in response.diades:
+                    if d not in seen_diades:
+                        seen_diades.add(d)
+                        deduped.append(d)
+                response.diades = deduped
         validation_time = (datetime.now() - validation_start).total_seconds() * 1000
         if DEBUG:
             print(f"DEBUG ENTITY VALIDATION TIME: {validation_time:.2f}ms")
@@ -671,15 +760,15 @@ class Xiquet:
         # Handle pre-selected anys
         if self.pre_selected_entities.get("anys"):
             entities_section += f"""
-        - **Any/s:** L'usuari ha seleccionat prèviament: {', '.join(self.pre_selected_entities['anys'])}. NO cal que l'extreguis de la pregunta.
+        - **Any/s:** L'usuari ha seleccionat prèviament: {', '.join(str(a) for a in self.pre_selected_entities['anys'])}. NO cal que l'extreguis de la pregunta.
         \n"""
         elif self.anys:
             entities_section += f"""
-        - **Any/s:** Any concret d'una actuació o d'una referència temporal (per exemple, "2024", "2025", etc.)  
+        - **Any/s:** Any concret o període temporal (per exemple, "2024", "2025", etc.). Per un període, un sol element en format `AAAA-AAAA` (p. ex. `2010-2026` o `2010-actualitat` resolt a `2010-2026`).
         \n"""
         else:
-            entities_section += f"""
-        - **Any/s:** No extreguis cap any.  
+            entities_section += f"""  
+        - **Any/s:** Si es fa referència a un període temporal, extreu un sol rang tancat `AAAA-AAAA` (p. ex. `2010-2026` o `2010-actualitat`); si no, deixa `anys` buit.
         \n"""
 
         
@@ -695,7 +784,11 @@ class Xiquet:
             if isinstance(self.diades, str)
             else (list(self.diades) if self.diades else [])
         )
-        _diades_clean = [d for d in _diades_list if not _is_entity_placeholder(d)]
+        _diades_clean = [
+            d
+            for d in _diades_list
+            if not _is_entity_placeholder(d) and not is_placeholder_diada_name(d)
+        ]
         if _diades_clean:
             entities_section += f"""
         - **Diada/es:** Nom de la/les diada/es o jornada/es castellera.  
@@ -726,7 +819,7 @@ class Xiquet:
         if self.pre_selected_entities.get("colles"):
             pre_selected_parts.append(f"colles: {', '.join(self.pre_selected_entities['colles'])}")
         if self.pre_selected_entities.get("anys"):
-            pre_selected_parts.append(f"anys: {', '.join(self.pre_selected_entities['anys'])}")
+            pre_selected_parts.append(f"anys: {', '.join(str(a) for a in self.pre_selected_entities['anys'])}")
         if self.pre_selected_entities.get("castells"):
             pre_selected_parts.append(f"castells: {', '.join(self.pre_selected_entities['castells'])}")
         
@@ -887,7 +980,7 @@ class Xiquet:
             # This handles follow-up questions like "I els Minyons?" after asking about Vilafranca
             if response.sql_query_type == "custom" and self.previous_sql_query_type:
                 valid_types = ["millor_diada", "millor_castell", "castell_historia", "castells_list", "location_actuations", 
-                              "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "colles"]
+                              "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "colles", "punts"]
                 if self.previous_sql_query_type in valid_types:
                     if DEBUG:
                         print(f"DEBUG SQL TYPE INHERIT: Inheriting '{self.previous_sql_query_type}' from previous question (current was 'custom')")
@@ -939,7 +1032,11 @@ class Xiquet:
         
         # Calculate similarity scores for each query type
         scores = {}
-        for query_type, patterns in query_patterns.items():
+        for query_type, spec in query_patterns.items():
+            if isinstance(spec, dict):
+                patterns = spec.get("patterns") or []
+            else:
+                patterns = spec or []
             max_similarity = 0
             best_pattern = None
             
@@ -1019,12 +1116,25 @@ class Xiquet:
     def handle_direct(self) -> str:
         return self.response.direct_response
 
+    def _anys_tokens_list(self) -> List[str]:
+        v = self.anys
+        if not v:
+            return []
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if x is not None and str(x).strip()]
+        return [s.strip() for s in str(v).split(",") if s.strip()]
+
+    def _anys_for_sql_list(self) -> List[str]:
+        tokens = self._anys_tokens_list()
+        expanded = expand_anys_for_sql_query(tokens)
+        return expanded if expanded else tokens
+
     def create_sql_query(self) -> tuple[str, dict]:
         # Build entities dictionary
         entities = {
             "colla": self.colles_castelleres,
             "castells": self.castells,
-            "anys": self.anys,
+            "anys": self._anys_for_sql_list(),
             "llocs": self.llocs,
             "diades": self.diades,
             "editions": self.editions,
@@ -1052,7 +1162,7 @@ class Xiquet:
         entities = {
             "colla": self.colles_castelleres,
             "castells": self.castells,
-            "anys": self.anys,
+            "anys": self._anys_for_sql_list(),
             "llocs": self.llocs,
             "diades": self.diades,
             "editions": self.editions,
@@ -1063,70 +1173,75 @@ class Xiquet:
         return self.sql_generator.organize_results(raw_results, sql_query_type, entities)
 
 
-    def handle_rag(self, final_top_k: int = 3) -> str:
-        if DEBUG:
-            print(f"DEBUG RAG: Starting handle_rag()")
-            print(f"DEBUG RAG: Question: {self.question[:50]}...")
-        
-        # Configuration
-        INITIAL_K = 100          # Vector candidates before rerank (was 350; tune 50–120 vs latency)
-        MIN_SIMILARITY = 0.005   # Minimum similarity threshold
-        
+    def _retrieve_rag_context(self, final_top_k: int) -> tuple[Optional[str], Optional[str]]:
+        """
+        Shared RAG retrieval + rerank + filter. Returns (context_string, error_key).
+        error_key is 'no_results', 'below_threshold', or None on success.
+        """
+        INITIAL_K = 100
+        MIN_SIMILARITY = 0.005
         try:
-            # Step 1: Semantic search on castellers_info_chunks
             if DEBUG:
-                print(f"DEBUG RAG: Step 1: Calling search_castellers_info(k={INITIAL_K})...")
+                print(f"DEBUG RAG: Calling search_castellers_info(k={INITIAL_K})...")
             rag_search_start = datetime.now()
             results = search_castellers_info(self.question, k=INITIAL_K)
             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
             if DEBUG:
                 print(f"DEBUG RAG: RAG search: {rag_search_time:.2f}ms ({len(results)} results)")
-            
+
             if not results:
-                return "No he trobat informació rellevant per respondre la teva pregunta."
-            
-            # Step 2: Rerank FIRST (boost colles, keywords, etc.) BEFORE filtering
-            # This ensures documents mentioning the exact colla get boosted before threshold check
+                return None, "no_results"
+
             entities = {
                 "colla": self.colles_castelleres,
-                "anys": self.anys,
+                "anys": self._anys_for_sql_list(),
                 "llocs": self.llocs,
                 "castells": self.castells,
                 "diades": self.diades
             }
-            
             rerank_start = datetime.now()
             reranked = rerank_rag_results(results, entities, self.question)
             rerank_time = (datetime.now() - rerank_start).total_seconds() * 1000
             if DEBUG:
                 print(f"DEBUG RERANKING TIME: {rerank_time:.2f}ms")
-            
-            # Step 3: Filter by minimum similarity AFTER boosting
-            # Documents with low embedding score but high entity match can now pass
+
             filtered = [(doc, score) for doc, score in reranked if score >= MIN_SIMILARITY]
             if DEBUG:
                 print(f"DEBUG RAG: Filtered after boost: {len(reranked)} -> {len(filtered)} (threshold: {MIN_SIMILARITY})")
-            
+
             if not filtered:
-                return "No he trobat informació prou rellevant per respondre la teva pregunta."
-            
-            # Step 4: Take top K results
+                return None, "below_threshold"
+
             top_results = filtered[:final_top_k]
             if DEBUG:
                 print(f"DEBUG RAG: Final top {len(top_results)} results:")
-            for i, (doc, score) in enumerate(top_results):
-                if DEBUG:
+                for i, (doc, score) in enumerate(top_results):
                     print(f"DEBUG RAG: {i+1}. [{score:.3f}] {doc['meta'].get('title', 'No title')}")
-            
-            # Step 5: Build context for LLM
+
             context_parts = []
             for i, (doc_info, score) in enumerate(top_results, 1):
                 title = doc_info["meta"].get("title", "")
                 text = doc_info.get("text", "")
                 context_parts.append(f"[Document {i}: {title}]\n{text}")
-            
-            context = "\n\n".join(context_parts)
-            
+            return "\n\n".join(context_parts), None
+        except Exception as e:
+            print(f"[RAG] Error in _retrieve_rag_context: {e}")
+            return None, "no_results"
+
+    def handle_rag(self, final_top_k: int = 3) -> str:
+        if DEBUG:
+            print(f"DEBUG RAG: Starting handle_rag()")
+            print(f"DEBUG RAG: Question: {self.question[:50]}...")
+
+        try:
+            context, err = self._retrieve_rag_context(final_top_k)
+            if err == "no_results":
+                return "No he trobat informació rellevant per respondre la teva pregunta."
+            if err == "below_threshold":
+                return "No he trobat informació prou rellevant per respondre la teva pregunta."
+            if context is None:
+                return "No he trobat informació rellevant per respondre la teva pregunta."
+
             # Step 6: Generate answer with LLM
             rag_system = """Ets un expert casteller amb criteri tècnic i rigor històric.
 Sempre respons exclusivament en català."""
@@ -1163,7 +1278,7 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
             rag_llm_start = datetime.now()
             answer = llm_call(
                 prompt=rag_user,
-                model=MODEL_NAME_RESPONSE,
+                model=MODEL_NAME_RESPONSE_RAG,
                 system_message=rag_system,
                 developer_message=rag_developer
             )
@@ -1181,6 +1296,113 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
         except Exception as e:
             print(f"[RAG] Error: {e}")
             return f"Error en la cerca semàntica: {e}"
+
+    def handle_hybrid_rag_sql(self, rag_top_k: int) -> str:
+        """
+        Indirect hybrid: chosen when the router said RAG but several entity dimensions are filled.
+        Combines a small RAG context with SQL custom table data for the final answer.
+        """
+        if DEBUG:
+            print(f"DEBUG HYBRID: rag_top_k={rag_top_k}, entity_groups={self._count_distinct_entity_field_groups(self.response)}")
+
+        rag_context, rag_err = self._retrieve_rag_context(rag_top_k)
+        if rag_err == "no_results":
+            rag_block = "No hi ha fragments de documents rellevants de la cerca."
+        elif rag_err == "below_threshold":
+            rag_block = "No hi ha fragments de documents que superin el llindar de rellevància."
+        else:
+            rag_block = rag_context or ""
+
+        saved_sql_type = getattr(self.response, "sql_query_type", "custom")
+        self.response.sql_query_type = "custom"
+        table_str = "columns=[]\nrows=[]"
+        self.table_data = None
+        try:
+            sql_gen_start = datetime.now()
+            sql_query, params = self.create_sql_query()
+            if DEBUG:
+                print(f"DEBUG HYBRID: create_sql_query(): {(datetime.now() - sql_gen_start).total_seconds() * 1000:.2f}ms")
+            sql_exec_start = datetime.now()
+            try:
+                raw_rows = self.execute_sql_query(sql_query, params)
+            except NoResultsFoundError:
+                raw_rows = []
+            sql_exec_time = (datetime.now() - sql_exec_start).total_seconds() * 1000
+            if DEBUG:
+                print(f"DEBUG HYBRID: execute_sql_query(): {sql_exec_time:.2f}ms")
+
+            rows = self.organize_sql_results(raw_rows, "custom") if raw_rows else []
+            llm_context_limit = self.sql_generator.get_llm_context_limit("custom")
+
+            if rows and "_table_type" in rows[0]:
+                top_results_for_llm = [r for r in rows if r.get("_table_type") == "top_results"]
+                top_results_for_llm = [
+                    {k: v for k, v in r.items() if k not in ["_table_type", "_is_aggregation"]}
+                    for r in top_results_for_llm
+                ]
+                if top_results_for_llm:
+                    table_str = self._format_results_for_llm(top_results_for_llm, max_rows=llm_context_limit)
+                self.table_data = self._format_custom_tables_for_frontend(rows)
+            elif rows:
+                table_str = self._format_results_for_llm(rows, max_rows=llm_context_limit)
+                self.table_data = self._format_table_for_frontend(rows[:SQL_RESULT_LIMIT], "custom")
+        except SQLExecutionError as e:
+            self.table_data = None
+            table_str = f"(No s'han pogut obtenir dades SQL: {e.message})"
+        except Exception as e:
+            self.table_data = None
+            print(f"[HYBRID] Error running SQL: {e}")
+            table_str = "(Error en la consulta SQL.)"
+        finally:
+            self.response.sql_query_type = saved_sql_type
+
+        previous_context_str = ""
+        if self.previous_question and self.previous_response:
+            truncated_resp = self.previous_response[:PREVIOUS_CONTEXT_MAX_CHARS]
+            if len(self.previous_response) > PREVIOUS_CONTEXT_MAX_CHARS:
+                truncated_resp += "..."
+            previous_context_str = f"""CONTEXT ANTERIOR DEL MISSATGE ANTERIOR:
+- Pregunta: "{self.previous_question[:150]}"
+- Resposta: "{truncated_resp}"
+
+"""
+
+        hybrid_system = """Ets un expert casteller amb criteri tècnic i rigor històric.
+Sempre respons exclusivament en català."""
+
+        hybrid_developer = """INSTRUCCIONS:
+- Utilitza qualsevol informació rellevant de les dades estructurades (base de dades) i/o dels fragments de documents.
+- No inventis fets que no apareguin en el context proporcionat.
+- Si una font no aporta res útil, ignora-la sense comentar-ho.
+- Text narratiu en 1–3 paràgrafs; **negreta** només per fets clau (pocs)."""
+
+        hybrid_user = f"""{previous_context_str}Pregunta actual:
+{self.question}
+
+### Dades estructurades (consulta SQL, tipus custom)
+{table_str}
+
+### Fragments de documents (cerca semàntica)
+{rag_block}
+
+Respon de forma clara utilitzant qualsevol part del context anterior que sigui pertinent."""
+
+        try:
+            llm_start = datetime.now()
+            answer = llm_call(
+                prompt=hybrid_user,
+                model=MODEL_NAME_RESPONSE_RAG,
+                system_message=hybrid_system,
+                developer_message=hybrid_developer,
+            )
+            if DEBUG:
+                print(f"DEBUG HYBRID: LLM: {(datetime.now() - llm_start).total_seconds() * 1000:.2f}ms")
+            answer = sanitize_llm_response(answer)
+        except Exception as e:
+            return f"No he pogut generar la resposta combinada: {e}"
+
+        self.response = self.response.model_copy(update={"tools": "hybrid", "sql_query_type": "custom"})
+        return f"{answer}\n\n*Fonts: Base de dades i documents castellers*"
 
     def _format_results_for_llm(self, rows: list, max_rows: int = None) -> str:
 
@@ -1240,6 +1462,7 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
             'concurs_history': ['any', 'jornada', 'colles_participants', 'colla_guanyadora', 'punts_guanyador', 'castells_r1_descarregats', 'castells_r2_descarregats', 'castells_r3_descarregats', 'castells_r4_descarregats', 'castells_r5_descarregats'],
             'year_summary': ['gamma_filtrada', 'colla_name', 'num_actuacions', 'num_castells', 'castells_descarregats', 'castells_carregats', 'castells_intent_desmuntat', 'castells_intent'],
             'colles': ['colla_name', 'diada', 'lloc', 'any', 'castells_fets', 'castell_name', 'cops_descarregat', 'cops_carregat', 'cops_intent', 'cops_intent_desmuntat', 'primera_data_descarregat', 'primera_data_carregat', 'primera_data'],
+            'punts': ['castell_name', 'punts_descarregat', 'punts_carregat', 'event_name', 'event_date', 'colla_name', 'event_city', 'castells_fets', 'total_punts'],
         }
         # ============================================================
         
@@ -1446,6 +1669,7 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
                         break
 
             # Use structured prompt with system/developer/user separation (including previous context)
+            results_context = sql_results_description_for_query_type(sql_query_type)
             structured_prompt = get_sql_summary_prompt(
                 sql_query_type, 
                 self.question, 
@@ -1454,6 +1678,7 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
                 previous_response=self.previous_response,
                 previous_context_max_chars=PREVIOUS_CONTEXT_MAX_CHARS,
                 castell_ap_notation_hint=castell_ap_notation_hint,
+                results_context=results_context,
             )
 
             try:
@@ -1484,6 +1709,143 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
             return "No he pogut analitzar la pregunta. Torna-ho a intentar amb una pregunta diferent."
 
 
+    def _fallback_to_sql_custom_if_no_info(self, current_response: str) -> Optional[str]:
+        """
+        If the current response contains "No tinc informació sobre aquest tema"
+        and we are in a follow-up (we have previous entities), do a fallback
+        to SQL custom merging current entities with previous ones.
+
+        Per-type override rule: current entities win; for types missing in current,
+        we inherit from the previous question.
+
+        If after merging there are no entities at all, do nothing (returns None).
+        Returns the new response string if the fallback was executed, else None.
+        """
+        if not current_response or "No tinc informació sobre aquest tema" not in current_response:
+            return None
+
+        if not self.previous_entities or not self.response:
+            return None
+
+        def to_list_str(value) -> list:
+            if not value:
+                return []
+            if isinstance(value, list):
+                return [str(x).strip() for x in value if x is not None and str(x).strip()]
+            if isinstance(value, str):
+                return [s.strip() for s in value.split(",") if s.strip()]
+            return [str(value)]
+
+        # Current entities (already on self.* after decide_route)
+        current_colla = to_list_str(self.colles_castelleres)
+        current_castells = list(self.castells) if self.castells else []
+        current_anys = to_list_str(self.anys)
+        current_llocs = to_list_str(self.llocs)
+        current_diades = to_list_str(self.diades)
+        current_gamma = self.gamma
+
+        # Previous entities (from previous_entities dict, possibly different shapes)
+        prev_colla = to_list_str(self.previous_entities.get("colles"))
+        prev_anys = to_list_str(self.previous_entities.get("anys"))
+        prev_llocs = to_list_str(self.previous_entities.get("llocs"))
+        prev_diades = to_list_str(self.previous_entities.get("diades"))
+        prev_gamma = self.previous_entities.get("gamma")
+        if isinstance(prev_gamma, list):
+            prev_gamma = prev_gamma[0] if prev_gamma else None
+
+        prev_castells_raw = self.previous_entities.get("castells") or []
+        prev_castells: list = []
+        for c in prev_castells_raw:
+            if isinstance(c, Castell):
+                prev_castells.append(c)
+            elif isinstance(c, dict):
+                code = c.get("castell_code") or c.get("code")
+                if code:
+                    prev_castells.append(Castell(castell_code=code, status=c.get("status")))
+            elif isinstance(c, str):
+                prev_castells.append(Castell(castell_code=c, status=None))
+
+        # Per-type override: current wins; otherwise inherit from previous
+        merged_colla = current_colla if current_colla else prev_colla
+        merged_castells = current_castells if current_castells else prev_castells
+        merged_anys = current_anys if current_anys else prev_anys
+        merged_llocs = current_llocs if current_llocs else prev_llocs
+        merged_diades = current_diades if current_diades else prev_diades
+        merged_gamma = current_gamma if current_gamma else prev_gamma
+
+        # If after merging there are no entities at all, do nothing
+        has_any_entity = bool(
+            merged_colla or merged_castells or merged_anys
+            or merged_llocs or merged_diades or merged_gamma
+        )
+        if not has_any_entity:
+            return None
+
+        if DEBUG:
+            print("[FALLBACK NO-INFO] Triggered after follow-up with 'No tinc informació' response")
+            print(f"  merged colla={merged_colla}")
+            print(f"  merged castells={[getattr(c, 'castell_code', c) for c in merged_castells]}")
+            print(f"  merged anys={merged_anys}")
+            print(f"  merged llocs={merged_llocs}")
+            print(f"  merged diades={merged_diades}")
+            print(f"  merged gamma={merged_gamma}")
+
+        # Apply merged entities to self.* (lists, as expected by handle_sql)
+        self.colles_castelleres = merged_colla
+        self.castells = merged_castells
+        self.anys = merged_anys
+        self.llocs = merged_llocs
+        self.diades = merged_diades
+        self.gamma = merged_gamma
+
+        # Force SQL route with custom query type and update response object
+        self.response.tools = "sql"
+        self.response.sql_query_type = "custom"
+        self.response.colla = merged_colla
+        self.response.castells = merged_castells
+        self.response.anys = merged_anys
+        self.response.llocs = merged_llocs
+        self.response.diades = merged_diades
+
+        # Re-run SQL handler with merged entities
+        return self.handle_sql()
+
+    def run_handlers_after_route(self) -> str:
+        """
+        Execute the handler for the current `self.response` (after decide_route) and apply
+        the no-info SQL fallback. Used by process_question and by main's two-phase chat path.
+        """
+        response = self.response
+        if not response:
+            return "No estic segur de com respondre això, però ho estic intentant!"
+
+        handler_start = datetime.now()
+        if response.tools == "direct":
+            result = self.handle_direct()
+        elif response.tools == "rag":
+            n_entity_groups = self._count_distinct_entity_field_groups(response)
+            if n_entity_groups == 2:
+                result = self.handle_hybrid_rag_sql(rag_top_k=2)
+            elif n_entity_groups >= 3:
+                result = self.handle_hybrid_rag_sql(rag_top_k=1)
+            else:
+                result = self.handle_rag()
+        elif response.tools == "sql":
+            result = self.handle_sql()
+        else:
+            result = "No estic segur de com respondre això, però ho estic intentant!"
+
+        handler_time = (datetime.now() - handler_start).total_seconds() * 1000
+        if DEBUG:
+            eff = getattr(response, "tools", "")
+            print(f"DEBUG HANDLER: route={eff} -> {handler_time:.2f}ms (final tools={getattr(self.response, 'tools', eff)})")
+
+        fallback_result = self._fallback_to_sql_custom_if_no_info(result)
+        if fallback_result is not None:
+            result = fallback_result
+
+        return result
+
     def process_question(self, question: str) -> str:
 
         # Step 1: Decide route
@@ -1497,25 +1859,8 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
         self.response = response
         if DEBUG:
             print(f"DEBUG ROUTER: Ruta escollida: {response.tools}, {response.sql_query_type}")
-        
-        # Step 2: Handle based on route
-        handler_start = datetime.now()
-        if response.tools == "direct":
-            result = self.handle_direct()
-        elif response.tools == "rag":
-            result = self.handle_rag()
-        elif response.tools == "sql":
-            result = self.handle_sql()
-        # elif response.tools == "hybrid":
-        #     result = self.handle_hybrid()
-        else:
-            result = "No estic segur de com respondre això, però ho estic intentant!"
-        
-        handler_time = (datetime.now() - handler_start).total_seconds() * 1000
-        if DEBUG:
-            print(f"DEBUG HANDLER: handle_{response.tools}(): {handler_time:.2f}ms")
-        
-        return result
+
+        return self.run_handlers_after_route()
 
 # ---- Agent principal ----
 def xiquet_agent(

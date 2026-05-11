@@ -469,6 +469,11 @@ export const apiService = {
     return response.data.last_event_date
   },
 
+  async getAdminPendingQueries() {
+    const response = await api.get('/api/admin/pending-queries')
+    return response.data
+  },
+
   async scrapeEvents(dateStart, dateEnd) {
     const response = await api.post('/api/admin/scrape-events', {
       date_start: dateStart,

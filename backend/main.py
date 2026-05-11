@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Union
 import uuid
 from datetime import datetime, timezone
@@ -143,11 +143,21 @@ class CastellEntity(BaseModel):
 class IdentifiedEntities(BaseModel):
     colles: List[str] = []
     castells: List[CastellEntity] = []
-    anys: List[int] = []
+    # Single years ("2023") or one closed range per chip ("2006-2026"); strings for API/UI.
+    anys: List[str] = []
     llocs: List[str] = []
     diades: List[str] = []
     gamma: Optional[str] = None  # Gamma de castells (e.g., "castells de 6", "gamma extra")
     sql_query_type: Optional[str] = None  # Tipus de consulta SQL (millor_castell, etc.)
+
+    @field_validator("anys", mode="before")
+    @classmethod
+    def _coerce_anys_to_str(cls, v):
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return [str(v)]
+        return [str(x) for x in v]
 
 class ChatResponse(BaseModel):
     id: str
@@ -809,20 +819,43 @@ def _process_message_background(
         # ============================================================
         response_start = datetime.now()
         
-        if route_response.tools == "direct":
-            response_text = xiquet.handle_direct()
-        elif route_response.tools == "rag":
-            response_text = xiquet.handle_rag()
-        elif route_response.tools == "sql":
-            response_text = xiquet.handle_sql()
-        elif route_response.tools == "hybrid":
-            response_text = xiquet.handle_hybrid()
-        else:
-            response_text = "No estic segur de com respondre això, però ho estic intentant!"
-        
+        response_text = xiquet.run_handlers_after_route()
+
+        # Indirect hybrid upgrades route from RAG → hybrid after Phase 2; keep DB in sync for history/UI.
+        final_route = getattr(xiquet.response, "tools", None) if xiquet.response else route_response.tools
+        if final_route == "hybrid":
+            entities_dict["sql_query_type"] = getattr(xiquet.response, "sql_query_type", "custom")
+            try:
+                chat_db.update_pending_entities(message_id, "hybrid", entities_dict)
+            except Exception as e:
+                print(f"[BACKGROUND] WARNING: Could not update route to hybrid on pending: {e}")
+        elif final_route == "sql" and route_response.tools == "rag":
+            # no-info fallback switched RAG → SQL
+            castells_list_after = []
+            if xiquet.castells:
+                for c in xiquet.castells:
+                    if hasattr(c, 'castell_code'):
+                        castells_list_after.append({
+                            "castell_code": c.castell_code,
+                            "status": c.status if hasattr(c, 'status') else None,
+                        })
+            entities_dict_after = {
+                "colles": xiquet.colles_castelleres or [],
+                "castells": castells_list_after,
+                "anys": xiquet.anys or [],
+                "llocs": xiquet.llocs or [],
+                "diades": xiquet.diades or [],
+                "gamma": xiquet.gamma,
+                "sql_query_type": getattr(xiquet.response, "sql_query_type", None),
+            }
+            try:
+                chat_db.update_pending_entities(message_id, "sql", entities_dict_after)
+            except Exception as e:
+                print(f"[BACKGROUND] WARNING: Could not update entities after fallback: {e}")
+
         response_time = (datetime.now() - response_start).total_seconds() * 1000
         total_time = int((datetime.now() - start_time).total_seconds() * 1000)
-        print(f"[BACKGROUND] Phase 2 - handle_{route_response.tools}(): {response_time:.2f}ms")
+        print(f"[BACKGROUND] Phase 2 - handlers (initial route {route_response.tools}, final {final_route}): {response_time:.2f}ms")
         print(f"[BACKGROUND] Total time: {total_time}ms")
         
         # Get table data if available
@@ -1565,7 +1598,24 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error checking admin status: {str(e)}")
 
+# Own user id excluded from admin query tracking (admin's own chats)
+ADMIN_QUERY_TRACKING_EXCLUDE_USER_ID = "ed93ad60-eddc-49b1-a718-70ad8cb7ba09"
+
 # Admin endpoints
+@app.get("/api/admin/pending-queries")
+async def admin_pending_queries(admin_user: dict = Depends(require_admin)):
+    """Pending_messages rows from other users (newest first), for support / QA tracking."""
+    try:
+        items = chat_db.list_pending_messages_admin_tracking(
+            ADMIN_QUERY_TRACKING_EXCLUDE_USER_ID
+        )
+        return {"items": items}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error loading pending queries: {str(e)}",
+        )
+
 @app.get("/api/admin/last-event-date")
 async def get_last_event_date(
     admin_user: dict = Depends(require_admin)

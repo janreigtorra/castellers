@@ -1536,7 +1536,8 @@ def get_sql_summary_prompt(
     table_str: str,
     previous_question: str = None,
     previous_response: str = None,
-    previous_context_max_chars: int = 200
+    previous_context_max_chars: int = 200,
+    results_context: str = None,
 ) -> StructuredPrompt:
     """
     Retorna un prompt estructurat amb system, developer i user components.
@@ -1597,12 +1598,16 @@ def get_sql_summary_prompt(
 
 """
     
+    results_context_block = ""
+    if results_context and str(results_context).strip():
+        results_context_block = f"{results_context.strip()}\n\n"
+
     # User prompt with the actual question and data
     user_prompt = f"""{previous_context_str}Pregunta actual:
 {question}
 
 Resultats:
-{table_str}"""
+{results_context_block}{table_str}"""
 
     return StructuredPrompt(
         system_message=BASE_SYSTEM_MESSAGE,

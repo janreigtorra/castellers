@@ -1,5 +1,6 @@
-
+from datetime import datetime
 # ---- Guardrails: paraules NO relacionades amb castells ----
+
 
 # ---- Gamma de Castells (ranges/tiers) ----
 # Uses castell_code from puntuacions table
@@ -58,110 +59,185 @@ GAMMA_KEYWORDS = {
 # }
 
 IS_SQL_QUERY_PATTERNS = {
-    # Millor diada/actuació - retorna: data, lloc, colla, castells fets, punts totals
-    # Exemples: "Quina va ser la millor diada dels Castellers de Vilafranca l'any 2023?"
-    "millor_diada": [
-        "millor diada", "millor actuació", "millors diades", "millors actuacions",
-        "quina diada", "quina actuació", "quina va ser la millor",
-        "millor jornada", "actuació més destacada",
-    ],
-    
-    # Millor castell - retorna: castell més difícil/puntuació, data, lloc, colla, estat
-    # Exemples: "Quin és el millor castell que han descarregat els Minyons de Terrassa?"
-    "millor_castell": [
-        "millor castell", "millor torre", "millor construcció",
-        "castell més difícil", "castell més gran",
-        "màxim castell", "millor estructura", 'Millor castell'
-    ],
-    
-    # Quines colles han fet X - retorna: colla, diada, lloc, any, castells fets
-    "colles": [
-        "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
-        "quines colles han fet", "quines colles van participar", "quines colles han participat",
-        "quines colles van actuar", "quines colles han actuat","primera colla", "primeres colles",
-        "quina colla", "quines colles", "quines són les colles", "quines son les colles", 
-    ],
-    
-    # Castell història - retorna: comptatge de vegades, dates (primera/última), llocs, estat
-    # Exemples: "Quants 3d10fm han descarregat els Capgrossos de Mataró?"
-    "castell_historia": [
-        "quantes vegades han", "quants cops han", "han aconseguit mai", 
-        "quants 3d", "quants 2d", "quants 4d", "quants 5d", "quants pilars de", "quantes torres de",
-        "quants castells de 7", "quants castells de 8", "quants castells de 9", "quants castells de gamma extra",
-        "quants castells de 6", "quants castells", 
-    ],
-    
-    # Castells list - retorna: llista de castells fets (filtrable per colla, diada, any, lloc, status, gamma)
-    # Exemples: "Quins castells van fer els Castellers de Vilafranca a la Mercè l'any 2023?"
-    "castells_list": [
-        "quins castells van fer", "quins castells han fet",
-        "quins castells s'han descarregat", "quins castells s'han carregat",
-        "quins castells van descarregar", "quins castells van carregar", "quins castells van intentar",
-        "llista de castells", "castells que van fer", "castells que han fet",
-    ],
-    
-    # Location actuations - retorna: any/lloc de millor actuació, castells fets
-    # Exemples: "A quin any van fer la millor actuació a la Mercè?"
-    "location_actuations": [
-        "quin any s'ha fet", "quin lloc s'ha fet", "a quina plaça s'ha fet",
-        "quina ciutat s'ha fet", "quina població s'ha fet", "a quin lloc han fet",
-        "quin any van fer", "a quin lloc van fer"
-    ],
-    
-    # First castell - retorna: data, lloc, colla del primer cop que es va fer un castell
-    # Exemples: "Quan va ser el primer 2d9fm de la Colla Vella dels Xiquets de Valls?"
-    "first_castell": [
-        "quin va ser el primer", "quin va ser la primera vegada", "quin és el primer",
-        "quan van fer el primer", "quan es va fer per primer cop", "primer castell de",
-        "quan van descarregar per primer cop", "quan van aconseguir per primera vegada", 
-        "quan van intentar per primera vegada", "quan van carregar per primer cop",
-        "quin any s'ha fet el primer", "quin any s'ha descarregat el primer",
-        "on es va fer el primer", "a quin lloc van fer el primer",
-        "quan van fer per primera vegada", "quan van fer el primer castell", "primer 3d", 
-        "primer 4d", "primer 5d",  "primer 7d",  "primer castell", "primer torre", "primer pd", "primer pilar"
-    ],
-    
-    # Castell statistics - retorna: estadístiques completes (descarregats, carregats, colles, dates)
-    # Exemples: "Dóna'm les estadístiques del 4d9fa"
-    "castell_statistics": [
-        "estadístiques de", "estadístiques del castell",
-        "ranking de colles", "qui ha fet més",
-        "colles que han aconseguit",
-    ],
-    
-    # Year summary - retorna: resum d'actuacions, castells, resultats d'un any/temporada
-    # Exemples: "Com va anar la temporada 2023 dels Castellers de Barcelona?"
-    "year_summary": [
-        "resum de la temporada", "resum temporada", "resum any",
-        "balanç de temporada", "balanç de la temporada",
-        "com va ser la temporada", "com va ser l'any",
-        "com va anar la temporada", "com va anar l'any",
-        "què van fer a la temporada", "què van fer l'any",
-        "resultats de la temporada",
-    ],
-    
-    # Concurs ranking - retorna: classificació, posicions, punts, rondes d'un concurs
-    # Només s'usa si la pregunta conté "concurs"/"concursos" (filtre a agent._determine_sql_query_type).
-    # Exemples: "Quina classificació va tenir la Colla Vella al concurs de Tarragona 2024?"
-    "concurs_ranking": [
-        "classificació concurs", "classificació al concurs",
-        "quina posició", "en quina posició",
-        "guanyador concurs", "guanyadora concurs",
-        "resultats del concurs", "puntuació al concurs", "rondes del concurs"
-    ],
-    
-    # Concurs history - retorna: història de concursos (guanyadors, edicions, estadístiques)
-    # Només s'usa si la pregunta conté "concurs"/"concursos" (filtre a agent._determine_sql_query_type).
-    # Exemples: "Quants cops han guanyat el concurs els Castellers de Vilafranca?"
-    "concurs_history": [
-        "història del concurs", "història del concurs de castells",
-        "concursos celebrats", "història dels concursos",
-        "explica el concurs de l'any", "explica el concurs de la temporada",
-        "concurs de l'edició", "com va anar el concurs de",
-    ]
+    # Millor diada/actuació — Exemples: "Quina va ser la millor diada dels Castellers de Vilafranca l'any 2023?"
+    "millor_diada": {
+        "patterns": [
+            "millor diada", "millor actuació", "millors diades", "millors actuacions",
+            "quina diada", "quina actuació", "quina va ser la millor",
+            "millor jornada", "actuació més destacada",
+        ],
+        "description": (
+            "Aquesta taula resumeix actuacions o diades (cada fila sol ser una actuació concreta per colla/data). "
+            "Les columnes acostumen a incloure data, lloc o plaça, nom de la colla, castells intentats o completats. "
+        ),
+    },
+    # Millor castell — Exemples: "Quin és el millor castell que han descarregat els Minyons de Terrassa?"
+    "millor_castell": {
+        "patterns": [
+            "millor castell", "millor torre", "millor construcció",
+            "castell més difícil", "castell més gran",
+            "màxim castell", "millor estructura", "Millor castell",
+        ],
+        "description": (
+            "Cada fila representa un castell (o un intent) amb el seu context: sovint codi o nom del castell, colla, data, lloc, estat (descarregat, carregat, intent…) "
+            "i dades de dificultat o puntuació tècnica. Sovint el primer registre és el de màxima exigència segons la consulta. "
+        ),
+    },
+    # Quines colles han fet X
+    "colles": {
+        "patterns": [
+            "quines colles han descarregat", "quines colles han carregat", "quines colles han intentat",
+            "quines colles han fet", "quines colles van participar", "quines colles han participat",
+            "quines colles van actuar", "quines colles han actuat", "primera colla", "primeres colles",
+            "quina colla", "quines colles", "quines són les colles", "quines son les colles",
+        ],
+        "description": (
+            "Aquestes files llisten colles que compleixen el criteri de la pregunta. "
+            "Cada columna identifica la colla i, si escau, la diada, l'any, el lloc o els castells associats. "
+        ),
+    },
+    # Castell història — Exemples: "Quants 3d10fm han descarregat els Capgrossos de Mataró?"
+    "castell_historia": {
+        "patterns": [
+            "quantes vegades han", "quants cops han", "han aconseguit mai",
+            "quants 3d", "quants 2d", "quants 4d", "quants 5d", "quants pilars de", "quantes torres de",
+            "quants castells de 7", "quants castells de 8", "quants castells de 9", "quants castells de gamma extra",
+            "quants castells de 6", "quants castells",
+        ],
+        "description": (
+            "Resum de comptatges o cronologia d'un castell concret (o família de castells): nombre de vegades, dates de primera o darrera vegada, "
+            "llocs o colles implicades segons les columnes. "
+        ),
+    },
+    # Castells list — Exemples: "Quins castells van fer els Castellers de Vilafranca a la Mercè l'any 2023?"
+    "castells_list": {
+        "patterns": [
+            "quins castells",
+            "llista de castells", "castells que van fer", "castells que han fet",
+        ],
+        "description": (
+            "Llista de castells executats en actuacions filtrades o colles (cada fila sol ser un castell en una diada concreta o una colla). "
+            "Les columnes indiquen el castell, l'estat (descarregat, carregat, intent…), la colla, la data i el lloc segons el que retorni la consulta. "
+        ),
+    },
+    # Location actuations — Exemples: "A quin any van fer la millor actuació a la Mercè?"
+    "location_actuations": {
+        "patterns": [
+            "quin any s'ha fet", "quin lloc s'ha fet", "a quina plaça s'ha fet",
+            "quina ciutat s'ha fet", "quina població s'ha fet", "a quin lloc han fet",
+            "quin any van fer", "a quin lloc van fer",
+        ],
+        "description": (
+            "Dades per respondre on o quan va passar una actuació o conjunt d'actuacions (any, ciutat, plaça, nom de diada…). "
+            "Cada fila acostuma a vincular un esdeveniment o colla amb un lloc o moment temporal. "
+        ),
+    },
+    # First castell — Exemples: "Quan va ser el primer 2d9fm de la Colla Vella dels Xiquets de Valls?"
+    "first_castell": {
+        "patterns": [
+            "quin va ser el primer", "quin va ser la primera vegada", "quin és el primer",
+            "quan van fer el primer", "quan es va fer per primer cop", "primer castell de",
+            "quan van descarregar per primer cop", "quan van aconseguir per primera vegada",
+            "quan van intentar per primera vegada", "quan van carregar per primer cop",
+            "quin any s'ha fet el primer", "quin any s'ha descarregat el primer",
+            "on es va fer el primer", "a quin lloc van fer el primer",
+            "quan van fer per primera vegada", "quan van fer el primer castell", "primer 3d",
+            "primer 4d", "primer 5d", "primer 7d", "primer castell", "primer torre", "primer pd", "primer pilar",
+        ],
+        "description": (
+            "Registre(s) del primer cop que es documenta un castell (o estat concret) per la colla o context preguntat: "
+            "data, lloc, colla i castell segons les columnes. "
+        ),
+    },
+    # Castell statistics — Exemples: "Dóna'm les estadístiques del 4d9fa"
+    "castell_statistics": {
+        "patterns": [
+            "estadístiques de", "estadístiques del castell",
+            "ranking de colles", "qui ha fet més",
+            "colles que han aconseguit",
+        ],
+        "description": (
+            "Estadístiques agregades sobre un castell o conjunt de castells: recomptes per colla, per estat, períodes o comparatives. "
+        ),
+    },
+    # Year summary — Exemples: "Com va anar la temporada 2023 dels Castellers de Barcelona?"
+    "year_summary": {
+        "patterns": [
+            "resum de la temporada", "resum temporada", "resum any",
+            "balanç de temporada", "balanç de la temporada",
+            "com va ser la temporada", "com va ser l'any",
+            "com va anar la temporada", "com va anar l'any",
+            "què van fer a la temporada", "què van fer l'any",
+            "resultats de la temporada",
+        ],
+        "description": (
+            "Resum anual o per temporada d'una colla (o grup): nombre d'actuacions, castells totals, desglossament per estat dels castells (descarregat, carregat, intent desmuntat, intent…), "
+            "segons les columnes retornades. "
+        ),
+    },
+    # Punts / puntuació — Exemples: "Quants punts val un 4d10fm?", "Quina puntuació va fer Vilafranca a la Mercè 2024?"
+    "punts": {
+        "patterns": [
+            "quants punts", "quina puntuació",
+        ],
+        "description": (
+            "Valors numèrics de puntuació castellera (per castell, estat o actuació) segons el barem de la taula de puntuacions del concurs de castells. "
+        ),
+    },
+    # Concurs ranking — Només si la pregunta conté "concurs"/"concursos"
+    "concurs_ranking": {
+        "patterns": [
+            "classificació concurs", "classificació al concurs",
+            "quina posició", "en quina posició",
+            "guanyador concurs", "guanyadora concurs",
+            "resultats del concurs", "puntuació al concurs", "rondes del concurs",
+        ],
+        "description": (
+            "Dades de classificació o resultats d'una edició de concurs: posicions, colles, punts de concurs, rondes o mànigues segons les columnes. "
+            "Cada fila sol ser una colla en una classificació o una fase del concurs. "
+        ),
+    },
+    # Concurs history
+    "concurs_history": {
+        "patterns": [
+            "història del concurs", "història del concurs de castells",
+            "concursos celebrats", "història dels concursos",
+            "explica el concurs de l'any", "explica el concurs de la temporada",
+            "concurs de l'edició", "com va anar el concurs de",
+        ],
+        "description": (
+            "Informació històrica o resum d'edicions de concursos: anys, guanyadors, participants, dades acumulades o esdeveniments. "
+            "Les files poden ser edicions completes o estadístiques per colla; segueix els noms de columna per saber si parles d'una edició, d'una colla o d'un recompte al llarg del temps."
+        ),
+    },
 }
 
 SQL_QUERY_PATTERNS = IS_SQL_QUERY_PATTERNS
+
+# Text per quan el tipus SQL és "custom" o desconegut (no hi ha entrada a IS_SQL_QUERY_PATTERNS).
+SQL_CUSTOM_RESULTS_DESCRIPTION = (
+    "Aquestes files són el resultat directe de la consulta a la base de dades: cada fila és un registre i cada columna és un camp retornat amb el significat que indica el seu nom. "
+)
+
+
+def sql_query_patterns_for_type(query_patterns: dict, query_type: str) -> list:
+    """Retorna la llista de patrons de text per a un tipus de consulta SQL."""
+    spec = query_patterns.get(query_type)
+    if isinstance(spec, dict):
+        return spec.get("patterns") or []
+    if isinstance(spec, list):
+        return spec
+    return []
+
+
+def sql_results_description_for_query_type(query_type: str) -> str:
+    """Frase curta per al prompt de la LLM: què representen les files/columnes d'aquest tipus de consulta."""
+    spec = IS_SQL_QUERY_PATTERNS.get(query_type)
+    if isinstance(spec, dict):
+        desc = spec.get("description")
+        if desc:
+            return desc
+    return SQL_CUSTOM_RESULTS_DESCRIPTION
 
 # Tipus SQL que només han de competir al matching si la pregunta menciona concurs (evita confondre amb RAG, p. ex. "història dels castellers").
 SQL_QUERY_TYPES_REQUIRING_CONCURS_IN_QUERY = frozenset({"concurs_ranking", "concurs_history"})
@@ -310,9 +386,60 @@ TITLE_MAPPINGS = {
     'concurs_history': 'Historial Concurs',
     'year_summary': 'Resum Anual',
     'colles': 'Colles',
+    'punts': 'Puntuacions',
     'custom': 'Resultats',
 }
 
+# Sobrenoms / fragments detectats a la pregunta -> nom com a opció de colla (veure get_colles_castelleres_subset).
+PRIORITY_COLLES_KEYWORDS = {
+    'colla vella': 'Colla Vella dels Xiquets de Valls',
+    'colla joves': 'Colla Joves Xiquets de Valls',
+    'joves de valls': 'Colla Joves Xiquets de Valls',
+    'jove de tarragona': 'Colla Jove Xiquets de Tarragona',
+    'els verds': 'Castellers de Vilafranca (aka "els verds")',
+    'colla jove': 'Colla Jove Xiquets de Tarragona',
+    'ganapies de la uab': 'Ganàpies de la UAB',
+    'ganapies': 'Ganàpies de la UAB',
+    'arreplegats de la zona universitària': 'Arreplegats de la Zona Universitària',
+    'arreplegats de la zu': 'Arreplegats de la Zona Universitària',
+    'arreplegats': 'Arreplegats de la Zona Universitària',
+    'azu': 'Arreplegats de la Zona Universitària',
+    'llunatics': 'Llunàtics UPC Vilanova',
+    'minyons': 'Minyons de Terrassa',
+
+    # --- NOVES COLLES ---
+
+    # Universitàries / joves
+    'bergants': 'Bergants del Campus de Terrassa',
+    'passerells': 'Passerells del TCM',
+    'penjats': 'Penjats del Campus de Manresa',
+    'descargolats': 'Descargolats de l’EEBE',
+    'grillats': 'Grillats del Campus del Baix Llobregat',
+    'marracos': 'Marracos de la Universitat de Lleida',
+    'trempats': 'Trempats de la UPF',
+    'engrescats': 'Engrescats de URL',
+
+    # Tradicionals / locals
+    'capgrossos': 'Capgrossos de Mataró',
+    'bordegassos': 'Bordegassos de Vilanova',
+    'marrecs': 'Marrecs de Salt',
+    'moixiganguers': 'Moixiganguers d’Igualada',
+    'nens': 'Nens del Vendrell',
+    'xics': 'Xics de Granollers',
+    'xicots': 'Xicots de Vilafranca',
+    'borinots': 'Castellers de Sants',
+    'saballuts': 'Castellers de Sabadell',
+    'castellers de vilanova': 'Bordegassos de Vilanova',
+    'bordegassos': 'Bordegassos de Vilanova',
+    'torraires': 'Torraires de Montblanc',
+    'castellers de montblanc': 'Torraires de Montblanc',
+    'sagals': 'Sagals d\'Osona',
+    'salats': 'Salats de Súria',
+    'margeners': 'Margeners de Guissona',
+    'manyacs': 'Manyacs de Parets',
+    'tirallongues': 'Tirallongues de Manresa',
+    'xoriguers': 'Xoriguers de la UdG',
+}
 
 MAP_QUERY_CHANGE = {
 "3d9fp":"3d9af", 
@@ -404,6 +531,9 @@ MAP_QUERY_CHANGE = {
 "super caterdal": "5d9f", 
 "tres de deu amb folre i manilles": "3d10fm",
 "tres de deu": "3d10fm",
+"3 de deu amb folre i manilles": "3d10fm",
+"3 de deu": "3d10fm",
+"3 de nou amb folre": "3d9f",
 "tres de nou amb folre": "3d9f",
 "tres de nou sense folre": "3d9",
 "tres de nou net": "3d9",
@@ -469,6 +599,14 @@ MAP_QUERY_CHANGE = {
 "cinc de set": "5d7",
 "set de set": "7d7",
 "nou de set": "9d7",
+
+"aquest any": "l'any " + str(datetime.now().year),
+"aquesta temporada": "l'any " + str(datetime.now().year),
+"d'aquesta temporada": "l'any " + str(datetime.now().year),
+"enguany": "l'any " + str(datetime.now().year),
+"l'any passat": "l'any " + str(datetime.now().year - 1),
+"temporada passada": "l'any " + str(datetime.now().year - 1),
+"temporada pasada": "l'any " + str(datetime.now().year - 1),
 
 
 

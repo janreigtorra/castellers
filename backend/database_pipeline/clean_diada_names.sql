@@ -58,7 +58,13 @@ WHERE name = 'La Mercè de Barcelona (colles locals)Diada de la Mercè a Barcelo
 
 UPDATE public.events
 SET name = 'Diada de Sant Fèlix'
-WHERE name = 'Sant Fèlix a Vilafranca del PenedèsDiada de Sant Fèlix a Vilafranca del Penedès';
+WHERE name = 'Diada de Sant Fèlix a Vilafranca del Penedès';
+
+
+UPDATE public.events
+SET name = 'Diada de Sant Fèlix'
+WHERE name = 'Diada del Mercadal a ReusDiada del Mercadal a Reus';
+
 
 
 UPDATE public.events

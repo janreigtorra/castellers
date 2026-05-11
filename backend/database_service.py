@@ -727,5 +727,50 @@ class ChatDatabaseService:
             cur.close()
             conn.close()
 
+    def list_pending_messages_admin_tracking(
+        self, exclude_user_id: str, limit: int = 500
+    ) -> List[Dict[str, Any]]:
+        """
+        All pending_messages rows except excluded user_id, with profile username.
+        Newest first. Uses DB connection (bypasses Supabase RLS).
+        """
+        conn = self.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT pm.id, pm.user_id, pm.content, pm.status, pm.route_used,
+                       pm.response, pm.error_message, pm.created_at,
+                       p.username
+                FROM public.pending_messages pm
+                LEFT JOIN public.profiles p ON p.id = pm.user_id
+                WHERE pm.user_id <> %s::uuid
+                ORDER BY pm.created_at DESC
+                LIMIT %s
+                """,
+                (exclude_user_id, limit),
+            )
+            out: List[Dict[str, Any]] = []
+            for row in cur.fetchall():
+                out.append(
+                    {
+                        "id": str(row[0]),
+                        "user_id": str(row[1]),
+                        "content": row[2],
+                        "status": row[3],
+                        "route_used": row[4],
+                        "response": row[5],
+                        "error_message": row[6],
+                        "created_at": row[7].isoformat() if row[7] else None,
+                        "username": row[8],
+                    }
+                )
+            return out
+        except Exception as e:
+            raise Exception(f"Error listing pending messages for admin: {e}")
+        finally:
+            cur.close()
+            conn.close()
+
 # Create global instance
 chat_db = ChatDatabaseService()

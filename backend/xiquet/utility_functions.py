@@ -7,12 +7,15 @@ import psycopg2
 import re
 import os
 import time
-from typing import List, Optional
+import unicodedata
+from typing import List, Optional, Tuple
+from datetime import datetime
 from rapidfuzz import fuzz, process  # 10-100x faster than fuzzywuzzy
 from pydantic import BaseModel
 from typing import Literal
 from dataclasses import dataclass
 from dotenv import load_dotenv
+from .util_dics import PRIORITY_COLLES_KEYWORDS
 
 # Load environment variables
 load_dotenv()
@@ -25,16 +28,26 @@ _CACHE_TTL = 3600  # 1 hour in seconds
 
 DIADA_SCORE_CUTOFF = 75
 COLLA_SCORE_CUTOFF = 75
+
+# DB event names that are not real festivity/diada labels (import placeholders).
+_PLACEHOLDER_DIADA_ASCII = re.compile(r"^actuacio(n)?\s*(\d+)?\s*$", re.UNICODE)
+
+
+def is_placeholder_diada_name(name: str) -> bool:
+    """
+    True for labels like 'Actuació', 'actuació 2', 'Actuación 3' — whole-string
+    generic actuació slots, not names like 'Actuació Castellera a …'.
+    """
+    if not name or not isinstance(name, str):
+        return False
+    s = unicodedata.normalize(
+        "NFKD", name.strip().lower()
+    )
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return bool(_PLACEHOLDER_DIADA_ASCII.match(s))
 CASTELL_SCORE_CUTOFF = 60
 LLOC_SCORE_CUTOFF = 85
 
-
-priority_colles_keywords = {
-    'colla vella': 'Colla Vella dels Xiquets de Valls',
-    'colla joves': 'Colla Joves Xiquets de Valls',
-    'els verds': 'Castellers de Vilafranca (aka "els verds")',
-    'colla jove': 'Colla Jove Xiquets de Tarragona'
-}
 
 def _get_cached(key: str, fetch_fn):
     """Get from cache or fetch and cache."""
@@ -165,8 +178,9 @@ class Castell:
 
 
 class FirstCallResponseFormat(BaseModel):
-    tools: Literal["direct", "rag", "sql"]
-    sql_query_type: str #Literal["millor_diada", "millor_castell", "castell_historia", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "custom"] = "custom"
+    # "hybrid" is only set after routing (RAG + multi-entity heuristic); the route LLM must not return it.
+    tools: Literal["direct", "rag", "sql", "hybrid"]
+    sql_query_type: str #Literal["millor_diada", "millor_castell", "castell_historia", "location_actuations", "first_castell", "castell_statistics", "year_summary", "concurs_ranking", "concurs_history", "punts", "custom"] = "custom"
     direct_response: str
     colla: list[str]
     castells: list[Castell]
@@ -221,6 +235,141 @@ def get_all_any_options() -> list[str]:
                     years.add(year_match.group())
         return sorted(list(years))
     return _get_cached('anys', fetch)
+
+
+_YEAR_TOKEN = re.compile(r"^(19|20)\d{2}$")
+_RELATIVE_ANYS = re.compile(
+    r"\b(?:els\s+)?(?:últims?|darrers?|passats?)\s+(\d{1,3})\s+anys?\b",
+    re.IGNORECASE,
+)
+
+
+def parse_year_range_bounds(
+    token: str,
+    current_year: Optional[int] = None,
+) -> Optional[Tuple[int, int]]:
+    """
+    If *token* is a closed year range or a range ending in 'actualitat' / synonyms,
+    return (y_lo, y_hi) inclusive. Otherwise None.
+    """
+    if not token or not isinstance(token, str):
+        return None
+    t = token.strip()
+    cy = int(current_year) if current_year is not None else datetime.now().year
+
+    m = re.match(
+        r"^\s*((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})\s*$",
+        t,
+    )
+    if m:
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        return (min(y1, y2), max(y1, y2))
+
+    m = re.match(
+        r"^\s*((?:19|20)\d{2})\s*[-–]\s*(actualitat|avui|present|ara|now)\s*$",
+        t,
+        re.IGNORECASE,
+    )
+    if m:
+        y1 = int(m.group(1))
+        return (min(y1, cy), max(y1, cy))
+
+    m = re.match(
+        r"^\s*(actualitat|avui|present|ara|now)\s*[-–]\s*((?:19|20)\d{2})\s*$",
+        t,
+        re.IGNORECASE,
+    )
+    if m:
+        y2 = int(m.group(2))
+        return (min(cy, y2), max(cy, y2))
+
+    return None
+
+
+def normalize_any_display_token(token: str, current_year: Optional[int] = None) -> str:
+    """Canonical display for a single anys entry (e.g. compact '2006-2026')."""
+    if token is None:
+        return ""
+    s = str(token).strip()
+    bounds = parse_year_range_bounds(s, current_year=current_year)
+    if bounds:
+        return f"{bounds[0]}-{bounds[1]}"
+    return s
+
+
+def expand_anys_for_sql_query(
+    anys: Optional[List[str]],
+    current_year: Optional[int] = None,
+    intersect_with_db_years: bool = True,
+) -> List[str]:
+    """
+    Turn display tokens (single years and/or 'YYYY-YYYY', 'YYYY-actualitat') into
+    a sorted list of year strings for SQL IN (...) filters.
+    """
+    if not anys:
+        return []
+
+    cy = int(current_year) if current_year is not None else datetime.now().year
+    valid_db: Optional[set[str]] = None
+    if intersect_with_db_years:
+        try:
+            opts = get_all_any_options()
+            if opts:
+                valid_db = set(opts)
+        except Exception:
+            valid_db = None
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add_year(y: int) -> None:
+        if y < 1800 or y > cy + 1:
+            return
+        ys = str(y)
+        if valid_db is not None and ys not in valid_db:
+            return
+        if ys not in seen:
+            seen.add(ys)
+            out.append(ys)
+
+    for raw in anys:
+        if raw is None:
+            continue
+        piece = str(raw).strip()
+        if not piece:
+            continue
+        bounds = parse_year_range_bounds(piece, current_year=cy)
+        if bounds:
+            y_lo, y_hi = bounds
+            for y in range(y_lo, y_hi + 1):
+                add_year(y)
+            continue
+        if _YEAR_TOKEN.match(piece):
+            add_year(int(piece))
+
+    out.sort(key=int)
+
+    # If we dropped everything due to DB intersection, fall back to unfiltered expansion
+    if not out and anys and intersect_with_db_years:
+        return expand_anys_for_sql_query(anys, current_year=cy, intersect_with_db_years=False)
+
+    return out
+
+
+def is_valid_any_entity_token(token: str, valid_anys: List[str]) -> bool:
+    """True if *token* is a known DB year or a parseable temporal range."""
+    if not token or not isinstance(token, str):
+        return False
+    t = str(token).strip()
+    if not t:
+        return False
+    if t in valid_anys:
+        return True
+    bounds = parse_year_range_bounds(t)
+    if not bounds:
+        return False
+    y_lo, y_hi = bounds
+    return 1800 <= y_lo <= y_hi <= 2100
     
 def get_all_lloc_options() -> list[str]:
     """Get all llocs from the database (cached)."""
@@ -240,11 +389,15 @@ def get_all_diada_options() -> list[str]:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT DISTINCT name FROM events WHERE name IS NOT NULL")
-        diades = [row[0] for row in cur.fetchall()]
+        diades = [
+            row[0]
+            for row in cur.fetchall()
+            if row[0] and not is_placeholder_diada_name(row[0])
+        ]
         cur.close()
         conn.close()
         return diades
-    return _get_cached('diades', fetch)
+    return _get_cached("diades_v2_placeholder_filtered", fetch)
 
 
 
@@ -305,9 +458,9 @@ def get_colles_castelleres_subset(question: str, top_n: int = 5) -> str:
         score_cutoff=COLLA_SCORE_CUTOFF 
     )
 
-    # If words appear in priority_colles_keywords, add the colles to the matches as well (apart from the fuzzy matching)
-    for keyword, colla_name in priority_colles_keywords.items():
-        if keyword in question_lower:
+    # If words appear in PRIORITY_COLLES_KEYWORDS, add the colles to the matches as well (apart from the fuzzy matching)
+    for keyword, colla_name in PRIORITY_COLLES_KEYWORDS.items():
+        if keyword in question_lower and not any(m[0] == colla_name for m in matches):
             matches.append((colla_name, 100))
     
     
@@ -315,15 +468,47 @@ def get_colles_castelleres_subset(question: str, top_n: int = 5) -> str:
         return ", ".join([match[0] for match in matches])
     return ""
 
+def parse_castell_codes_from_text(text: str) -> List[str]:
+    """
+    Parse ALL castell codes from text (multiple codes in same question).
+
+    Returns a list of unique codes in the order they appear.
+    Handles direct code format (3d7, 2d6f, 4d8a, ...) which is the typical
+    case when the user lists several castells (ex: "4d8a, 3d8a i el 2d8f").
+    Falls back to the singular textual parser if no direct codes are present.
+    """
+    import re
+
+    text = text.lower().strip()
+
+    # Pattern 1: Direct code format (3d7, 2d6f, 4d8a, ...) — find ALL matches
+    direct_pattern = r'\b([0-9P]+d[0-9]+[pafms]*)\b'
+    direct_matches = re.findall(direct_pattern, text)
+    if direct_matches:
+        seen = set()
+        result = []
+        for m in direct_matches:
+            if m not in seen:
+                seen.add(m)
+                result.append(m)
+        return result
+
+    # Fallback: textual patterns (only return one — handled by singular parser)
+    single = parse_castell_code_from_text(text)
+    return [single] if single else []
+
+
 def parse_castell_code_from_text(text: str) -> str:
     """
-    Parse castell codes from text by identifying patterns like:
+    Parse a single castell code from text by identifying patterns like:
     - 'dos de set' -> 2d7
     - '3 de 9 amb folre' -> 3d9f
     - 'torre de 6' -> 2d6
     - 'pilar de 5' -> Pd5
     - '3 de 7 amb agulla' -> 3d7a
     - '3 de 7 per sota' -> 3d7s
+
+    Returns the first match found. Use parse_castell_codes_from_text for multiple.
     """
     import re
     
@@ -487,15 +672,15 @@ def parse_castell_code_from_text(text: str) -> str:
     
     return ""
 
-def get_castells_subset(question: str, top_n: int = 3) -> str:
+def get_castells_subset(question: str, top_n: int = 5) -> str:
     """
     Get castells matching the question using fast batch fuzzy matching.
     """
-    # First try to parse castell code directly from text (fast path)
-    parsed_code = parse_castell_code_from_text(question)
-    if parsed_code:
-        return parsed_code
-    
+    # First try to parse castell codes directly from text (fast path)
+    parsed_codes = parse_castell_codes_from_text(question)
+    if parsed_codes:
+        return ", ".join(parsed_codes[:top_n])
+
     castells_codes = get_all_castell_options()
     if not castells_codes:
         return ""
@@ -521,6 +706,7 @@ def get_anys_subset(question: str, top_n: int = 5) -> str:
     - del 23 (meaning 2023)
     - del 96 (meaning 1996)
     - any 2023, anys 2023-2024
+    - "els últims N anys" / "darrers N anys" → single closed range "YYYY-YYYY" (N anys enrere des de l'any actual)
     """
     import re
     
@@ -528,6 +714,13 @@ def get_anys_subset(question: str, top_n: int = 5) -> str:
     text = question.lower().strip()
     
     found_years = set()
+    range_relative = None
+    rel_m = _RELATIVE_ANYS.search(question)
+    if rel_m:
+        n = min(max(int(rel_m.group(1)), 1), 200)
+        cy = datetime.now().year
+        y0 = cy - n
+        range_relative = f"{y0}-{cy}"
     
     # Pattern 1: Direct 4-digit years (1900-2099)
     four_digit_pattern = r'\b(19|20)\d{2}\b'
@@ -573,11 +766,16 @@ def get_anys_subset(question: str, top_n: int = 5) -> str:
     
     # Convert set to sorted list
     years_list = sorted(list(found_years))
-    
+
+    if range_relative:
+        if years_list:
+            tail = years_list[: max(0, top_n - 1)]
+            return ", ".join([range_relative] + tail)
+        return range_relative
+
     if years_list:
         return ", ".join(years_list[:top_n])
-    else:
-        return ""
+    return ""
 
 def get_llocs_subset(question: str, top_n: int = 3) -> str:
     """
@@ -619,8 +817,8 @@ def get_diades_subset(question: str, top_n: int = 6) -> str:
         'santa tecla': ['Diada de Santa Tecla a Tarragona'],
         'merce': ['Diada de la Mercè a Barcelona', 'Diada de la Mercè (colles convidades) a Barcelona'],
         'mercè': ['Diada de la Mercè a Barcelona', 'Diada de la Mercè (colles convidades) a Barcelona'],
-        'sant felix': ['Diada de Sant Fèlix a Vilafranca del Penedès'],
-        'sant fèlix': ['Diada de Sant Fèlix a Vilafranca del Penedès'],
+        'sant felix': ['Diada de Sant Fèlix'],
+        'sant fèlix': ['Diada de Sant Fèlix'],
         'sant ramon': ['Diada de Sant Ramon a Vilafranca del Penedès'],
         'les santes': ['Les Santes a Mataró'],
         'tots sants': ['Diada de Tots Sants a Vilafranca del Penedès'],
@@ -683,12 +881,15 @@ def get_castells_with_status_subset(question: str, top_n: int = 5) -> List[Caste
     """
     Extract castells with their status using fast batch fuzzy matching.
     """
-    # First try to parse castell code directly from text (fast path)
-    parsed_code = parse_castell_code_from_text(question)
-    if parsed_code:
-        status = extract_status_for_castell(question, parsed_code)
-        return [Castell(castell_code=parsed_code, status=status)]
-    
+    # First try to parse castell codes directly from text (fast path)
+    parsed_codes = parse_castell_codes_from_text(question)
+    if parsed_codes:
+        result = []
+        for code in parsed_codes[:top_n]:
+            status = extract_status_for_castell(question, code)
+            result.append(Castell(castell_code=code, status=status))
+        return result
+
     castells_codes = get_all_castell_options()
     if not castells_codes:
         return []
@@ -834,6 +1035,8 @@ def castell_code_may_alias_agulla_pilar(castell_code: str) -> bool:
     """
     if not castell_code:
         return False
+    if castell_code in ["4d9af", "3d9af", "4d9fp", "3d9fp"]:
+        return True
     c = str(castell_code).strip().lower()
     return len(c) >= 2 and c[-1] in ("a", "p")
 
