@@ -5729,6 +5729,45 @@
       ],
       "text": "Els millors castells de Xoriguers de la UdG són: 3 de 7, 4 de 7, 2 de 7, 2 de 7 amb, 4 de 7 amb. Xoriguers de la UdG: El sobrenom és Xoriguers. És una colla castellera universitàriaUniversitat de Girona. El color de camisa és Blau elèctric. Va ser creada l'any 1998. Els seus millors castells són 4 de 7 amb el pilar2 de 7 amb folrePilar de 6 amb folre3 de 74 de 7. El local és a Gespa de l'Escola Politècnica Superior P-II, Campus de MontiliviUniversitat de Girona,Girona.",
       "source": "colles_castelleres"
+    }, 
+    {
+      "id": "colles_internacionals",
+      "title": "Colles internacionals",
+      "category": "colles_internacionals",
+      "years": [],
+      "year_ranges": [],
+      "colles": [
+        "Castellers de Boston", 
+        "Castellers d'Andorra",
+        "Colla Castellera de Berlín",
+        "Castellers of Boston",
+        "Mannekes de Brussel·les",
+        "Xiquets de Copenhagen",
+        "Colla Castellera d'Edinburgh",
+        "Castellers of Eire",
+        "Castellers d'Estocolm",
+        "Euskal Herriko Casteller Taldea",
+        "Castelleres de Hèlsinki",
+        "Castellers de Lausanne",
+        "Castellers de Lo Prado",
+        "Castellers of London",
+        "Colla Castellera de Madrid",
+        "Castellers de Marsella",
+        "Castellers de Montréal",
+        "Castellers de Paris"
+      ],
+      "places": [],
+      "keywords": [
+        "internacionals",
+        "colles internacionals",
+        "castellers al mon", 
+        "colles castelleres internacionals",
+        "colles castelleres al mon",
+        "colles castelleres internacionals al mon",
+        "colles a l'exterior"
+      ],
+      "text": "Les colles castelleres internacionals són agrupacions que mantenen viva la tradició dels castells fora de Catalunya i que han contribuït a expandir el fet casteller arreu del món. Actualment, la xarxa de Colles Castelleres Internacionals (CCI) agrupa colles presents a ciutats d’Europa, Amèrica, Oceania i Àsia. Colles internacionals són: Colla Castellera Mataresos de l'Alguer, Castellers d'Andorra, Colla Castellera de Berlín, Castellers of Boston, Mannekes de Brussel·les, Xiquets de Copenhagen, Colla Castellera d'Edinburgh, Castellers of Eire, Castellers d'Estocolm, Euskal Herriko Casteller Taldea, Castelleres de Hèlsinki, Castellers de Lausanne, Castellers de Lo Prado, Castellers of London, Colla Castellera de Madrid, Castellers de Marsella, Castellers de Montréal, Castellers de Paris, Castellers de Sydney, Castellers de Tokyo, Castellers de Tolosa, Castellers de Zürich.",
+      "source": "colles_castelleres"
     }
   ]
 }

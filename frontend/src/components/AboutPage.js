@@ -47,7 +47,7 @@ const AboutPage = ({ theme, onBack }) => {
           </p>
 
           <p>
-            <strong>Xiquet només parla català.</strong> No està disponible —ni ho estarà mai— en altres 
+            <strong>Xiquet només parla català.</strong> No està disponible en altres 
             llengües.
           </p>
         </section>
@@ -66,8 +66,7 @@ const AboutPage = ({ theme, onBack }) => {
           <h3>Jan Reig</h3>
           <p>
             Nascut a Solsona, de petit va ser membre dels <strong>Castellers de Solsona</strong> i des 
-            de sempre ha estat aficionat a la cultura popular catalana, especialment als gegants i als 
-            castells. Va estudiar Estadística i Economia a la UPC i UB, i Data Science al MIT (Boston, EUA). Actualment viu i 
+            de sempre ha estat aficionat a la cultura popular catalana. Va estudiar Estadística i Economia a la UPC i UB, i Data Science al MIT (Boston, EUA). Actualment viu i 
             treballa als Estats Units liderant projectes d'intel·ligència artificial.
           </p>
           

@@ -9,8 +9,12 @@ const SyncDataModal = ({ user, onClose, theme }) => {
   const [isLoadingLastDate, setIsLoadingLastDate] = useState(true);
   const [isScraping, setIsScraping] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRevistaScraping, setIsRevistaScraping] = useState(false);
+  const [isRagIndexing, setIsRagIndexing] = useState(false);
   const [scrapeResult, setScrapeResult] = useState(null);
   const [updateResult, setUpdateResult] = useState(null);
+  const [revistaResult, setRevistaResult] = useState(null);
+  const [ragIndexResult, setRagIndexResult] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -85,6 +89,40 @@ const SyncDataModal = ({ user, onClose, theme }) => {
       console.error('Error details:', err.response?.data);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleRevistaScrape = async () => {
+    setIsRevistaScraping(true);
+    setError('');
+    setRevistaResult(null);
+    try {
+      const result = await apiService.scrapeRevistaCastells();
+      setRevistaResult(result);
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.detail || err.message || "Error en l'scrape de Revista Castells";
+      setError(errorMessage);
+      console.error('Revista scrape error:', err);
+    } finally {
+      setIsRevistaScraping(false);
+    }
+  };
+
+  const handleRagIndex = async () => {
+    setIsRagIndexing(true);
+    setError('');
+    setRagIndexResult(null);
+    try {
+      const result = await apiService.indexRagChunks();
+      setRagIndexResult(result);
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.detail || err.message || "Error en l'indexació RAG";
+      setError(errorMessage);
+      console.error('RAG index error:', err);
+    } finally {
+      setIsRagIndexing(false);
     }
   };
 
@@ -217,6 +255,69 @@ const SyncDataModal = ({ user, onClose, theme }) => {
                 <p><strong>Events inserits:</strong> {updateResult.events_inserted || 0}</p>
                 <p><strong>Relacions event-colla:</strong> {updateResult.event_colles_inserted || 0}</p>
                 <p><strong>Castells inserits:</strong> {updateResult.castells_inserted || 0}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <hr className="sync-modal-divider" />
+
+        <div className="sync-section">
+          <h3 className="sync-subheading">Revista Castells i cerca (RAG)</h3>
+          <p className="sync-hint">
+            Només afegeix contingut nou (idempotent): primer actualitza el JSON des del web, després
+            incrusta i insereix a Supabase els chunks que encara no hi són.
+          </p>
+          <button
+            type="button"
+            className="sync-button"
+            onClick={handleRevistaScrape}
+            disabled={isRevistaScraping || isRagIndexing}
+          >
+            {isRevistaScraping ? 'Descarregant Revista…' : 'Actualitzar JSON Revista Castells'}
+          </button>
+          {revistaResult && (
+            <div className="sync-result">
+              <h3>Resultat Revista (fitxer local):</h3>
+              <div className="sync-stats">
+                <p>
+                  <strong>Chunks nous:</strong>{' '}
+                  {revistaResult.new_chunks != null ? revistaResult.new_chunks : '—'}
+                </p>
+                <p>
+                  <strong>Articles nous:</strong>{' '}
+                  {revistaResult.new_articles != null ? revistaResult.new_articles : '—'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="sync-section">
+          <button
+            type="button"
+            className="sync-button"
+            onClick={handleRagIndex}
+            disabled={isRagIndexing || isRevistaScraping}
+          >
+            {isRagIndexing ? 'Embeddings i Supabase…' : 'Indexar chunks nous a Supabase (RAG)'}
+          </button>
+          {ragIndexResult && (
+            <div className="sync-result">
+              <h3>Resultat indexació RAG:</h3>
+              <div className="sync-stats">
+                <p>
+                  <strong>Processats (embed + insert):</strong>{' '}
+                  {ragIndexResult.chunks_to_embed != null ? ragIndexResult.chunks_to_embed : '—'}
+                </p>
+                <p>
+                  <strong>Files inserides (aquesta execució):</strong>{' '}
+                  {ragIndexResult.rows_inserted != null ? ragIndexResult.rows_inserted : '—'}
+                </p>
+                <p>
+                  <strong>Total a la BD:</strong>{' '}
+                  {ragIndexResult.rows_total_in_db != null ? ragIndexResult.rows_total_in_db : '—'}
+                </p>
               </div>
             </div>
           )}

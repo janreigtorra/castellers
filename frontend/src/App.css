@@ -656,6 +656,26 @@
   font-weight: 700;
 }
 
+.sync-modal-divider {
+  border: 0;
+  border-top: 1px solid #e5e5e5;
+  margin: 1.25rem 0;
+}
+
+.sync-subheading {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.sync-hint {
+  margin: 0 0 1rem 0;
+  font-size: 0.85rem;
+  color: #666;
+  line-height: 1.45;
+}
+
 .sync-section {
   margin-bottom: 1.5rem;
 }

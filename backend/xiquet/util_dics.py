@@ -80,7 +80,6 @@ IS_SQL_QUERY_PATTERNS = {
         ],
         "description": (
             "Cada fila representa un castell (o un intent) amb el seu context: sovint codi o nom del castell, colla, data, lloc, estat (descarregat, carregat, intent…) "
-            "i dades de dificultat o puntuació tècnica. Sovint el primer registre és el de màxima exigència segons la consulta. "
         ),
     },
     # Quines colles han fet X

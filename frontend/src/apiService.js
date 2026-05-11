@@ -489,6 +489,16 @@ export const apiService = {
     return response.data
   },
 
+  async scrapeRevistaCastells() {
+    const response = await api.post('/api/admin/scrape-revista-castells')
+    return response.data
+  },
+
+  async indexRagChunks() {
+    const response = await api.post('/api/admin/index-rag-chunks')
+    return response.data
+  },
+
   // Colles Castelleres endpoints
   async getColles() {
     const response = await api.get('/api/colles')

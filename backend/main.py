@@ -1853,6 +1853,133 @@ async def update_database(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating database: {str(e)}")
 
+
+def _admin_subprocess_run(script_name: str, extra_args: list, timeout_sec: int = 900):
+    """Run a database_pipeline script from backend/ with PYTHONPATH set."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).parent
+    script_path = project_root / "database_pipeline" / script_name
+    if not script_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail=f"Script not found: {script_path}",
+        )
+    return subprocess.run(
+        [sys.executable, str(script_path.resolve()), *extra_args],
+        capture_output=True,
+        text=True,
+        timeout=timeout_sec,
+        cwd=str(project_root),
+        env=dict(os.environ, PYTHONPATH=str(project_root)),
+    )
+
+
+@app.post("/api/admin/scrape-revista-castells")
+async def scrape_revista_castells(admin_user: dict = Depends(require_admin)):
+    """
+    Incremental fetch from revistacastells.cat (WordPress) into
+    data_basic/data_to_embed/revista_castells_scraper.json (idempotent by slug).
+    """
+    import re
+    import subprocess
+    import sys
+    import traceback
+
+    try:
+        result = _admin_subprocess_run("revista_castells_to_chunks.py", [], timeout_sec=900)
+        output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Revista scrape failed: {result.stderr or result.stdout or 'unknown'}",
+            )
+        new_chunks = None
+        new_articles = None
+        m = re.search(
+            r"New chunks this run:\s*(\d+)\s*\(from\s*(\d+)\s*new articles\)",
+            output,
+        )
+        if m:
+            new_chunks = int(m.group(1))
+            new_articles = int(m.group(2))
+        return {
+            "message": "Revista Castells scrape completed",
+            "output": output,
+            "new_chunks": new_chunks,
+            "new_articles": new_articles,
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Revista scrape timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ADMIN] scrape_revista_castells: {e}\n{traceback.format_exc()}", flush=True)
+        sys.stdout.flush()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/index-rag-chunks")
+async def index_rag_chunks(admin_user: dict = Depends(require_admin)):
+    """
+    Embed and insert only missing chunk_ids (castellers + revista JSON) into
+    castellers_info_chunks — incremental unless --rebuild (not exposed here).
+    """
+    import re
+    import subprocess
+    import sys
+    import traceback
+
+    try:
+        result = _admin_subprocess_run(
+            "load_castellers_info_chunks.py",
+            ["--skip-test-search"],
+            timeout_sec=1800,
+        )
+        output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"RAG indexing failed: {result.stderr or result.stdout or 'unknown'}",
+            )
+        stats: dict = {}
+        inc = re.search(
+            r"Incremental:\s*\d+\s*ja a la BD,\s*(\d+)\s*nous a embedding\+insert",
+            output,
+        )
+        if inc:
+            stats["chunks_to_embed"] = int(inc.group(1))
+        ins = re.search(
+            r"Files noves inserides \([^:]*:\s*(\d+)",
+            output,
+        )
+        if ins:
+            stats["rows_inserted"] = int(ins.group(1))
+        tot = re.search(r"Files totals a la BD:\s*(\d+)", output)
+        if tot:
+            stats["rows_total_in_db"] = int(tot.group(1))
+        if stats.get("chunks_to_embed") == 0 and "rows_inserted" not in stats:
+            stats["rows_inserted"] = 0
+        if "Res a fer" in output and "chunks_to_embed" not in stats:
+            stats["chunks_to_embed"] = 0
+            stats.setdefault("rows_inserted", 0)
+        return {
+            "message": "RAG chunk indexing completed",
+            "output": output,
+            **stats,
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="RAG indexing timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ADMIN] index_rag_chunks: {e}\n{traceback.format_exc()}", flush=True)
+        sys.stdout.flush()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Authentication endpoints with Supabase
 class LoginRequest(BaseModel):
     email: str
