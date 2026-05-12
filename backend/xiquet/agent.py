@@ -2,8 +2,23 @@ import re
 import json
 import unicodedata
 from typing import List, Optional
+
+try:  # optional; matches load_castellers_info_chunks / requirements.txt
+    import tiktoken as _tiktoken  # type: ignore
+
+    _RAG_QUERY_TOKEN_ENCODER = _tiktoken.get_encoding("cl100k_base")
+except Exception:  # pragma: no cover
+    _RAG_QUERY_TOKEN_ENCODER = None
+
+
+def _rag_query_token_count(text: str) -> int:
+    """Token count for follow-up vs previous-question heuristics (cl100k if available)."""
+    if not text or not str(text).strip():
+        return 0
+    if _RAG_QUERY_TOKEN_ENCODER is not None:
+        return len(_RAG_QUERY_TOKEN_ENCODER.encode(str(text)))
+    return len(str(text).split())
 from langdetect import detect
-from database_pipeline.load_castellers_info_chunks import search_castellers_info
 from dotenv import load_dotenv
 from .utility_functions import (
     language_names,
@@ -24,6 +39,7 @@ from .utility_functions import (
     expand_anys_for_sql_query,
     is_valid_any_entity_token,
     normalize_any_display_token,
+    parse_year_range_bounds,
 )
 from .llm_sql_v2 import LLMSQLGeneratorV2 as LLMSQLGenerator, get_sql_summary_prompt, NoResultsFoundError, SQLExecutionError, NO_RESULTS_MESSAGE, SQL_RESULT_LIMIT
 from .llm_function import llm_call, is_guardrail_violation
@@ -38,7 +54,7 @@ from .util_dics import (
     MAP_QUERY_CHANGE,
     sql_results_description_for_query_type,
 )
-from .rag import rerank_rag_results
+from .rag import rerank_rag_results, search_castellers_info
 from difflib import SequenceMatcher
 from rapidfuzz import fuzz, process
 from datetime import datetime
@@ -57,6 +73,43 @@ def _is_entity_placeholder(val) -> bool:
         return True
     s = str(val).strip().lower()
     return s in ENTITY_PLACEHOLDERS
+
+
+_CATALAN_NUMBER_WORDS = frozenset(
+    {
+        "onze",
+        "dotze",
+        "tretze",
+        "catorze",
+        "quinze",
+        "setze",
+        "disset",
+        "divuit",
+        "dinou",
+        "vint",
+        "trenta",
+        "quaranta",
+        "cinquanta",
+        "seixanta",
+        "setanta",
+        "vuitanta",
+        "noranta",
+
+    }
+)
+_CATALAN_NUMBER_IN_QUESTION_RE = re.compile(
+    r"(?:\d|\b(?:"
+    + "|".join(re.escape(w) for w in sorted(_CATALAN_NUMBER_WORDS, key=len, reverse=True))
+    + r")\b)",
+    re.IGNORECASE,
+)
+
+
+def number_in_question(question: str) -> bool:
+    """True if the question has a digit or a Catalan cardinal number word (e.g. noranta, vuitanta)."""
+    if not question:
+        return False
+    return bool(_CATALAN_NUMBER_IN_QUESTION_RE.search(question))
 
 
 def normalize_query_synonyms(query: str) -> str:
@@ -110,7 +163,7 @@ load_dotenv()
 MODEL_NAME = "sambanova:gpt-oss-120b" 
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
 MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct" #"sambanova:gpt-oss-120b"
-MODEL_NAME_RESPONSE_RAG = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
+MODEL_NAME_RESPONSE_RAG = "sambanova:Llama-4-Maverick-17B-128E-Instruct" #"sambanova:Meta-Llama-3.3-70B-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:llama3-8b"
 
@@ -163,7 +216,9 @@ class Xiquet:
         # Pre-selected entities from UI (user selected before asking question)
         self.pre_selected_entities = pre_selected_entities or {}
         self.subscription = subscription
-    
+        # Set in generate_prompt_decide_route when the router prompt forbids extracting colles.
+        self.suppress_colla_extraction_from_llm = False
+
     def _get_previous_context_section(self) -> str:
 
         if not self.previous_question or not self.previous_response:
@@ -255,7 +310,7 @@ class Xiquet:
         )
 
     def _count_distinct_entity_field_groups(self, response: FirstCallResponseFormat) -> int:
-        """Count how many entity dimensions are non-empty (for indirect RAG→hybrid)."""
+        """Count how many entity dimensions are non-empty (RAG→hybrid when ≥3)."""
         n = 0
         if response.colla:
             n += 1
@@ -537,7 +592,7 @@ class Xiquet:
                             colla,
                             valid_colles,
                             scorer=fuzz.token_set_ratio,  # Handles word order and missing/extra words
-                            score_cutoff=75
+                            score_cutoff=80,
                         )
                         if fuzzy_matches:
                             matched = fuzzy_matches[0]
@@ -666,6 +721,7 @@ class Xiquet:
         return None  # Validation succeeded
 
     def generate_prompt_decide_route(self, question: str) -> str:
+        self.suppress_colla_extraction_from_llm = False
 
         # If we have pre-selected entities, use them directly and skip extraction for those types
         if self.pre_selected_entities:
@@ -735,6 +791,7 @@ class Xiquet:
         IMPORTANT: Només extreu les colles castellereres que apareixen en la pregunta si són rellevants per triar entre diferents opcions.
          \n"""
         else:
+            self.suppress_colla_extraction_from_llm = True
             entities_section += f"""
         - **Colla castellera:** NO extreguis cap colla. La pregunta no menciona cap colla específica.
         \n"""
@@ -766,12 +823,15 @@ class Xiquet:
             entities_section += f"""
         - **Any/s:** Any concret o període temporal (per exemple, "2024", "2025", etc.). Per un període, un sol element en format `AAAA-AAAA` (p. ex. `2010-2026` o `2010-actualitat` resolt a `2010-2026`).
         \n"""
-        else:
+        elif number_in_question(question):
             entities_section += f"""  
         - **Any/s:** Si es fa referència a un període temporal, extreu un sol rang tancat `AAAA-AAAA` (p. ex. `2010-2026` o `2010-actualitat`); si no, deixa `anys` buit.
+        \n""" 
+        else: 
+            entities_section += f"""
+        - **Any/s:** No extreguis cap any.
         \n"""
 
-        
         if self.llocs:
             entities_section += f"""
         - **Lloc:** Ciutat o població de certa actuació.  
@@ -924,7 +984,12 @@ class Xiquet:
                 )
         
         self.response = response
-        
+
+        # Prompt told the model not to extract colles; drop any hallucinated colla list anyway.
+        if self.suppress_colla_extraction_from_llm and not self.pre_selected_entities.get("colles"):
+            response = response.model_copy(update={"colla": []})
+            self.response = response
+
         sql_type_start = datetime.now()
         
         # Remove llocs that are part of colla names and only appear once in the query
@@ -937,7 +1002,7 @@ class Xiquet:
             if response.tools == "direct":
                 threshold = 0.75
             else:
-                threshold = 0.65
+                threshold = 0.8
             # Check if entities exist (LLM extraction, pre-selected chips, or heuristic gamma).
             # Gamma is set in generate_prompt_decide_route via _detect_gamma but is not in FirstCallResponseFormat.
             has_entities = (
@@ -994,6 +1059,8 @@ class Xiquet:
         validation_result = self._validate_response_entities(response)
         if validation_result is not None:
             return validation_result
+
+        self._strip_response_single_years_if_no_temporal_hint(question, response)
 
         # Merge pre-selected entities with LLM-extracted entities
         # Pre-selected entities take precedence (user explicitly selected them)
@@ -1116,6 +1183,46 @@ class Xiquet:
     def handle_direct(self) -> str:
         return self.response.direct_response
 
+    def _heuristic_anys_empty(self) -> bool:
+        """True when self.anys has no year tokens (subset string, list, or after previous-context enrich)."""
+        v = self.anys
+        if v is None:
+            return True
+        if isinstance(v, list):
+            return not any(x is not None and str(x).strip() for x in v)
+        return not str(v).strip()
+
+    def _strip_response_single_years_if_no_temporal_hint(
+        self, question: str, response: FirstCallResponseFormat
+    ) -> None:
+        """
+        If there are no pre-selected anys, no heuristic/enriched anys on self, and the
+        question has no digit or Catalan number-word, drop LLM single-year anys but
+        keep parseable periods (YYYY-YYYY, YYYY-actualitat, etc.).
+        """
+        if self.pre_selected_entities.get("anys"):
+            return
+        if not self._heuristic_anys_empty():
+            return
+        if number_in_question(question):
+            return
+        if not response.anys:
+            return
+        before = list(response.anys)
+        kept: list[str] = []
+        for t in before:
+            token = str(t).strip()
+            if not token:
+                continue
+            if parse_year_range_bounds(token) is not None:
+                kept.append(normalize_any_display_token(token))
+        response.anys = kept
+        if DEBUG and len(before) != len(kept):
+            print(
+                f"[ENTITY_FIX] Removed single-year anys without temporal hint in question "
+                f"(had {before}, kept {kept})"
+            )
+
     def _anys_tokens_list(self) -> List[str]:
         v = self.anys
         if not v:
@@ -1173,18 +1280,96 @@ class Xiquet:
         return self.sql_generator.organize_results(raw_results, sql_query_type, entities)
 
 
+    def _build_rag_search_text(self) -> str:
+        """Build the text passed to the hybrid retriever.
+
+        We augment the user question with the entities the agent has already
+        extracted (colles, castells, llocs, diades, gamma, anys). Both legs of
+        the retrieval — dense embeddings AND BM25 over `search_tsv` — benefit
+        from the extra signal:
+        - Embeddings: explicit colla/castell names sharpen the semantic vector.
+        - BM25: lexical matches on castell codes, colla names, places, etc.
+
+        Kept short (no duplicates, lightly de-duplicated) so we don't blow the
+        embedding token budget for huge selections.
+        """
+        parts: list[str] = [self.question]
+
+        def _flatten(value) -> list[str]:
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return [str(v).strip() for v in value if v is not None and str(v).strip()]
+            if isinstance(value, str):
+                return [s.strip() for s in value.split(",") if s.strip()]
+            return [str(value)]
+
+        parts.extend(_flatten(self.colles_castelleres))
+        if self.castells:
+            for c in self.castells:
+                code = getattr(c, "castell_code", None) or str(c)
+                if code:
+                    parts.append(code)
+        parts.extend(_flatten(self.llocs))
+        parts.extend(_flatten(self.diades))
+        parts.extend(_flatten(self._anys_tokens_list()))
+        if self.gamma:
+            parts.append(str(self.gamma))
+
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for p in parts:
+            key = p.lower()
+            if key not in seen:
+                seen.add(key)
+                ordered.append(p)
+        return " ".join(ordered)
+
+    def _build_rag_retrieval_text(self) -> str:
+        """Hybrid retrieval string (embedding + BM25 only).
+
+        When the current user message is much shorter than the previous one
+        (underspecified follow-up), prepend the previous question so dense and
+        sparse search carry topic signal. Reranking still uses ``self.question``
+        only — see ``rerank_rag_results`` in ``_retrieve_rag_context``.
+        """
+        augmented = self._build_rag_search_text()
+        pq = (self.previous_question or "").strip()
+        if not pq:
+            return augmented
+        prev_tok = _rag_query_token_count(pq)
+        cur_tok = _rag_query_token_count(self.question or "")
+        if prev_tok < 1:
+            return augmented
+        # Current has at most 80% of the previous question's tokens → prepend.
+        if cur_tok > 0.8 * prev_tok:
+            return augmented
+        return f"{pq} {augmented}"
+
     def _retrieve_rag_context(self, final_top_k: int) -> tuple[Optional[str], Optional[str]]:
         """
         Shared RAG retrieval + rerank + filter. Returns (context_string, error_key).
         error_key is 'no_results', 'below_threshold', or None on success.
         """
-        INITIAL_K = 100
-        MIN_SIMILARITY = 0.005
+        # Hybrid retrieval: vec top-50 ∪ bm25 top-50 → RRF → top-40 candidates.
+        # `min_non_revista`/`non_revista_topup` guarantee curated chunks always
+        # appear in the candidate pool.
+        INITIAL_K = 40
+        # Cosine-similarity floor on the candidate list. With a real embedding
+        # model + BM25 hybrid, anything under ~0.25 is almost always noise.
+        # The reranker can still boost a chunk above this floor via colla/year
+        # matches; we filter AFTER reranking so meaningful signals survive.
+        MIN_SIMILARITY = 0.25
         try:
+            search_text = self._build_rag_retrieval_text()
             if DEBUG:
+                print(
+                    f"DEBUG RAG: Hybrid search text "
+                    f"(orig={self.question[:40]!r} → retrieval={search_text[:80]!r})"
+                )
                 print(f"DEBUG RAG: Calling search_castellers_info(k={INITIAL_K})...")
             rag_search_start = datetime.now()
-            results = search_castellers_info(self.question, k=INITIAL_K)
+            results = search_castellers_info(search_text, k=INITIAL_K)
             rag_search_time = (datetime.now() - rag_search_start).total_seconds() * 1000
             if DEBUG:
                 print(f"DEBUG RAG: RAG search: {rag_search_time:.2f}ms ({len(results)} results)")
@@ -1249,6 +1434,7 @@ Sempre respons exclusivament en català."""
             rag_developer = """INSTRUCCIONS:
 - Text narratiu en paràgrafs (1-3 paràgrafs màxim)
 - Usa **negreta** per destacar fets clau
+- No mencionis documents, fonts, consultes, "informació disponible" o "informació proporcionada" ni cap altra meta-referència al context; respon sempre de forma directa amb els fets.
 - NO inventes informació que no apareix en la informació proporcionada
 - Si la Informació de consulta proporcionada no és rellevant per respondre la pregunta, digues ÚNICAMENT I EXCLUSIVAMENT: "No tinc informació sobre aquest tema. Pots reformular la pregunta?" - 
 - NO mencions ni facis referència a informació que no siguin rellevants per la pregunta 
@@ -1299,8 +1485,9 @@ Respon basant-te en la informació. Si la informació no és suficient per respo
 
     def handle_hybrid_rag_sql(self, rag_top_k: int) -> str:
         """
-        Indirect hybrid: chosen when the router said RAG but several entity dimensions are filled.
-        Combines a small RAG context with SQL custom table data for the final answer.
+        Indirect hybrid: chosen when the router said RAG but at least three
+        entity dimensions are filled (`run_handlers_after_route`).
+        Combines RAG context (typically two chunks) with SQL custom table data.
         """
         if DEBUG:
             print(f"DEBUG HYBRID: rag_top_k={rag_top_k}, entity_groups={self._count_distinct_entity_field_groups(self.response)}")
@@ -1372,6 +1559,7 @@ Sempre respons exclusivament en català."""
 
         hybrid_developer = """INSTRUCCIONS:
 - Utilitza qualsevol informació rellevant de les dades estructurades (base de dades) i/o dels fragments de documents.
+- No mencionis documents, fonts, consultes, "informació disponible" o "informació proporcionada" ni cap altra meta-referència al context; respon sempre de forma directa amb els fets.
 - No inventis fets que no apareguin en el context proporcionat.
 - Si una font no aporta res útil, ignora-la sense comentar-ho.
 - Text narratiu en 1–3 paràgrafs; **negreta** només per fets clau (pocs)."""
@@ -1824,10 +2012,8 @@ Respon de forma clara utilitzant qualsevol part del context anterior que sigui p
             result = self.handle_direct()
         elif response.tools == "rag":
             n_entity_groups = self._count_distinct_entity_field_groups(response)
-            if n_entity_groups == 2:
+            if n_entity_groups >= 3:
                 result = self.handle_hybrid_rag_sql(rag_top_k=2)
-            elif n_entity_groups >= 3:
-                result = self.handle_hybrid_rag_sql(rag_top_k=1)
             else:
                 result = self.handle_rag()
         elif response.tools == "sql":

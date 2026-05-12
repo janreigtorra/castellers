@@ -62,7 +62,7 @@ IS_SQL_QUERY_PATTERNS = {
     # Millor diada/actuació — Exemples: "Quina va ser la millor diada dels Castellers de Vilafranca l'any 2023?"
     "millor_diada": {
         "patterns": [
-            "millor diada", "millor actuació", "millors diades", "millors actuacions",
+            "millor diada", "millor actuació", "millor actuacio", "millors diades", "millors actuacions",
             "quina diada", "quina actuació", "quina va ser la millor",
             "millor jornada", "actuació més destacada",
         ],

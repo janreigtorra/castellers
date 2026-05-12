@@ -1968,9 +1968,9 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                 </span>
               )}
             </div>
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               className="chat-input-mirror-field"
               value={inputMessage}
               onChange={(e) => {
@@ -1999,6 +1999,13 @@ const ChatInterface = ({ user, sessionId, theme, onSessionSaved, onSaveClick, on
                 }
               }}
               onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isLoading && inputValueRef.current.trim()) {
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                  return;
+                }
                 if (e.key === 'Tab' && !e.shiftKey) {
                   e.preventDefault();
                   const value = inputValueRef.current;

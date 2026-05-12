@@ -8,7 +8,8 @@ a la mateixa taula Supabase amb embeddings optimitzats.
 
 Utilitza:
 - OpenAI text-embedding-3-small (dimensions configurables, veure EMBEDDING_DIM)
-- Embeddings combinats: 0.2 * title + 0.8 * text (ponderat)
+- Embeddings combinats (TITLE_WEIGHT / TEXT_WEIGHT): es calculen amb title + text a l'API,
+  però només es persisteix ``combined_embedding`` a la BD (estalvi d'espai vs. guardar també title/text).
 - Per defecte només indexa chunks nous (chunk_id = camp "id" del JSON). Usa --rebuild per recrear la taula i reincrustar-ho tot.
 """
 
@@ -16,9 +17,7 @@ import argparse
 import os
 import json
 import re
-import threading
 import psycopg2
-from psycopg2 import pool as pg_pool
 from typing import List, Dict, Any, Tuple, Set, Optional
 from openai import OpenAI
 import numpy as np
@@ -59,16 +58,6 @@ def convert_to_pooler_url(database_url: str) -> str:
 
 _raw_database_url = os.getenv("DATABASE_URL")
 DATABASE_URL = convert_to_pooler_url(_raw_database_url) if _raw_database_url else None
-# IVFFlat index is built with lists=100; lower probes = faster search, slightly lower recall (tune via env)
-try:
-    RAG_IVFFLAT_PROBES = max(1, min(100, int(os.getenv("RAG_IVFFLAT_PROBES", "25"))))
-except ValueError:
-    RAG_IVFFLAT_PROBES = 25
-try:
-    RAG_DB_POOL_MIN = max(1, int(os.getenv("RAG_DB_POOL_MIN", "1")))
-    RAG_DB_POOL_MAX = max(RAG_DB_POOL_MIN, int(os.getenv("RAG_DB_POOL_MAX", "8")))
-except ValueError:
-    RAG_DB_POOL_MIN, RAG_DB_POOL_MAX = 1, 8
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI's fast & cheap model
 # text-embedding-3-small admet dimensions entre 1 i 1536 (API ``dimensions``)
@@ -94,40 +83,83 @@ def get_openai_client() -> OpenAI:
         _openai_client = OpenAI(api_key=OPENAI_API_KEY)
     return _openai_client
 
+
+# text-embedding-3-small admits up to 8192 tokens per input. We leave a buffer.
+EMBEDDING_MAX_TOKENS = 8000
+# Char-based fallback when tiktoken is not installed. Catalan averages
+# ~4 chars/token with cl100k_base, so 28000 chars stays comfortably under 8192.
+EMBEDDING_MAX_CHARS_FALLBACK = 28000
+
+try:  # tiktoken is optional but gives precise truncation
+    import tiktoken  # type: ignore
+
+    _ENCODING = tiktoken.get_encoding("cl100k_base")
+
+    def _truncate_for_embedding(text: str) -> str:
+        if not text:
+            return text
+        tokens = _ENCODING.encode(text)
+        if len(tokens) <= EMBEDDING_MAX_TOKENS:
+            return text
+        return _ENCODING.decode(tokens[:EMBEDDING_MAX_TOKENS])
+
+    _TRUNCATION_MODE = "tiktoken"
+except Exception:  # pragma: no cover - fallback when tiktoken is missing
+
+    def _truncate_for_embedding(text: str) -> str:
+        if not text:
+            return text
+        if len(text) <= EMBEDDING_MAX_CHARS_FALLBACK:
+            return text
+        return text[:EMBEDDING_MAX_CHARS_FALLBACK]
+
+    _TRUNCATION_MODE = "char"
+
+
+def _safe_inputs(texts: List[str]) -> List[str]:
+    """Return texts truncated to fit within the embedding model's token limit."""
+    return [_truncate_for_embedding(t or "") for t in texts]
+
+
 def get_embeddings_batch(texts: List[str]) -> np.ndarray:
-    """Get embeddings for a batch of texts using OpenAI API"""
+    """Get embeddings for a batch of texts using OpenAI API.
+
+    Inputs are pre-truncated to stay within the model's per-input token limit
+    (text-embedding-3-small: 8192 tokens). Without this, a single overlong
+    input would cause OpenAI to reject the whole batch with HTTP 400.
+    """
     client = get_openai_client()
-    
+
     response = client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=texts,
-        dimensions=EMBEDDING_DIM
+        input=_safe_inputs(texts),
+        dimensions=EMBEDDING_DIM,
     )
-    
+
     embeddings = np.array([item.embedding for item in response.data], dtype="float32")
-    
+
     # Normalize for cosine similarity
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     norms[norms == 0.0] = 1e-9
     embeddings = embeddings / norms
-    
+
     return embeddings
 
 def get_embedding_single(text: str) -> np.ndarray:
     """Get embedding for a single text"""
     client = get_openai_client()
-    
+
     response = client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=[text],
-        dimensions=EMBEDDING_DIM
+        input=[_truncate_for_embedding(text or "")],
+        dimensions=EMBEDDING_DIM,
     )
-    
+
     embedding = np.array(response.data[0].embedding, dtype="float32")
     norm = np.linalg.norm(embedding)
     if norm > 0:
         embedding = embedding / norm
-    
+
     return embedding
 
 def preload_multilingual_model():
@@ -171,29 +203,6 @@ def get_supabase_connection():
         raise
 
 
-_rag_search_pool: Optional[pg_pool.ThreadedConnectionPool] = None
-_rag_search_pool_lock = threading.Lock()
-
-
-def _get_rag_search_pool() -> pg_pool.ThreadedConnectionPool:
-    """Lazy pool for RAG vector search only (indexing scripts use get_supabase_connection)."""
-    global _rag_search_pool
-    if _rag_search_pool is not None:
-        return _rag_search_pool
-    with _rag_search_pool_lock:
-        if _rag_search_pool is not None:
-            return _rag_search_pool
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL not set in .env file")
-        _rag_search_pool = pg_pool.ThreadedConnectionPool(
-            RAG_DB_POOL_MIN,
-            RAG_DB_POOL_MAX,
-            dsn=DATABASE_URL,
-            connect_timeout=10,
-        )
-        return _rag_search_pool
-
-
 def enable_pgvector(conn):
     """Habilita l'extensió pgvector si no està habilitada"""
     cur = conn.cursor()
@@ -214,23 +223,174 @@ def _parse_vector_dim(format_type: Optional[str]) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
+# Catalan BM25 weighted tsvector. Postgres marks the built-in `to_tsvector`
+# as STABLE (because it depends on the search_path / dictionary state), and a
+# STABLE function is NOT allowed in a STORED generated column.
+# The accepted workaround is to wrap the expression in our own IMMUTABLE SQL
+# function and reference that function in the generated column.
+# Weights: A = title, B = entity arrays (colles, castells, places, keywords),
+# C = body text.
+SEARCH_TSV_FUNCTION_NAME = "castellers_info_chunks_search_tsv_v1"
+
+SEARCH_TSV_FUNCTION_SQL = f"""
+CREATE OR REPLACE FUNCTION {SEARCH_TSV_FUNCTION_NAME}(
+    p_title    text,
+    p_text     text,
+    p_colles   text[],
+    p_castells text[],
+    p_places   text[],
+    p_keywords text[]
+) RETURNS tsvector
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT
+        setweight(to_tsvector('catalan'::regconfig, coalesce(p_title, '')), 'A') ||
+        setweight(to_tsvector(
+            'catalan'::regconfig,
+            coalesce(array_to_string(p_colles, ' '), '')   || ' ' ||
+            coalesce(array_to_string(p_castells, ' '), '') || ' ' ||
+            coalesce(array_to_string(p_places, ' '), '')   || ' ' ||
+            coalesce(array_to_string(p_keywords, ' '), '')
+        ), 'B') ||
+        setweight(to_tsvector('catalan'::regconfig, coalesce(p_text, '')), 'C')
+$$;
+"""
+
+# BEFORE INSERT/UPDATE trigger keeps `search_tsv` in sync with the source
+# columns. We use a plain column + trigger instead of a STORED generated
+# column because adding a STORED generated column requires a full table
+# rewrite that uses `maintenance_work_mem` (Supabase default 32 MB), which
+# blows up on tables of even modest size.
+SEARCH_TSV_TRIGGER_FUNCTION_NAME = "castellers_info_chunks_search_tsv_trg_v1"
+SEARCH_TSV_TRIGGER_NAME = "castellers_info_chunks_search_tsv_trg"
+
+SEARCH_TSV_TRIGGER_FUNCTION_SQL = f"""
+CREATE OR REPLACE FUNCTION {SEARCH_TSV_TRIGGER_FUNCTION_NAME}() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.search_tsv := {SEARCH_TSV_FUNCTION_NAME}(
+        NEW.title, NEW.text, NEW.colles, NEW.castells, NEW.places, NEW.keywords
+    );
+    RETURN NEW;
+END;
+$$;
+"""
+
+SEARCH_TSV_TRIGGER_SQL = f"""
+DROP TRIGGER IF EXISTS {SEARCH_TSV_TRIGGER_NAME} ON castellers_info_chunks;
+CREATE TRIGGER {SEARCH_TSV_TRIGGER_NAME}
+BEFORE INSERT OR UPDATE OF title, text, colles, castells, places, keywords
+ON castellers_info_chunks
+FOR EACH ROW EXECUTE FUNCTION {SEARCH_TSV_TRIGGER_FUNCTION_NAME}();
+"""
+
+# Batch size for the one-time backfill. Each row's tsvector is small (a few KB)
+# so 500 keeps memory usage trivial while still progressing quickly.
+SEARCH_TSV_BACKFILL_BATCH_SIZE = 500
+
+
+def _ensure_search_tsv_function(cur) -> None:
+    """Create-or-replace the IMMUTABLE wrapper used by the trigger."""
+    cur.execute(SEARCH_TSV_FUNCTION_SQL)
+
+
+def _backfill_search_tsv(cur, conn) -> int:
+    """Populate `search_tsv` for any existing rows where it's NULL, in batches."""
+    total_updated = 0
+    while True:
+        cur.execute(
+            f"""
+            WITH cte AS (
+                SELECT chunk_id FROM castellers_info_chunks
+                WHERE search_tsv IS NULL
+                LIMIT {SEARCH_TSV_BACKFILL_BATCH_SIZE}
+            )
+            UPDATE castellers_info_chunks AS c
+            SET search_tsv = {SEARCH_TSV_FUNCTION_NAME}(
+                c.title, c.text, c.colles, c.castells, c.places, c.keywords
+            )
+            FROM cte
+            WHERE c.chunk_id = cte.chunk_id;
+            """
+        )
+        updated = cur.rowcount or 0
+        if updated == 0:
+            break
+        total_updated += updated
+        # Commit each batch so we don't keep one huge transaction open.
+        conn.commit()
+        print(f"      … backfilled {total_updated} rows so far")
+    return total_updated
+
+
+def _ensure_search_tsv_column(cur, conn) -> None:
+    """Idempotent migration: ensure `search_tsv` column + trigger exist and
+    every existing row is populated.
+
+    Order matters:
+      1. Ensure the IMMUTABLE search_tsv_v1(...) function exists.
+      2. Add the plain `search_tsv tsvector` column if missing
+         (NO `GENERATED ALWAYS AS …` — avoids the table rewrite).
+      3. Ensure the trigger function + trigger exist (CREATE OR REPLACE).
+      4. Batched backfill of any rows where search_tsv IS NULL.
+    """
+    _ensure_search_tsv_function(cur)
+
+    cur.execute(
+        """
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'castellers_info_chunks'
+          AND column_name = 'search_tsv'
+        """
+    )
+    column_exists = bool(cur.fetchone())
+
+    if not column_exists:
+        print("🆕 Adding `search_tsv` column to castellers_info_chunks…")
+        cur.execute(
+            "ALTER TABLE castellers_info_chunks ADD COLUMN search_tsv tsvector;"
+        )
+
+    # Always ensure the trigger is in place (idempotent).
+    cur.execute(SEARCH_TSV_TRIGGER_FUNCTION_SQL)
+    cur.execute(SEARCH_TSV_TRIGGER_SQL)
+    conn.commit()
+
+    # Backfill any NULL rows. On the first migration this populates everything;
+    # on subsequent runs it's typically a no-op (the trigger keeps things in
+    # sync), but acts as a safety net if rows ever sneak in NULL.
+    cur.execute(
+        "SELECT COUNT(*) FROM castellers_info_chunks WHERE search_tsv IS NULL;"
+    )
+    null_count = cur.fetchone()[0] or 0
+    if null_count:
+        print(
+            f"   Backfilling `search_tsv` for {null_count} rows in batches "
+            f"of {SEARCH_TSV_BACKFILL_BATCH_SIZE}…"
+        )
+        total = _backfill_search_tsv(cur, conn)
+        print(f"   ✓ Backfill complete ({total} rows updated).")
+    elif not column_exists:
+        print("   ✓ Column added (no rows to backfill).")
+
+
 def _create_castellers_info_chunks_indexes(cur) -> None:
+    # GIN/IVFFlat index builds use maintenance_work_mem; Supabase default is
+    # 32 MB which is too low for our tsvector GIN over thousands of chunks.
+    # SET LOCAL is bounded by the current transaction and is allowed by
+    # Supabase. If the role lacks permission we just skip silently.
+    try:
+        cur.execute("SET LOCAL maintenance_work_mem = '256MB';")
+    except Exception as exc:
+        print(f"   ⚠️  Could not raise maintenance_work_mem: {exc}")
+
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_cic_combined_embedding
         ON castellers_info_chunks
         USING ivfflat (combined_embedding vector_cosine_ops)
-        WITH (lists = 100);
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_cic_title_embedding
-        ON castellers_info_chunks
-        USING ivfflat (title_embedding vector_cosine_ops)
-        WITH (lists = 100);
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_cic_text_embedding
-        ON castellers_info_chunks
-        USING ivfflat (text_embedding vector_cosine_ops)
         WITH (lists = 100);
     """)
     cur.execute(
@@ -254,9 +414,14 @@ def _create_castellers_info_chunks_indexes(cur) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_cic_category ON castellers_info_chunks(category);"
     )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cic_search_tsv ON castellers_info_chunks USING GIN (search_tsv);"
+    )
 
 
 def _create_castellers_info_chunks_table(cur) -> None:
+    # The IMMUTABLE wrapper used by the trigger must exist first.
+    _ensure_search_tsv_function(cur)
     cur.execute(
         f"""
         CREATE TABLE castellers_info_chunks (
@@ -270,13 +435,17 @@ def _create_castellers_info_chunks_table(cur) -> None:
             places TEXT[],
             keywords TEXT[],
             castells TEXT[],
-            title_embedding vector({EMBEDDING_DIM}),
-            text_embedding vector({EMBEDDING_DIM}),
             combined_embedding vector({EMBEDDING_DIM}),
+            search_tsv tsvector,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """
     )
+    # Trigger keeps search_tsv in sync with title/text/arrays on every
+    # INSERT/UPDATE. Plain column + trigger avoids the STORED-generated-column
+    # table rewrite that needs > maintenance_work_mem on large tables.
+    cur.execute(SEARCH_TSV_TRIGGER_FUNCTION_SQL)
+    cur.execute(SEARCH_TSV_TRIGGER_SQL)
     _create_castellers_info_chunks_indexes(cur)
     print(f"✓ Created castellers_info_chunks with vector({EMBEDDING_DIM})")
 
@@ -327,6 +496,7 @@ def ensure_castellers_info_chunks_table(conn, rebuild: bool) -> None:
             "Executa amb --rebuild per eliminar la taula i tornar a generar tots els embeddings."
         )
 
+    _ensure_search_tsv_column(cur, conn)
     _create_castellers_info_chunks_indexes(cur)
     conn.commit()
     cur.close()
@@ -388,32 +558,6 @@ def load_all_embedding_chunks(
     return combined
 
 
-def create_weighted_embedding(
-    title: str,
-    text: str,
-    title_weight: float = TITLE_WEIGHT,
-    text_weight: float = TEXT_WEIGHT
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Crea embeddings per title, text i la combinació ponderada using OpenAI.
-    
-    Returns:
-        Tuple of (title_embedding, text_embedding, combined_embedding)
-    """
-    # Get embeddings for both texts in one batch (more efficient)
-    embeddings = get_embeddings_batch([title, text])
-    title_emb = embeddings[0]
-    text_emb = embeddings[1]
-    
-    # Create weighted combination
-    combined_emb = title_weight * title_emb + text_weight * text_emb
-    
-    # Normalize combined embedding (individual ones already normalized)
-    combined_emb = combined_emb / np.linalg.norm(combined_emb)
-    
-    return title_emb, text_emb, combined_emb
-
-
 def _prepare_chunks_for_index(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Només chunks amb id i text no buit."""
     out: List[Dict[str, Any]] = []
@@ -469,16 +613,38 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]], rebuild: bool = False
             flat_inputs.append(c.get("title") or "")
             flat_inputs.append((c.get("text") or "").strip())
 
+        # chunk_embs[j] is a (title_emb, text_emb) tuple or None when that chunk
+        # could not be embedded.
+        chunk_embs: List[Optional[Tuple[np.ndarray, np.ndarray]]] = []
+
         try:
             embs = get_embeddings_batch(flat_inputs)
-        except Exception as e:
-            errors += len(batch)
-            print(f"\n⚠️  Error API embeddings (batch starting {i}): {e}")
-            continue
+            chunk_embs = [(embs[2 * j], embs[2 * j + 1]) for j in range(len(batch))]
+        except Exception as batch_err:
+            # OpenAI rejects the whole batch if any single input is too long
+            # (or transient errors). Fall back to per-chunk embedding so one
+            # bad chunk doesn't drop the rest.
+            print(
+                f"\n⚠️  Batch starting {i} failed ({batch_err}); falling back to "
+                f"per-chunk embedding for {len(batch)} chunks."
+            )
+            for c in batch:
+                title = c.get("title") or ""
+                text = (c.get("text") or "").strip()
+                try:
+                    one = get_embeddings_batch([title, text])
+                    chunk_embs.append((one[0], one[1]))
+                except Exception as one_err:
+                    print(
+                        f"   ⚠️  Skipping chunk '{(c.get('id') or '?')[:64]}': {one_err}"
+                    )
+                    chunk_embs.append(None)
 
         for j, chunk in enumerate(batch):
-            title_emb = embs[2 * j]
-            text_emb = embs[2 * j + 1]
+            if chunk_embs[j] is None:
+                errors += 1
+                continue
+            title_emb, text_emb = chunk_embs[j]
             combined_emb = TITLE_WEIGHT * title_emb + TEXT_WEIGHT * text_emb
             nrm = np.linalg.norm(combined_emb)
             if nrm > 0:
@@ -501,11 +667,11 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]], rebuild: bool = False
                     INSERT INTO castellers_info_chunks (
                         chunk_id, title, text, category,
                         years, year_ranges, colles, places, keywords, castells,
-                        title_embedding, text_embedding, combined_embedding
+                        combined_embedding
                     ) VALUES (
                         %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s
+                        %s
                     )
                     ON CONFLICT (chunk_id) DO NOTHING
                     """,
@@ -520,8 +686,6 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]], rebuild: bool = False
                         places,
                         keywords,
                         castells,
-                        title_emb.tolist(),
-                        text_emb.tolist(),
                         combined_emb.tolist(),
                     ),
                 )
@@ -544,110 +708,75 @@ def index_chunks_to_supabase(chunks: List[Dict[str, Any]], rebuild: bool = False
     print(f"   Files totals a la BD: {actual_count}")
 
 
-def search_castellers_info(
-    query: str,
-    k: int = 50
-) -> List[Tuple[Dict, float]]:
+def prune_revista_chunks_in_supabase(
+    json_path: str = REVISTA_CHUNKS_JSON,
+    dry_run: bool = False,
+) -> int:
     """
-    Cerca semàntica a la taula castellers_info_chunks using OpenAI embeddings.
-    Returns top k results with all metadata for reranking.
-    
-    Args:
-        query: Text de cerca
-        k: Nombre de resultats (default 50 for reranking)
-    
-    Returns:
-        Lista de tuples (doc_info, similarity_score)
+    Delete from Supabase any chunk_id starting with 'revista_' that is no longer
+    present in the given JSON file. The JSON is treated as the source of truth
+    after the pruning rules in `revista_castells_to_chunks.py` have been applied.
+
+    Returns the number of rows deleted (or that would be deleted in dry-run mode).
     """
-    from datetime import datetime
-    
-    print(f"[RAG Search] Starting search for: {query[:50]}...", flush=True)
-    
-    # Generate query embedding with OpenAI
-    print(f"[RAG Search] Generating embedding with OpenAI...", flush=True)
-    embed_start = datetime.now()
-    q_emb = get_embedding_single(query)
-    embed_time = (datetime.now() - embed_start).total_seconds() * 1000
-    print(f"[TIMING] Query embedding (OpenAI API): {embed_time:.2f}ms", flush=True)
-    
-    conn = None
-    cur = None
-    pool_obj = None
-    conn_start = datetime.now()
+    print(f"\n🧹 Pruning revista_* DB rows to match JSON: {json_path}")
+    if not os.path.isfile(json_path):
+        print(f"   ⚠️  Fitxer no trobat, s'omet: {json_path}")
+        return 0
+
+    chunks = load_json_chunks(json_path)
+    valid_ids: Set[str] = {
+        c["id"] for c in chunks
+        if isinstance(c.get("id"), str) and c["id"].startswith("revista_")
+    }
+    print(f"   JSON revista_* chunks: {len(valid_ids)}")
+
+    conn = get_supabase_connection()
     try:
-        print(f"[RAG Search] Step 3: Acquiring pooled DB connection...", flush=True)
-        pool_obj = _get_rag_search_pool()
-        conn = pool_obj.getconn()
-        conn_time = (datetime.now() - conn_start).total_seconds() * 1000
-        host = urlparse(DATABASE_URL).hostname if DATABASE_URL else "?"
-        print(f"[RAG Search] Pooled connection in {conn_time:.2f}ms ({host})", flush=True)
         cur = conn.cursor()
-        
-        # Format embedding for pgvector
-        embedding_str = '[' + ','.join(str(x) for x in q_emb.tolist()) + ']'
-        
-        # IVFFlat: lists=100 on index; probes trades speed vs recall (see RAG_IVFFLAT_PROBES)
-        cur.execute(f"SET ivfflat.probes = {RAG_IVFFLAT_PROBES};")
-        
-        # Execute search query - get all metadata for reranking
-        db_start = datetime.now()
-        cur.execute("""
-            SELECT 
-                chunk_id, title, text, category,
-                years, year_ranges, colles, places, keywords, castells,
-                1 - (combined_embedding <=> %s::vector) as similarity
-            FROM castellers_info_chunks
-            ORDER BY combined_embedding <=> %s::vector
-            LIMIT %s
-        """, [embedding_str, embedding_str, k])
-        
-        rows = cur.fetchall()
-        db_time = (datetime.now() - db_start).total_seconds() * 1000
-        print(f"[TIMING] DB search: {db_time:.2f}ms ({len(rows)} results)")
-        
-        # Format results
-        results = []
-        for row in rows:
-            (chunk_id, title, text, category, 
-             years, year_ranges, colles, places, keywords, castells,
-             similarity) = row
-            
-            doc_info = {
-                "meta": {
-                    "chunk_id": chunk_id,
-                    "title": title,
-                    "category": category,
-                    "years": years or [],
-                    "year_ranges": year_ranges or [],
-                    "colles": colles or [],
-                    "places": places or [],
-                    "keywords": keywords or [],
-                    "castells": castells or []
-                },
-                "text": text
-            }
-            
-            results.append((doc_info, float(similarity)))
-        
-        return results
-        
-    except Exception as e:
-        print(f"Error searching castellers_info_chunks: {e}")
-        if conn is not None and not conn.closed:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return []
-    finally:
-        if cur is not None:
+        cur.execute(
+            "SELECT chunk_id FROM castellers_info_chunks "
+            "WHERE LEFT(chunk_id, 8) = 'revista_';"
+        )
+        db_ids: Set[str] = {r[0] for r in cur.fetchall() if r[0]}
+        print(f"   DB   revista_* chunks: {len(db_ids)}")
+
+        orphans = sorted(db_ids - valid_ids)
+        print(f"   Orphans to remove:    {len(orphans)}")
+        if orphans[:5]:
+            print("   Sample:", ", ".join(orphans[:5]))
+
+        if not orphans:
             cur.close()
-        if conn is not None and pool_obj is not None:
-            pool_obj.putconn(conn)
+            return 0
+
+        if dry_run:
+            print("   DRY RUN: not deleting anything.")
+            cur.close()
+            return len(orphans)
+
+        # Use array predicate; psycopg2 adapts list -> text[]
+        cur.execute(
+            "DELETE FROM castellers_info_chunks "
+            "WHERE LEFT(chunk_id, 8) = 'revista_' "
+            "AND chunk_id = ANY(%s);",
+            [orphans],
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+        print(f"   ✅ Deleted {deleted} rows.")
+        return deleted
+    finally:
+        conn.close()
 
 
 def test_search():
     """Test de cerca per verificar que funciona correctament"""
+    # Imported here so the indexer doesn't take a hard dependency on the
+    # query-time RAG pool unless the test path actually runs.
+    from xiquet.rag import search_castellers_info
+
     print("\n" + "="*60)
     print("🔍 Testing search functionality...")
     print("="*60)
@@ -695,6 +824,24 @@ def main() -> None:
         default=REVISTA_CHUNKS_JSON,
         help="Ruta al revista_castells_scraper.json",
     )
+    parser.add_argument(
+        "--prune-revista-from-db",
+        action="store_true",
+        help=(
+            "Elimina de la BD els chunks revista_* que ja no apareixen al JSON "
+            "(ideal després d'executar revista_castells_to_chunks.py amb pruning)."
+        ),
+    )
+    parser.add_argument(
+        "--prune-only",
+        action="store_true",
+        help="Només executa la neteja de revista_* a la BD, sense indexar.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Mostra què s'esborraria a --prune-revista-from-db sense fer canvis.",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -712,9 +859,16 @@ def main() -> None:
         return
 
     try:
-        chunks = load_all_embedding_chunks(args.castellers_json, args.revista_json)
-        index_chunks_to_supabase(chunks, rebuild=args.rebuild)
-        if not args.skip_test_search:
+        if not args.prune_only:
+            chunks = load_all_embedding_chunks(args.castellers_json, args.revista_json)
+            index_chunks_to_supabase(chunks, rebuild=args.rebuild)
+
+        if args.prune_revista_from_db or args.prune_only:
+            prune_revista_chunks_in_supabase(
+                json_path=args.revista_json, dry_run=args.dry_run
+            )
+
+        if not args.prune_only and not args.skip_test_search:
             test_search()
         print("\n" + "=" * 60)
         print("✅ Fet. Taula 'castellers_info_chunks' a punt.")

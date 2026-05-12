@@ -2710,7 +2710,7 @@
   border-color: var(--theme-color, var(--theme-secondary));
 }
 
-/* Chat input: mirror + transparent field — ghost on same line as typed text (Tab to accept) */
+/* Chat input: mirror + transparent textarea — wraps to multiple lines; Tab accepts ghost completion */
 .input-group .chat-input-mirror-wrap {
   flex: 1;
   min-width: 0;
@@ -2726,25 +2726,20 @@
 }
 
 .input-group .chat-input-mirror {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  position: relative;
+  z-index: 0;
   padding: 1rem 1.25rem;
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
+  display: block;
   pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
   box-sizing: border-box;
   font-size: 1rem;
   line-height: 1.25;
   font-family: inherit;
   font-weight: 400;
-  z-index: 0;
+  min-height: 3.125rem;
 }
 
 .input-group .chat-input-mirror-typed {
@@ -2753,7 +2748,6 @@
 
 .input-group .chat-input-mirror-ghost {
   color: rgba(0, 0, 0, 0.38);
-  flex-shrink: 0;
 }
 
 .input-group .chat-input-mirror-placeholder {
@@ -2761,7 +2755,11 @@
 }
 
 .input-group .chat-input-mirror-field {
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
   z-index: 1;
   width: 100%;
   margin: 0;
@@ -2773,7 +2771,6 @@
   line-height: 1.25;
   font-family: inherit;
   font-weight: 400;
-  height: auto;
   box-sizing: border-box;
   background: transparent !important;
   color: transparent !important;
@@ -2781,6 +2778,11 @@
   caret-color: var(--theme-text, #222);
   flex: unset !important;
   box-shadow: none !important;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .input-group .chat-input-mirror-field:focus {

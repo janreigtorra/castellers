@@ -20,7 +20,7 @@ import logging
 import re
 import sys
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -54,6 +54,22 @@ COLLES_FUNDACIO_JSON = (
 
 MAX_PARAGRAPHS_PER_CHUNK = 3
 MAX_CHARS_PER_PARAGRAPH = 1100
+
+# Categories that are always kept regardless of age. Match the values written
+# in chunks (post-CATEGORY_MAP), case-insensitive.
+KEEP_CATEGORIES_FOREVER: frozenset[str] = frozenset(
+    {
+        "opinio",
+        "reportatges",
+        "tecnica",
+        "ciencia-i-castells",
+        "historia",
+        "universitàries",
+    }
+)
+
+# Default age threshold for non-evergreen categories.
+DEFAULT_PRUNE_AFTER_DAYS = 365
 
 # Castell mentions like "3 de 8", "4 d'9", "10 de 8"
 _CASTELL_RE = re.compile(
@@ -314,67 +330,213 @@ def merge_chunk_lists(
     return merged
 
 
+# ---------------------------------------------------------------------------
+# Pruning helpers
+# ---------------------------------------------------------------------------
+def latest_published_date(chunks: list[dict[str, Any]]) -> Optional[str]:
+    """Return the max ISO date (YYYY-MM-DD) found in chunks, or None."""
+    dates = [
+        (c.get("published_date") or "").strip()
+        for c in chunks
+        if (c.get("published_date") or "").strip()
+    ]
+    return max(dates) if dates else None
+
+
+def is_keep_category(chunk: dict[str, Any]) -> bool:
+    cat = (chunk.get("category") or "").strip().lower()
+    return cat in KEEP_CATEGORIES_FOREVER
+
+
+def is_chunk_too_old(chunk: dict[str, Any], cutoff_iso_date: str) -> bool:
+    """True if `published_date` is set and strictly older than the cutoff date.
+
+    Chunks without `published_date` are always considered fresh (kept).
+    """
+    pub = (chunk.get("published_date") or "").strip()
+    if not pub:
+        return False
+    return pub[:10] < cutoff_iso_date
+
+
+def prune_old_chunks(
+    chunks: list[dict[str, Any]], cutoff_iso_date: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split chunks into (kept, removed) by age + category rules."""
+    kept: list[dict[str, Any]] = []
+    removed: list[dict[str, Any]] = []
+    for c in chunks:
+        if is_keep_category(c):
+            kept.append(c)
+            continue
+        if is_chunk_too_old(c, cutoff_iso_date):
+            removed.append(c)
+            continue
+        kept.append(c)
+    return kept, removed
+
+
+def compute_cutoff_iso_date(prune_after_days: int) -> str:
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=prune_after_days)
+    return cutoff.isoformat()
+
+
+def compute_after_param(
+    chunks: list[dict[str, Any]], safety_days: int = 1
+) -> Optional[str]:
+    """Build the WP `after` query param from the latest indexed publication
+    date, shifted back by `safety_days` to avoid missing same-day posts.
+    """
+    latest = latest_published_date(chunks)
+    if not latest:
+        return None
+    try:
+        d = datetime.fromisoformat(latest[:10]).date()
+    except ValueError:
+        return None
+    safe = d - timedelta(days=max(0, safety_days))
+    # WP REST API expects ISO 8601 datetime
+    return f"{safe.isoformat()}T00:00:00"
+
+
 def run(
     delay: float,
     per_page: int,
     max_pages: int,
     after: Optional[str],
     dry_run: bool,
+    prune: bool = True,
+    prune_after_days: int = DEFAULT_PRUNE_AFTER_DAYS,
+    skip_fetch: bool = False,
 ) -> None:
     data = load_output(OUTPUT_JSON)
     chunks: list[dict[str, Any]] = data.get("chunks", [])
     known_slugs = existing_article_slugs(chunks)
-    log.info("Existing indexed slugs: %d", len(known_slugs))
-
-    session = make_session()
-    log.info("Fetching taxonomies…")
-    cat_map = fetch_taxonomy(session, "categories", delay)
-    tag_map = fetch_taxonomy(session, "tags", delay)
-
-    log.info("Fetching posts (early stop when a full page is already indexed)…")
-    raw_posts = fetch_all_posts(
-        session,
-        delay,
-        min(per_page, 100),
-        max_pages,
-        after,
-        known_slugs=known_slugs,
-    )
+    log.info("Existing indexed slugs: %d (chunks: %d)", len(known_slugs), len(chunks))
 
     new_chunks: list[dict[str, Any]] = []
-    for post in raw_posts:
-        url = post.get("link", "")
-        slug = post.get("slug") or slug_from_url(url)
-        if slug in known_slugs:
-            continue
-        try:
-            article = post_to_article(post, cat_map, tag_map)
-            built = article_to_chunks(article)
-            if not built:
-                log.warning("No text for slug=%s, skipping", slug)
-                continue
-            new_chunks.extend(built)
-            known_slugs.add(slug)
-        except Exception as exc:
-            log.warning("Parse error slug=%s — %s", slug, exc)
 
-    log.info("New chunks this run: %d (from %d new articles)", len(new_chunks), len({c["article_slug"] for c in new_chunks}))
+    if skip_fetch:
+        log.info("Skip fetch (prune-only mode).")
+    else:
+        # Default `after` to (latest published_date - 1 day) so we only ask the
+        # WP API for what could possibly be new. The known_slugs early-stop in
+        # fetch_all_posts is still used as a backup.
+        if after is None:
+            auto_after = compute_after_param(chunks, safety_days=1)
+            if auto_after:
+                log.info("Auto-detected `after` = %s (latest pub_date - 1d)", auto_after)
+                after = auto_after
+            else:
+                log.info("No existing chunks with published_date; fetching all pages.")
+
+        session = make_session()
+        log.info("Fetching taxonomies…")
+        cat_map = fetch_taxonomy(session, "categories", delay)
+        tag_map = fetch_taxonomy(session, "tags", delay)
+
+        log.info("Fetching posts (early stop when a full page is already indexed)…")
+        raw_posts = fetch_all_posts(
+            session,
+            delay,
+            min(per_page, 100),
+            max_pages,
+            after,
+            known_slugs=known_slugs,
+        )
+
+        for post in raw_posts:
+            url = post.get("link", "")
+            slug = post.get("slug") or slug_from_url(url)
+            if slug in known_slugs:
+                continue
+            try:
+                article = post_to_article(post, cat_map, tag_map)
+                built = article_to_chunks(article)
+                if not built:
+                    log.warning("No text for slug=%s, skipping", slug)
+                    continue
+                new_chunks.extend(built)
+                known_slugs.add(slug)
+            except Exception as exc:
+                log.warning("Parse error slug=%s — %s", slug, exc)
+
+        log.info(
+            "New chunks this run: %d (from %d new articles)",
+            len(new_chunks),
+            len({c["article_slug"] for c in new_chunks}),
+        )
+
+    merged = merge_chunk_lists(chunks, new_chunks)
+
+    # ---- Pruning ----------------------------------------------------------
+    if prune:
+        cutoff = compute_cutoff_iso_date(prune_after_days)
+        log.info(
+            "Pruning chunks with published_date < %s (keep categories: %s)…",
+            cutoff,
+            ", ".join(sorted(KEEP_CATEGORIES_FOREVER)),
+        )
+        before = len(merged)
+        merged, removed = prune_old_chunks(merged, cutoff)
+        removed_articles = len({c.get("article_slug") for c in removed if c.get("article_slug")})
+        log.info(
+            "Pruned %d chunks (%d articles). Kept %d (was %d).",
+            len(removed),
+            removed_articles,
+            len(merged),
+            before,
+        )
+    else:
+        log.info("Pruning disabled (--no-prune).")
 
     if dry_run:
         log.info("Dry run: not writing file.")
         return
 
-    data["chunks"] = merge_chunk_lists(chunks, new_chunks)
+    data["chunks"] = merged
     save_output(OUTPUT_JSON, data)
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Revista Castells → embed-style JSON chunks")
+    p = argparse.ArgumentParser(
+        description=(
+            "Revista Castells → embed-style JSON chunks.\n"
+            "By default fetches new posts (since the latest published_date in the\n"
+            "current JSON) and prunes chunks older than %d days (except categories\n"
+            "in: %s)."
+        )
+        % (DEFAULT_PRUNE_AFTER_DAYS, ", ".join(sorted(KEEP_CATEGORIES_FOREVER))),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--delay", type=float, default=0.5)
     p.add_argument("--per-page", type=int, default=100)
     p.add_argument("--max-pages", type=int, default=0, help="0 = all pages")
-    p.add_argument("--after", default=None, help="ISO date, only posts after")
+    p.add_argument(
+        "--after",
+        default=None,
+        help=(
+            "ISO date/datetime — only posts after. If omitted, defaults to "
+            "(latest indexed published_date - 1 day)."
+        ),
+    )
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--no-prune",
+        action="store_true",
+        help="Do not remove old chunks even if they fall outside the keep window.",
+    )
+    p.add_argument(
+        "--prune-after-days",
+        type=int,
+        default=DEFAULT_PRUNE_AFTER_DAYS,
+        help="Age threshold in days for non-evergreen categories.",
+    )
+    p.add_argument(
+        "--prune-only",
+        action="store_true",
+        help="Skip fetching from the WP API; only run the pruning step on the existing JSON.",
+    )
     args = p.parse_args()
     run(
         delay=args.delay,
@@ -382,6 +544,9 @@ def main() -> None:
         max_pages=args.max_pages,
         after=args.after,
         dry_run=args.dry_run,
+        prune=not args.no_prune,
+        prune_after_days=args.prune_after_days,
+        skip_fetch=args.prune_only,
     )
 
 

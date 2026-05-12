@@ -102,6 +102,18 @@ async def startup_event():
         print(f"Warning: Failed to preload multilingual model: {e}")
         print("Multilingual model will be loaded on first RAG request")
 
+    # Pre-warm RAG caches in the background so the first user query doesn't
+    # pay the cold-start tax (cold IVFFlat + GIN + OpenAI TLS handshake can
+    # add ~7-10 s to the first request). Fire-and-forget: the HTTP server is
+    # ready to accept connections immediately; warming finishes in parallel
+    # and any request that lands during the warm window simply pays the
+    # normal cold-start cost it would have paid anyway.
+    try:
+        from xiquet.rag import warm_rag_caches
+        asyncio.create_task(asyncio.to_thread(warm_rag_caches))
+    except Exception as e:
+        print(f"Warning: Failed to schedule RAG cache warmup: {e}")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connection pool when the app shuts down"""
