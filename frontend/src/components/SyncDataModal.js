@@ -216,12 +216,25 @@ const SyncDataModal = ({ user, onClose, theme }) => {
 
         {/* Scrape Button */}
         <div className="sync-section">
+          <p className="sync-hint">
+            <strong>Events (castellscat.cat):</strong> el botó del servidor no funciona per
+            Cloudflare. Executa l&apos;scrape al Mac (terminal), des de{' '}
+            <code>backend/</code>:
+            <br />
+            <code>
+              SCRAPER_HEADLESS=false python3 database_pipeline/scrapping_events.py &quot;
+              {dateStart || 'DD/MM/YYYY'}&quot; &quot;{dateEnd || 'DD/MM/YYYY'}&quot;
+            </code>
+            <br />
+            Després prem «Actualitzar Base de Dades» (aquest pas sí funciona des d&apos;aquí).
+          </p>
           <button
             className="sync-button"
             onClick={handleScrape}
             disabled={isScraping || !dateStart || !dateEnd}
+            title="Només funciona si el backend no corre dins Docker"
           >
-            {isScraping ? 'Sincronitzant...' : 'Sincronitzar Events'}
+            {isScraping ? 'Sincronitzant...' : 'Sincronitzar Events (servidor)'}
           </button>
 
           {scrapeResult && (
@@ -252,9 +265,23 @@ const SyncDataModal = ({ user, onClose, theme }) => {
             <div className="sync-result">
               <h3>Resultat de l'actualització:</h3>
               <div className="sync-stats">
-                <p><strong>Events inserits:</strong> {updateResult.events_inserted || 0}</p>
-                <p><strong>Relacions event-colla:</strong> {updateResult.event_colles_inserted || 0}</p>
-                <p><strong>Castells inserits:</strong> {updateResult.castells_inserted || 0}</p>
+                <p><strong>Events inserits:</strong> {updateResult.events_inserted ?? 0}</p>
+                <p><strong>Relacions event-colla:</strong> {updateResult.event_colles_inserted ?? 0}</p>
+                <p><strong>Castells inserits:</strong> {updateResult.castells_inserted ?? 0}</p>
+                {updateResult.events_after_date_filter != null && (
+                  <p><strong>Events al JSON (des de data d&apos;inici):</strong> {updateResult.events_after_date_filter}</p>
+                )}
+                {updateResult.events_skipped_existing != null && (
+                  <p><strong>Ja existien a la BD:</strong> {updateResult.events_skipped_existing}</p>
+                )}
+                {updateResult.events_new_in_json != null && (
+                  <p><strong>Nous al JSON (no a la BD):</strong> {updateResult.events_new_in_json}</p>
+                )}
+                {(updateResult.events_inserted ?? 0) === 0 && updateResult.message_detail && (
+                  <p className="sync-hint" style={{ marginTop: '0.75rem' }}>
+                    {updateResult.message_detail}
+                  </p>
+                )}
               </div>
             </div>
           )}

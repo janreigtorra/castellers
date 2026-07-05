@@ -1677,6 +1677,20 @@ async def scrape_events(
         import sys
         from pathlib import Path
         import traceback
+
+        # castellscat.cat blocks automated scraping from Docker (Cloudflare + Turnstile).
+        # Browser scrape must run on the host Mac; DB update can still run from the UI.
+        if os.path.exists("/.dockerenv"):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "L'scraping des del contenidor Docker no funciona (Cloudflare).\n\n"
+                    "Executa al Mac, des de la carpeta backend:\n\n"
+                    f'SCRAPER_HEADLESS=false python3 database_pipeline/scrapping_events.py '
+                    f'"{request.date_start}" "{request.date_end}"\n\n'
+                    "Després torna aquí i prem «Actualitzar Base de Dades»."
+                ),
+            )
         
         # Get the script path - script is now in backend/database_pipeline/
         # main.py is at /app/backend/main.py, so parent = /app/backend
@@ -1722,7 +1736,7 @@ async def scrape_events(
             [sys.executable, str(script_abs_path), request.date_start, request.date_end],
             capture_output=True,
             text=True,
-            timeout=600,  # 10 minute timeout
+            timeout=1200,  # 20 minute timeout (browser scraping via Cloudflare)
             cwd=str(project_root),  # Set working directory to project root
             env=dict(os.environ, PYTHONPATH=str(project_root))  # Add project root to PYTHONPATH
         )
@@ -1740,8 +1754,6 @@ async def scrape_events(
                 status_code=500,
                 detail=f"Scraping failed: {error_msg}"
             )
-        
-        # Parse output to extract statistics for NEW events only
         output = result.stdout
         stats = {}
         
@@ -1854,6 +1866,26 @@ async def update_database(
         castells_match = re.search(r'Castells:\s*(\d+)\s+inserted', output)
         if castells_match:
             stats['castells_inserted'] = int(castells_match.group(1))
+
+        filtered_match = re.search(r'Filtered to (\d+) events from', output)
+        if filtered_match:
+            stats['events_after_date_filter'] = int(filtered_match.group(1))
+
+        new_found_match = re.search(r'Found (\d+) NEW events to process', output)
+        if new_found_match:
+            stats['events_new_in_json'] = int(new_found_match.group(1))
+
+        skipped_match = re.search(r'Skipped (\d+) events \(matched by content', output)
+        if skipped_match:
+            stats['events_skipped_existing'] = int(skipped_match.group(1))
+
+        inserted = stats.get('events_inserted', 0)
+        if inserted == 0:
+            stats['message_detail'] = (
+                "Cap event nou per inserir: el JSON i la base de dades ja estan sincronitzats "
+                "per a aquesta data d'inici (o l'scrape no ha afegit events nous al fitxer). "
+                "Prova d'scrapar un rang de dates posterior a l'última data de la BD."
+            )
         
         return {
             "message": "Database update completed successfully",

@@ -33,6 +33,8 @@ services:
       - ./backend:/app
       - /app/__pycache__
       - huggingface_cache:/root/.cache/huggingface  # Cache ML models between restarts
+      - ./docker-compose.yml:/docker-compose.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     environment:
@@ -47,10 +49,41 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
       - SAMBANOVA_API_KEY=${SAMBANOVA_API_KEY:-}
+      - FLARESOLVERR_URL=http://flaresolverr:8191
+      - SCRAPER_HEADLESS=true
+      - COMPOSE_FILE=/docker-compose.yml
+      - COMPOSE_PROJECT_NAME=castellers
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    depends_on:
+      - flaresolverr
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      - LOG_LEVEL=info
+      - CAPTCHA_SOLVER=none
+    restart: unless-stopped
+
+  # Event scraper uses host networking so Cloudflare/Turnstile see the Mac IP
+  # (Docker bridge IPs are blocked). Triggered via docker compose run from the API.
+  scraper:
+    profiles: ["scraper"]
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    network_mode: host
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - SCRAPER_HEADLESS=false
+      - FLARESOLVERR_URL=
+    command: sleep infinity
 
   frontend:
     build:

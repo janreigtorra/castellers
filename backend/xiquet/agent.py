@@ -163,7 +163,7 @@ load_dotenv()
 MODEL_NAME = "sambanova:gpt-oss-120b" 
 MODEL_NAME_ROUTE = "sambanova:gpt-oss-120b"
 MODEL_NAME_RESPONSE = "sambanova:Meta-Llama-3.3-70B-Instruct" #"sambanova:gpt-oss-120b"
-MODEL_NAME_RESPONSE_RAG = "sambanova:Llama-4-Maverick-17B-128E-Instruct" #"sambanova:Meta-Llama-3.3-70B-Instruct"
+MODEL_NAME_RESPONSE_RAG = "sambanova:Meta-Llama-3.3-70B-Instruct" #"sambanova:Meta-Llama-3.3-70B-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:Llama-4-Maverick-17B-128E-Instruct"
 # MODEL_NAME_RESPONSE = "sambanova:llama3-8b"
 
@@ -218,6 +218,8 @@ class Xiquet:
         self.subscription = subscription
         # Set in generate_prompt_decide_route when the router prompt forbids extracting colles.
         self.suppress_colla_extraction_from_llm = False
+        # Router said "rag" but IS_SQL_QUERY_PATTERNS upgraded to SQL — enrich SQL answer with one RAG chunk.
+        self._enrich_sql_answer_with_rag_chunk_rag_override = False
 
     def _get_previous_context_section(self) -> str:
 
@@ -941,7 +943,8 @@ class Xiquet:
         # Normalize query synonyms (e.g., "4d9 amb folre i pilar" -> "4d9af")
         question = normalize_query_synonyms(question)
         self.question = question
-        
+        self._enrich_sql_answer_with_rag_chunk_rag_override = False
+
         precheck_start = datetime.now()
         # Analitza si cal donar una resposta directa abans de processar-la (guardrails, massa llarga, no en català, etc.)
         direct_response = self.abans_de_res(question)
@@ -999,6 +1002,7 @@ class Xiquet:
         skip_sql_check = self._handle_follow_up_detection(question, response)
         
         if response.tools == "rag" or response.tools == "direct":
+            router_tools_before_is_sql_patterns = response.tools
             if response.tools == "direct":
                 threshold = 0.75
             else:
@@ -1032,6 +1036,8 @@ class Xiquet:
                 if response.sql_query_type != "custom":
                     response.tools = "sql"
                     skip_sql_check = True
+                    if router_tools_before_is_sql_patterns == "rag":
+                        self._enrich_sql_answer_with_rag_chunk_rag_override = True
                     if DEBUG:
                         print(f"DEBUG SQL ROUTE: Detected SQL query type '{response.sql_query_type}' from enhanced question with pre-selected entities")
 
@@ -1090,6 +1096,7 @@ class Xiquet:
                 print("DEBUG ROUTE OVERRIDE: SQL route but no grounded entities -> rag")
             response.tools = "rag"
             response.sql_query_type = "custom"
+            self._enrich_sql_answer_with_rag_chunk_rag_override = False
 
         return response
 
@@ -1869,13 +1876,37 @@ Respon de forma clara utilitzant qualsevol part del context anterior que sigui p
                 results_context=results_context,
             )
 
+            use_rag_sql_hybrid = self._enrich_sql_answer_with_rag_chunk_rag_override
+            summary_user = structured_prompt.user_prompt
+            summary_developer = structured_prompt.developer_message
+            summary_model = MODEL_NAME_RESPONSE
+            applied_rag_enrichment = False
+            if use_rag_sql_hybrid:
+                if DEBUG:
+                    print("DEBUG SQL+RAG: Router wanted RAG; SQL pattern override — fetching 1 RAG chunk for final summary")
+                rag_context, rag_err = self._retrieve_rag_context(1)
+                if rag_err is None and rag_context:
+                    applied_rag_enrichment = True
+                    summary_user += (
+                        "\n\n### Informació addicional de la cerca semàntica\n"
+                        f"{rag_context}\n\n"                    )
+                    summary_developer += (
+                        "\n\n"
+                        "Per la informació addicional:\n"
+                        "- Pots integrar la informació addicional només si aporta context útil.\n"
+                        "- No mencionis documents, fonts, consultes ni cap meta-referència al context; respon de forma directa amb els fets."
+                    )
+                    summary_model = MODEL_NAME_RESPONSE_RAG
+                elif DEBUG:
+                    print(f"DEBUG SQL+RAG: No RAG chunk added (rag_err={rag_err!r})")
+
             try:
                 sql_llm_start = datetime.now()
                 final_answer = llm_call(
-                    prompt=structured_prompt.user_prompt,
-                    model=MODEL_NAME_RESPONSE,
+                    prompt=summary_user,
+                    model=summary_model,
                     system_message=structured_prompt.system_message,
-                    developer_message=structured_prompt.developer_message
+                    developer_message=summary_developer
                 )
                 sql_llm_time = (datetime.now() - sql_llm_start).total_seconds() * 1000
                 if DEBUG:
@@ -1887,6 +1918,8 @@ Respon de forma clara utilitzant qualsevol part del context anterior que sigui p
                 return f"He pogut obtenir dades, però no generar una explicació: {e}\nConsulta SQL:\n{sql_query}"
 
             # Return the final answer with source attribution
+            if applied_rag_enrichment:
+                return f"{final_answer}\n\n*Fonts: Base de dades i documents castellers*"
             return f"{final_answer}\n\n*Font: Base de dades de la CCCC*"
             
         except SQLExecutionError as e:
